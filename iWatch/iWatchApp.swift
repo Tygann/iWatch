@@ -10,23 +10,19 @@ import SwiftData
 
 @main
 struct iWatchApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+    @State private var appEnv = AppEnvironment.makeDefault()
 
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
-
+    init() {
+        let _ = Secrets.tmdbAPIKey
+        print("✅ TMDB key loaded")
+    }
+    
     var body: some Scene {
         WindowGroup {
             ContentView()
+//                .environment(appEnv)
+                .environmentObject(appEnv)
         }
-        .modelContainer(sharedModelContainer)
+        .modelContainer(appEnv.modelContainer)
     }
 }
