@@ -1,0 +1,59 @@
+import SwiftUI
+import SwiftData
+
+struct ContentView: View {
+    @Environment(AppRouter.self) private var router
+
+    var body: some View {
+        if ProcessInfo.processInfo.arguments.contains("UITEST_MODE") {
+            tabView
+        } else {
+            tabView
+                .tabBarMinimizeBehavior(.onScrollDown)
+        }
+    }
+
+    private var tabView: some View {
+        TabView(selection: Binding(
+            get: { router.selectedTab },
+            set: { router.selectedTab = $0 }
+        )) {
+            Tab("Movies", systemImage: "film", value: AppRouter.Tab.movies) {
+                MoviesView()
+            }
+
+            Tab("Shows", systemImage: "tv", value: AppRouter.Tab.shows) {
+                ShowsView()
+            }
+
+            if #available(iOS 27.0, *) {
+                Tab(
+                    "Search",
+                    systemImage: "magnifyingglass",
+                    value: AppRouter.Tab.search,
+                    role: .prominent
+                ) {
+                    SearchView()
+                }
+            } else {
+                Tab(
+                    "Search",
+                    systemImage: "magnifyingglass",
+                    value: AppRouter.Tab.search,
+                    role: .search
+                ) {
+                    SearchView()
+                }
+            }
+        }
+    }
+}
+
+#Preview {
+    let container = AppContainer.preview()
+    ContentView()
+        .environment(container)
+        .environment(container.session)
+        .environment(container.router)
+        .modelContainer(container.persistence.modelContainer)
+}

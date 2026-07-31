@@ -1,45 +1,137 @@
-// iWatch/Features/Movies/MoviesView.swift
 import SwiftUI
+import Observation
 import SwiftData
 
-struct MoviesView: View {
-    @Environment(\.modelContext) private var context
-    @State private var showSettings = false
-    @State private var detailRef: MediaRef? = nil
-
-    // All tracked Movies
-    @Query(
-        filter: #Predicate<ProgressItem> { $0.isInWatchlist && $0.media.kindRaw == "movie" },
-        sort: [SortDescriptor(\ProgressItem.media.title, order: .forward)]
-    )
-    private var moviesFollowing: [ProgressItem]
-
-    // Tracked Movies you still need to watch
-    @Query(
-        filter: #Predicate<ProgressItem> { $0.isInWatchlist && !$0.watched && $0.media.kindRaw == "movie" },
-        sort: [SortDescriptor(\ProgressItem.media.title, order: .forward)]
-    )
-    private var moviesToWatch: [ProgressItem]
-
+@MainActor
+@Observable
+private final class MoviesScreenModel {
     enum Segment: String, CaseIterable, Identifiable {
         case following = "Following"
-        case toWatch   = "To Watch"
+        case toWatch = "Watchlist"
+
         var id: String { rawValue }
     }
-    @State private var segment: Segment = .following
+
+    private let repository: LibraryRepository
+    private let session: AppSession
+
+    var items: [LibraryMovieItem] = []
+    var isLoading = false
+    var errorText: String?
+    var segment: Segment = .following
+
+    init(repository: LibraryRepository, session: AppSession) {
+        self.repository = repository
+        self.session = session
+    }
+
+    func load() async {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            items = try await repository.movieLibraryItems()
+            errorText = nil
+        } catch {
+            guard !error.isCancelled else { return }
+            errorText = error.localizedDescription
+            items = []
+        }
+    }
+
+    var filteredItems: [LibraryMovieItem] {
+        switch segment {
+        case .following:
+            return items
+        case .toWatch:
+            return items.filter { !$0.isWatched }
+        }
+    }
+
+    func markWatched(_ item: LibraryMovieItem) async {
+        do {
+            try await repository.addWatchEvent(for: item.mediaID, watchedAt: Date())
+            session.markLibraryUpdated(syncIfConnected: true)
+            await load()
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    func markUnwatched(_ item: LibraryMovieItem) async {
+        if let eventID = await repository.latestWatchEventID(for: item.mediaID) {
+            do {
+                try await repository.removeWatchEvent(eventID: eventID)
+                session.markLibraryUpdated(syncIfConnected: true)
+                await load()
+            } catch {
+                errorText = error.localizedDescription
+            }
+        }
+    }
+}
+
+struct MoviesView: View {
+    @Environment(AppContainer.self) private var container
+    @Environment(AppSession.self) private var session
+
+    @State private var model: MoviesScreenModel?
+    @State private var showSettings = false
+    @State private var detailRef: MediaID?
+
+    var body: some View {
+        Group {
+            if let model {
+                MoviesViewBody(
+                    model: model,
+                    detailRef: $detailRef,
+                    showSettings: $showSettings
+                )
+            } else {
+                ProgressView()
+                    .task {
+                        let newModel = MoviesScreenModel(repository: container.libraryRepository, session: session)
+                        await newModel.load()
+                        guard !Task.isCancelled else { return }
+                        model = newModel
+                    }
+            }
+        }
+    }
+}
+
+private struct MoviesViewBody: View {
+    @Bindable var model: MoviesScreenModel
+    @Binding var detailRef: MediaID?
+    @Binding var showSettings: Bool
+    @Environment(AppSession.self) private var session
 
     private let cols = [GridItem(.adaptive(minimum: 110), spacing: 12)]
 
     var body: some View {
         NavigationStack {
             VStack {
-                let items = segment == .following ? moviesFollowing : moviesToWatch
+                Picker("Section", selection: $model.segment) {
+                    ForEach(MoviesScreenModel.Segment.allCases) { segment in
+                        Text(segment.rawValue).tag(segment)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
 
-                if items.isEmpty {
+                if model.isLoading {
+                    Spacer()
+                    ProgressView()
+                    Spacer()
+                } else if let errorText = model.errorText {
+                    ContentUnavailableView("Movies Error",
+                                           systemImage: "exclamationmark.triangle",
+                                           description: Text(errorText))
+                } else if model.filteredItems.isEmpty {
                     ContentUnavailableView(
-                        segment == .following ? "No tracked movies yet" : "Nothing to watch",
+                        model.segment == .following ? "No tracked movies yet" : "Nothing to watch",
                         systemImage: "film",
-                        description: Text(segment == .following
+                        description: Text(model.segment == .following
                                           ? "Add movies from Search to start tracking."
                                           : "You’re all caught up on the movies you follow.")
                     )
@@ -47,30 +139,27 @@ struct MoviesView: View {
                 } else {
                     ScrollView {
                         LazyVGrid(columns: cols, spacing: 12) {
-                            ForEach(items) { p in
-                                let ref = MediaRef(id: p.media.remoteID, kind: .movie)
-
+                            ForEach(model.filteredItems) { item in
                                 MediaTile(
-                                    ref: ref,
-                                    title: p.media.title,
-                                    posterPath: p.media.posterPath,
+                                    ref: item.mediaID,
+                                    title: item.title,
+                                    posterPath: item.posterPath,
                                     showTitle: true,
                                     selectedRef: $detailRef
                                 ) {
-                                    // Extra context‑menu actions specific to this screen
-                                    if p.watched {
-                                        Button("Mark Unwatched") {
-                                            p.watched = false
-                                            try? context.save()
+                                    if item.isWatched {
+                                        Button("Mark as Unwatched") {
+                                            Haptics.notification(.success)
+                                            Task { await model.markUnwatched(item) }
                                         }
                                     } else {
-                                        Button("Mark Watched") {
-                                            p.watched = true
-                                            try? context.save()
+                                        Button("Mark as Watched") {
+                                            Haptics.notification(.success)
+                                            Task { await model.markWatched(item) }
                                         }
                                     }
                                 }
-                                .frame(width: 110) // keeps grid cell width
+                                .frame(width: 110)
                             }
                         }
                         .padding(.horizontal, 12)
@@ -90,12 +179,8 @@ struct MoviesView: View {
                     }
                 }
             }
-            .safeAreaBar(edge: .top) {
-                Picker("", selection: $segment) {
-                    ForEach(Segment.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
+            .task(id: session.libraryRevision) {
+                await model.load()
             }
             .sheet(isPresented: $showSettings) {
                 NavigationStack {
@@ -107,12 +192,9 @@ struct MoviesView: View {
                         }
                 }
             }
-            // Detail sheet presenter
             .sheet(item: $detailRef) { ref in
                 NavigationStack {
                     MediaDetailView(ref: ref)
-                        .presentationDragIndicator(.visible)
-//                        .presentationDetents([.medium, .large])
                         .toolbar {
                             ToolbarItem(placement: .topBarTrailing) {
                                 Button(role: .close) { detailRef = nil }
@@ -124,133 +206,11 @@ struct MoviesView: View {
     }
 }
 
-
-
-
-
-
-//// iWatch/Features/Movies/MoviesView.swift
-//import SwiftUI
-//import SwiftData
-//
-//struct MoviesView: View {
-//    @Environment(\.modelContext) private var context
-//    @State private var showSettings = false
-//    @State private var detailRef: MediaRef? = nil
-//
-//    // All tracked Movies
-//    @Query(
-//        filter: #Predicate<ProgressItem> { $0.isInWatchlist && $0.media.kindRaw == "movie" },
-//        sort: [SortDescriptor(\ProgressItem.media.title, order: .forward)]
-//    )
-//    private var moviesFollowing: [ProgressItem]
-//
-//    // Tracked Movies you still need to watch
-//    @Query(
-//        filter: #Predicate<ProgressItem> { $0.isInWatchlist && !$0.watched && $0.media.kindRaw == "movie" },
-//        sort: [SortDescriptor(\ProgressItem.media.title, order: .forward)]
-//    )
-//    private var moviesToWatch: [ProgressItem]
-//
-//    enum Segment: String, CaseIterable, Identifiable {
-//        case following = "Following"
-//        case toWatch   = "To Watch"
-//        var id: String { rawValue }
-//    }
-//    @State private var segment: Segment = .following
-//
-//    private let cols = [GridItem(.adaptive(minimum: 110), spacing: 12)]
-//
-//    var body: some View {
-//        NavigationStack {
-//            VStack {
-////                Picker("", selection: $segment) {
-////                    ForEach(Segment.allCases) { Text($0.rawValue).tag($0) }
-////                }
-////                .pickerStyle(.segmented)
-////                .padding(.horizontal)
-//
-//                let items = segment == .following ? moviesFollowing : moviesToWatch
-//
-//                if items.isEmpty {
-//                    ContentUnavailableView(
-//                        segment == .following ? "No tracked movies yet" : "Nothing to watch",
-//                        systemImage: "film",
-//                        description: Text(segment == .following
-//                                          ? "Add movies from Discover to start tracking."
-//                                          : "You’re all caught up on the movies you follow.")
-//                    )
-//                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-//                } else {
-//                    ScrollView {
-//                        LazyVGrid(columns: cols, spacing: 12) {
-//                            ForEach(items) { p in
-//                                VStack(spacing: 6) {
-//                                    PosterImage(path: p.media.posterPath)
-//                                        .frame(width: 110, height: 165)
-//                                        .clipShape(RoundedRectangle(cornerRadius: 12))
-//                                        .clipped()
-//
-//                                    Text(p.media.title)
-//                                        .font(.caption)
-//                                        .lineLimit(2)
-//                                        .frame(width: 110, alignment: .leading)
-//                                }
-//                                .contentShape(Rectangle())
-//                                .contextMenu {
-//                                    if p.watched {
-//                                        Button("Mark Unwatched") { p.watched = false; try? context.save() }
-//                                    } else {
-//                                        Button("Mark Watched") { p.watched = true; try? context.save() }
-//                                    }
-//                                    Button("Remove from Watchlist") {
-//                                        p.isInWatchlist = false
-//                                        try? context.save()
-//                                    }
-//                                }
-//                            }
-//                        }
-//                        .padding(.horizontal, 12)
-//                        .padding(.top, 12)
-//                    }
-//                }
-//            }
-//            .navigationTitle("Movies")
-//            .toolbarTitleDisplayMode(.inlineLarge)
-//            .toolbar {
-//                // Settings Button
-//                ToolbarItem(placement: .primaryAction) {
-//                    Button(action: {
-//                        showSettings = true
-//                    }) {
-//                        Image(systemName: "person.crop.circle.fill")
-//                            .symbolRenderingMode(.palette)
-//                            .foregroundStyle(.primary, .clear)
-//                            .scaleEffect(1.5)
-//                    }
-//                }
-//            }
-//            .safeAreaBar(edge: .top) {
-//                Picker("", selection: $segment) {
-//                    ForEach(Segment.allCases) { Text($0.rawValue).tag($0) }
-//                }
-//                .pickerStyle(.segmented)
-//                .padding(.horizontal)
-//            }
-//            .sheet(isPresented: $showSettings) {
-//                NavigationStack {
-//                    // Settings View
-//                    SettingsView()
-//                        .toolbar {
-//                            ToolbarItem(placement: .primaryAction) {
-//                                // Close Button
-//                                Button(role: .close) {
-//                                    showSettings = false
-//                                }
-//                            }
-//                        }
-//                }
-//            }
-//        }
-//    }
-//}
+#Preview {
+    let container = AppContainer.preview()
+    MoviesView()
+        .environment(container)
+        .environment(container.session)
+        .environment(container.router)
+        .modelContainer(container.persistence.modelContainer)
+}

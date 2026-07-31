@@ -1,0 +1,42 @@
+// PosterImage.swift
+import SwiftUI
+import SDWebImageSwiftUI
+
+struct PosterImage: View {
+    let path: String?
+    var width: CGFloat = 110
+    var height: CGFloat = 165
+    var cornerRadius: CGFloat = 12
+
+    var body: some View {
+        let url = ImageURLBuilder.make(path, size: .posterLarge)
+
+        WebImage(url: url) { image in
+            image
+                .resizable()
+                .scaledToFill()
+        } placeholder: {
+            placeholder
+        }
+        .frame(width: width, height: height)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .clipped()
+        .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+//        .overlay(
+//            RoundedRectangle(cornerRadius: cornerRadius)
+//                .strokeBorder(.ultraThinMaterial.opacity(0.5), lineWidth: 1)
+////                .blendMode(.overlay)
+//        )
+        .accessibilityHidden(true)
+    }
+
+    private var placeholder: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(.gray.opacity(0.12))
+            Image(systemName: "film")
+                .font(.title3)
+                .foregroundStyle(.gray.opacity(0.5))
+        }
+    }
+}

@@ -23,19 +23,33 @@ final class iWatchUITests: XCTestCase {
     }
 
     @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
+    func testLaunchTabsAndMovieDetail() throws {
         let app = XCUIApplication()
+        app.launchArguments.append("UITEST_MODE")
         app.launch()
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
+        let moviesTab = app.tabBars.buttons["Movies"]
+        let showsTab = app.tabBars.buttons["Shows"]
+        let searchTab = app.tabBars.buttons["Search"]
+
+        XCTAssertTrue(moviesTab.waitForExistence(timeout: 5))
+        XCTAssertTrue(showsTab.exists)
+        XCTAssertTrue(searchTab.exists)
+
+        let movieTitle = app.staticTexts["UI Test Movie"]
+        XCTAssertTrue(movieTitle.waitForExistence(timeout: 5))
+        movieTitle.tap()
+
+        XCTAssertTrue(app.buttons["Following"].waitForExistence(timeout: 5))
+        if app.buttons["Close"].exists {
+            app.buttons["Close"].tap()
+        }
+
+        showsTab.tap()
+        XCTAssertTrue(app.staticTexts["UI Test Show"].waitForExistence(timeout: 5))
+
+        searchTab.tap()
+        XCTAssertTrue(app.navigationBars["Search"].waitForExistence(timeout: 5))
     }
 
-    @MainActor
-    func testLaunchPerformance() throws {
-        // This measures how long it takes to launch your application.
-        measure(metrics: [XCTApplicationLaunchMetric()]) {
-            XCUIApplication().launch()
-        }
-    }
 }

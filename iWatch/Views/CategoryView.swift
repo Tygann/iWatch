@@ -1,45 +1,62 @@
 import SwiftUI
+import Observation
+
+@MainActor
+@Observable
+private final class BrowseCategoryModel {
+    private let repository: LibraryRepository
+    private let kind: MediaKind
+
+    var trending: [SearchItem] = []
+    var isLoading = true
+    var errorText: String?
+
+    init(kind: MediaKind, repository: LibraryRepository) {
+        self.kind = kind
+        self.repository = repository
+    }
+
+    func load() async {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            trending = try await repository.trending(kind: kind)
+            errorText = nil
+        } catch {
+            guard !error.isCancelled else { return }
+            trending = []
+            errorText = error.localizedDescription
+        }
+    }
+}
 
 struct BrowseCategoryView: View {
-    let kind: MediaItem.Kind
-    @EnvironmentObject private var env: AppEnvironment
+    let kind: MediaKind
 
-    @State private var trending: [SimpleDTO] = []
-    @State private var isLoading = true
-    @State private var errorText: String?
-    @State private var detailRef: MediaRef? = nil   // <- sheet selection
+    @Environment(AppContainer.self) private var container
+    @State private var model: BrowseCategoryModel?
+    @State private var detailRef: MediaID?
 
     private var title: String { kind == .movie ? "Movies" : "Shows" }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                // Trending
-                ShelfSection(title: "Trending", items: trending, selectedRef: $detailRef)
-
-                // TODO: Add other sections (Popular, Top Rated, etc.) when you expose them on ContentAPI
-            }
-            .padding(.horizontal)
-            .padding(.top, 12)
-        }
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
-        .task { await loadTrending() }
-        .overlay {
-            if isLoading {
-                ProgressView().scaleEffect(1.2)
-            } else if let errorText {
-                ContentUnavailableView("Error",
-                                       systemImage: "exclamationmark.triangle",
-                                       description: Text(errorText))
+        Group {
+            if let model {
+                BrowseCategoryBody(model: model, title: title, detailRef: $detailRef)
+            } else {
+                ProgressView()
+                    .task {
+                        let newModel = BrowseCategoryModel(kind: kind, repository: container.libraryRepository)
+                        await newModel.load()
+                        guard !Task.isCancelled else { return }
+                        model = newModel
+                    }
             }
         }
-        // Single sheet presenter for this screen
         .sheet(item: $detailRef) { ref in
             NavigationStack {
                 MediaDetailView(ref: ref)
-                    .presentationDragIndicator(.visible)
-//                    .presentationDetents([.medium, .large])
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
                             Button(role: .close) { detailRef = nil }
@@ -48,71 +65,56 @@ struct BrowseCategoryView: View {
             }
         }
     }
+}
 
-    @MainActor
-    private func loadTrending() async {
-        isLoading = true
-        defer { isLoading = false }
+private struct BrowseCategoryBody: View {
+    @Bindable var model: BrowseCategoryModel
+    let title: String
+    @Binding var detailRef: MediaID?
 
-        do {
-            switch kind {
-            case .movie:
-                trending = try await env.contentAPI.trendingMovies(page: 1)
-            case .tv:
-                trending = try await env.contentAPI.trendingTV(page: 1)
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Trending")
+                        .font(.title2.bold())
+                        .padding(.horizontal)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(spacing: 12) {
+                            ForEach(model.trending) { item in
+                                MediaTile(
+                                    ref: item.mediaID,
+                                    title: item.title,
+                                    posterPath: item.posterPath,
+                                    showTitle: true,
+                                    selectedRef: $detailRef
+                                )
+                                .frame(width: 110)
+                            }
+                        }
+                        .scrollTargetLayout()
+                        .padding(.horizontal)
+                    }
+                    .scrollTargetBehavior(.viewAligned)
+                }
             }
-        } catch {
-            errorText = "Couldn't load \(title.lowercased())."
+            .padding(.top, 12)
+        }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .overlay {
+            if model.isLoading {
+                ProgressView().scaleEffect(1.2)
+            } else if let errorText = model.errorText {
+                ContentUnavailableView("Error",
+                                       systemImage: "exclamationmark.triangle",
+                                       description: Text(errorText))
+            } else if model.trending.isEmpty {
+                ContentUnavailableView("No \(title)",
+                                       systemImage: title == "Movies" ? "film" : "tv",
+                                       description: Text("Nothing trending right now."))
+            }
         }
     }
 }
-
-// MARK: - Shelf (horizontal scroller)
-//private struct ShelfSection: View {
-//    let title: String
-//    let items: [SimpleDTO]
-//    @Binding var selectedRef: MediaRef?
-//
-//    var body: some View {
-//        VStack(alignment: .leading, spacing: 12) {
-//            Text(title)
-//                .font(.title2.bold())
-//                .padding(.horizontal, 4)
-//
-//            ScrollView(.horizontal, showsIndicators: false) {
-//                LazyHStack(spacing: 12) {
-//                    ForEach(items, id: \.id) { item in
-//                        MediaTile(
-//                            ref: .init(id: item.id, kind: item.kind),
-//                            title: item.title,
-//                            posterPath: item.posterPath,
-//                            showTitle: true,                 // subtitle under poster (like your prior UI)
-//                            selectedRef: $selectedRef        // <-- tap opens the sheet
-//                        )
-//                        // If you want the exact old size, you can wrap the tile in a fixed frame:
-//                        .frame(width: 120)                  // keeps 2-line title width consistent
-//                    }
-//                }
-//                .padding(.horizontal, 4)
-//            }
-//        }
-//    }
-//}
-
-//// MARK: - Preview Provider
-//#Preview {
-//    // In-memory SwiftData container for previews
-//    let schema = Schema([MediaItem.self, ProgressItem.self])
-//    let config = ModelConfiguration(isStoredInMemoryOnly: true)
-//    let container = try! ModelContainer(for: schema, configurations: [config])
-//    
-//    // Load your actual TMDB key from Secrets.plist
-//    let env = AppEnvironment(
-//        modelContainer: container,
-//        contentAPI: TMDBClient(apiKey: Secrets.tmdbAPIKey)
-//    )
-//
-//    return BrowseCategoryView(kind: .tv)
-//        .environmentObject(env)
-//        .modelContainer(container)
-//}

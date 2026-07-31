@@ -1,58 +1,140 @@
 import SwiftUI
-import SwiftData
-import Combine
+import Observation
 
-struct SearchView: View {
-    @EnvironmentObject private var env: AppEnvironment
-    @Environment(\.modelContext) private var modelContext
-    @StateObject private var suggestionsHolder = SuggestionsHolder()
-
-    // Search state
-    @State private var query: String = ""
-    @State private var isSearching = false
-    @State private var results: [SimpleDTO] = []
-    @State private var selectedFilter: Filter = .top
-
-    // Sheet selection for MediaDetailView
-    @State private var detailRef: MediaRef? = nil
-
-    @State private var showSettings = false
-    
+@MainActor
+@Observable
+private final class SearchScreenModel {
     enum Filter: String, CaseIterable, Identifiable {
         case top = "Top Results"
         case movies = "Movies"
         case shows = "Shows"
+
         var id: String { rawValue }
     }
+
+    private let repository: LibraryRepository
+    private var searchTask: Task<Void, Never>?
+
+    var query = ""
+    var isSearching = false
+    var results: [SearchItem] = []
+    var movieTrending: [SearchItem] = []
+    var showTrending: [SearchItem] = []
+    var selectedFilter: Filter = .top
+    var errorText: String?
+
+    init(repository: LibraryRepository) {
+        self.repository = repository
+    }
+
+    func bootstrap() async {
+        guard movieTrending.isEmpty && showTrending.isEmpty else { return }
+        await loadTrending()
+    }
+
+    func updateQuery(_ newValue: String) {
+        query = newValue
+        searchTask?.cancel()
+        searchTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            await self?.performSearch()
+        }
+    }
+
+    func performSearch() async {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            results = []
+            errorText = nil
+            return
+        }
+
+        isSearching = true
+        defer { isSearching = false }
+
+        do {
+            results = try await repository.search(query: trimmed)
+            errorText = nil
+        } catch {
+            guard !error.isCancelled else { return }
+            results = []
+            errorText = error.localizedDescription
+        }
+    }
+
+    func loadTrending() async {
+        do {
+            async let movies = repository.trending(kind: .movie)
+            async let shows = repository.trending(kind: .show)
+            movieTrending = try await movies
+            showTrending = try await shows
+            errorText = nil
+        } catch {
+            guard !error.isCancelled else { return }
+            errorText = error.localizedDescription
+        }
+    }
+
+    var filteredResults: [SearchItem] {
+        switch selectedFilter {
+        case .top:
+            return results
+        case .movies:
+            return results.filter { $0.kind == .movie }
+        case .shows:
+            return results.filter { $0.kind == .show }
+        }
+    }
+}
+
+struct SearchView: View {
+    @Environment(AppContainer.self) private var container
+
+    @State private var model: SearchScreenModel?
+    @State private var detailRef: MediaID?
+    @State private var showSettings = false
+
+    var body: some View {
+        Group {
+            if let model {
+                SearchViewBody(
+                    model: model,
+                    detailRef: $detailRef,
+                    showSettings: $showSettings
+                )
+            } else {
+                ProgressView()
+                    .task {
+                        let newModel = SearchScreenModel(repository: container.libraryRepository)
+                        await newModel.bootstrap()
+                        guard !Task.isCancelled else { return }
+                        model = newModel
+                    }
+            }
+        }
+    }
+}
+
+private struct SearchViewBody: View {
+    @Bindable var model: SearchScreenModel
+    @Binding var detailRef: MediaID?
+    @Binding var showSettings: Bool
 
     var body: some View {
         NavigationStack {
             Group {
-                if query.isEmpty {
+                if model.query.isEmpty {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 24) {
-                            // Suggested / Trending
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("Suggested")
-                                    .font(.title2).bold()
-                                    .padding(.horizontal)
-                                
-                                if let s = store {
-                                    SuggestedSection(store: s, selectedRef: $detailRef)
-                                        .padding(.horizontal)
-                                } else {
-                                    ProgressView()
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.horizontal)
-                                }
-                            }
-                            
-                            // Browse
+                            trendingSection(title: "Trending Movies", items: model.movieTrending)
+                            trendingSection(title: "Trending Shows", items: model.showTrending)
+
                             VStack(alignment: .leading, spacing: 12) {
                                 Text("Browse")
                                     .font(.title2.bold())
                                     .padding(.horizontal)
-                                
+
                                 BrowseGrid()
                                     .padding(.horizontal)
                                     .padding(.bottom, 8)
@@ -60,21 +142,8 @@ struct SearchView: View {
                         }
                         .padding(.top, 8)
                     }
-                    .onAppear {
-                        suggestionsHolder.ensureStore(env: env, modelContext: modelContext)
-                    }
-                    .refreshable {
-                        await store?.refresh()
-                    }
                 } else {
-                    // ----- Search Results -----
-                    SearchResultsSection(
-                        query: query,
-                        selectedFilter: $selectedFilter,
-                        isSearching: $isSearching,
-                        results: $results,
-                        selectedRef: $detailRef      // <- pass the binding down
-                    )
+                    resultsSection
                 }
             }
             .navigationTitle("Search")
@@ -91,16 +160,13 @@ struct SearchView: View {
             }
         }
         .searchable(
-            text: $query,
+            text: Binding(
+                get: { model.query },
+                set: { model.updateQuery($0) }
+            ),
             placement: .navigationBarDrawer(displayMode: .automatic),
             prompt: "Movies and TV Shows"
         )
-        .onChange(of: query) { _, _ in
-            Task {
-                try? await Task.sleep(nanoseconds: 350_000_000)
-                await performSearch()
-            }
-        }
         .sheet(isPresented: $showSettings) {
             NavigationStack {
                 SettingsView()
@@ -111,13 +177,9 @@ struct SearchView: View {
                     }
             }
         }
-        
-        // Single sheet presenter for detail
         .sheet(item: $detailRef) { ref in
             NavigationStack {
                 MediaDetailView(ref: ref)
-                    .presentationDragIndicator(.visible)
-//                    .presentationDetents([.medium, .large])
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
                             Button(role: .close) { detailRef = nil }
@@ -127,25 +189,95 @@ struct SearchView: View {
         }
     }
 
-    // MARK: - Search
-    @MainActor
-    private func performSearch() async {
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { results = []; isSearching = false; return }
-        isSearching = true
-        defer { isSearching = false }
-        do {
-            results = try await env.contentAPI.search(query: q, page: 1)
-        } catch {
-            results = []
-            #if DEBUG
-            print("Search failed:", error)
-            #endif
+    @ViewBuilder
+    private func trendingSection(title: String, items: [SearchItem]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.title2.bold())
+                .padding(.horizontal)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 12) {
+                    ForEach(items) { item in
+                        MediaTile(
+                            ref: item.mediaID,
+                            title: item.title,
+                            posterPath: item.posterPath,
+                            showTitle: true,
+                            selectedRef: $detailRef
+                        )
+                        .frame(width: 120)
+                    }
+                }
+                .scrollTargetLayout()
+                .padding(.horizontal, 4)
+            }
+            .scrollTargetBehavior(.viewAligned)
+        }
+    }
+
+    @ViewBuilder
+    private var resultsSection: some View {
+        VStack(spacing: 16) {
+            Picker("Filter", selection: $model.selectedFilter) {
+                ForEach(SearchScreenModel.Filter.allCases) { filter in
+                    Text(filter.rawValue).tag(filter)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+
+            if model.isSearching {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let errorText = model.errorText {
+                ContentUnavailableView("Search Error",
+                                       systemImage: "exclamationmark.triangle",
+                                       description: Text(errorText))
+            } else if model.filteredResults.isEmpty {
+                ContentUnavailableView("No Results",
+                                       systemImage: "magnifyingglass",
+                                       description: Text("Try a different title or keyword."))
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 12)], spacing: 12) {
+                        ForEach(model.filteredResults) { item in
+                            VStack(alignment: .leading, spacing: 6) {
+                                MediaTile(
+                                    ref: item.mediaID,
+                                    title: item.title,
+                                    posterPath: item.posterPath,
+                                    showTitle: true,
+                                    selectedRef: $detailRef
+                                )
+
+                                HStack {
+                                    if let year = item.year {
+                                        Text(year)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+
+                                    Spacer()
+
+                                    if model.selectedFilter == .top {
+                                        Text(item.kind == .movie ? "Movie" : "TV Show")
+                                            .font(.caption)
+                                            .foregroundStyle(item.kind == .movie ? .purple : .blue)
+                                    }
+                                }
+                            }
+                            .frame(width: 110)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 12)
+                }
+            }
         }
     }
 }
 
-// MARK: - Browse Grid (Movies / Shows)
 private struct BrowseGrid: View {
     private let columns = [GridItem(.flexible(), spacing: 12),
                            GridItem(.flexible(), spacing: 12)]
@@ -159,7 +291,7 @@ private struct BrowseGrid: View {
                     gradient: .appStorePurple
                 )
             }
-            NavigationLink { BrowseCategoryView(kind: .tv) } label: {
+            NavigationLink { BrowseCategoryView(kind: .show) } label: {
                 AppStoreCategoryButton(
                     title: "Shows",
                     symbol: "tv",
@@ -167,11 +299,10 @@ private struct BrowseGrid: View {
                 )
             }
         }
-        .buttonStyle(.plain) // keep the card look on tap
+        .buttonStyle(.plain)
     }
 }
 
-/// A rounded, glossy, gradient tile that mimics the App Store category cards.
 private struct AppStoreCategoryButton: View {
     let title: String
     let symbol: String
@@ -179,280 +310,55 @@ private struct AppStoreCategoryButton: View {
 
     var body: some View {
         ZStack {
-            // Card background
-//            RoundedRectangle(cornerRadius: 24, style: .continuous)
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(gradient)
 
-            // Subtle top gloss
-//            RoundedRectangle(cornerRadius: 24, style: .continuous)
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(
                     LinearGradient(
-                        colors: [
-                            .white.opacity(0.35),
-                            .white.opacity(0.15),
-                            .clear
-                        ],
+                        colors: [.white.opacity(0.35), .white.opacity(0.15), .clear],
                         startPoint: .top,
                         endPoint: .bottom
                     )
                 )
                 .blendMode(.plusLighter)
 
-            // Thin inner stroke for that “pressed” look
-//            RoundedRectangle(cornerRadius: 24, style: .continuous)
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(.white.opacity(0.18), lineWidth: 1)
                 .blendMode(.overlay)
 
-            // Content
             HStack(alignment: .center) {
-                // Left-aligned title (white, large, bold)
                 VStack(alignment: .leading) {
                     Spacer(minLength: 0)
                     Text(title)
-//                        .font(.system(size: 28, weight: .bold))
                         .font(.headline)
-//                        .fontWeight(.bold)
                         .foregroundStyle(.white)
                         .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
                 }
 
                 Spacer(minLength: 0)
 
-                // Right badge with symbol (like App Store 3D sticker)
-                ZStack {
-//                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-//                        .fill(.white.opacity(0.95))
-//                        .frame(width: 68, height: 68)
-//                        .shadow(color: .black.opacity(0.25), radius: 10, y: 8)
-
-                    Image(systemName: symbol)
-                        .font(.system(size: 40, weight: .semibold))
-//                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(.secondary)
-//                        .foregroundStyle(.black.opacity(0.8))
-                }
-//                .rotationEffect(.degrees(-2))          // tiny playful tilt
-//                .offset(y: 4)                           // sits slightly low like Apple’s
+                Image(systemName: symbol)
+                    .font(.system(size: 34, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.95))
+                    .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
             }
-            .padding(18)
+            .padding(16)
         }
-        .frame(maxWidth: .infinity, minHeight: 100)
-        .shadow(color: .black.opacity(0.28), radius: 16, y: 10) // card drop shadow
-        .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .frame(height: 110)
     }
 }
 
-// MARK: - Gradients tuned to the App Store vibe
 private extension LinearGradient {
-    static let appStoreBlue = LinearGradient(
-        colors: [
-            Color(red: 0.64, green: 0.84, blue: 1.00), // light sky blue
-            Color(red: 0.38, green: 0.64, blue: 1.00)  // richer blue
-        ],
-        startPoint: .top, endPoint: .bottom
-    )
-
-    static let appStoreIndigo = LinearGradient(
-        colors: [
-            Color(red: 0.74, green: 0.76, blue: 1.00),
-            Color(red: 0.50, green: 0.60, blue: 1.00)
-        ],
-        startPoint: .top, endPoint: .bottom
-    )
-
     static let appStorePurple = LinearGradient(
-        colors: [
-            Color(red: 0.78, green: 0.66, blue: 1.00),
-            Color(red: 0.56, green: 0.34, blue: 0.94)
-        ],
-        startPoint: .top, endPoint: .bottom
+        colors: [Color(red: 0.55, green: 0.30, blue: 0.96), Color(red: 0.78, green: 0.35, blue: 0.93)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
     )
 
-    static let appStoreGreen = LinearGradient(
-        colors: [
-            Color(red: 0.70, green: 0.95, blue: 0.75),
-            Color(red: 0.30, green: 0.75, blue: 0.50)
-        ],
-        startPoint: .top, endPoint: .bottom
-    )
-
-    static let appStoreOrange = LinearGradient(
-        colors: [
-            Color(red: 1.00, green: 0.78, blue: 0.55),
-            Color(red: 1.00, green: 0.55, blue: 0.15)
-        ],
-        startPoint: .top, endPoint: .bottom
-    )
-
-    static let appStoreRed = LinearGradient(
-        colors: [
-            Color(red: 1.0, green: 0.45, blue: 0.45),
-            Color(red: 0.95, green: 0.25, blue: 0.25)
-        ],
-        startPoint: .top, endPoint: .bottom
+    static let appStoreBlue = LinearGradient(
+        colors: [Color(red: 0.17, green: 0.53, blue: 0.96), Color(red: 0.26, green: 0.78, blue: 0.94)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
     )
 }
-
-// MARK: - Search Results Section
-private struct SearchResultsSection: View {
-    let query: String
-    @Binding var selectedFilter: SearchView.Filter
-    @Binding var isSearching: Bool
-    @Binding var results: [SimpleDTO]
-
-    // binding to the parent's sheet selection
-    @Binding var selectedRef: MediaRef?
-
-    private let grid = [GridItem(.adaptive(minimum: 110), spacing: 12)]
-
-    private var filtered: [SimpleDTO] {
-        switch selectedFilter {
-        case .top:    return results
-        case .movies: return results.filter { $0.kind == .movie }
-        case .shows:  return results.filter { $0.kind == .tv }
-        }
-    }
-
-    var body: some View {
-        VStack(spacing: 16) {
-            if isSearching {
-                ProgressView().padding(.top, 24)
-                Spacer()
-            } else if filtered.isEmpty {
-                ContentUnavailableView("No Results", systemImage: "magnifyingglass", description: Text("Try a different search."))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    LazyVGrid(columns: grid, spacing: 12) {
-                        ForEach(filtered, id: \.id) { item in
-                            VStack(alignment: .leading, spacing: 6) {
-                                MediaTile(
-                                    ref: .init(id: item.id, kind: item.kind),
-                                    title: item.title,
-                                    posterPath: item.posterPath,
-                                    showTitle: true,              // shows the title under the poster
-                                    selectedRef: $selectedRef     // <-- tap opens the sheet
-                                )
-                                
-                                HStack {
-                                    // Optional: Release date
-                                    if let year = item.year {
-                                        Text(String(year))
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    
-                                    Spacer()
-                                    
-                                    // Optional: Media type
-                                    if selectedFilter == .top {
-//                                        Text("•")
-//                                            .foregroundStyle(.secondary)
-                                        
-                                        if item.kind == .movie {
-                                            Text("Movie")
-                                                .font(.caption)
-                                                .foregroundStyle(.purple)
-                                        }
-                                        
-                                        if item.kind == .tv {
-                                            Text("TV Show")
-                                                .font(.caption)
-                                                .foregroundStyle(.blue)
-                                        }
-                                    }
-                                }
-                            }
-                            .frame(width: 110) // keeps a consistent grid width
-                        }
-                    }
-                    .padding(.horizontal)
-                    .padding(.top, 8)
-                }
-            }
-        }
-        .animation(.easeInOut, value: isSearching)
-        .animation(.easeInOut, value: results)
-        .safeAreaBar(edge: .top) {
-            Picker("", selection: $selectedFilter) {
-                ForEach(SearchView.Filter.allCases) { f in
-                    Text(f.rawValue).tag(f)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-        }
-    }
-}
-
-// MARK: - Suggested Section
-private struct SuggestedSection: View {
-    @ObservedObject var store: SuggestionsStore
-    @Binding var selectedRef: MediaRef?
-
-    var body: some View {
-        Group {
-            if store.isLoading && store.suggested.isEmpty {
-                ProgressView()
-                    .frame(maxWidth: .infinity)
-            } else if let err = store.errorText, store.suggested.isEmpty {
-                ContentUnavailableView(
-                    "Couldn’t load suggestions",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text(err)
-                )
-            } else {
-                ShelfSection(title: "", items: store.suggested, selectedRef: $selectedRef)
-            }
-        }
-        // nice-to-have for smooth updates
-        .animation(.easeInOut, value: store.suggested)
-        .animation(.easeInOut, value: store.isLoading)
-    }
-}
-
-// MARK: - Suggestions Helper
-private final class SuggestionsHolder: ObservableObject {
-    @Published var store: SuggestionsStore?
-
-    @MainActor
-    func ensureStore(env: AppEnvironment, modelContext: ModelContext) {
-        guard store == nil else { return }
-        let newStore = SuggestionsStore(env: env, modelContext: modelContext)
-        store = newStore
-        // Kick off the first load NOW so the UI has data on first appearance
-        Task { await newStore.refresh() }
-    }
-}
-
-// Convenience accessor used in the body
-private extension SearchView {
-    var store: SuggestionsStore? { suggestionsHolder.store }
-}
-
-// MARK: - Preview Provider
-#Preview {
-    // In-memory SwiftData container for previews
-    let schema = Schema([MediaItem.self, ProgressItem.self])
-    let config = ModelConfiguration(isStoredInMemoryOnly: true)
-    let container = try! ModelContainer(for: schema, configurations: [config])
-
-//    // Preview environment object
-//    let env = AppEnvironment(modelContainer: container, contentAPI: MockAPI())
-    
-    // Load your actual TMDB key from Secrets.plist
-    let env = AppEnvironment(
-        modelContainer: container,
-        contentAPI: TMDBClient(apiKey: Secrets.tmdbAPIKey)
-    )
-
-    return SearchView()
-        .environmentObject(env)
-        .modelContainer(container)
-}
-
-
-
