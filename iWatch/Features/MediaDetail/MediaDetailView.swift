@@ -361,7 +361,6 @@ private struct MediaDetailBody: View {
                                 Text("RATINGS")
                             }
                             .font(.caption.bold())
-                            .foregroundStyle(.secondary)
 
                             Text(String(format: "%.1f", rating / 2))
                                 .font(.title3.bold())

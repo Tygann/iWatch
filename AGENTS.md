@@ -20,5 +20,6 @@
 
 ## Key commands
 
+- Use the Build iOS Apps plugin and its XcodeBuildMCP tools for every iOS build, test, run, simulator, or UI-debugging pass; do not substitute raw `xcodebuild` when those tools are available.
 - Build/test through XcodeBuildMCP with project `iWatch.xcodeproj`, scheme `iWatch`.
 - Sync changes require `-only-testing:iWatchTests` at minimum.
