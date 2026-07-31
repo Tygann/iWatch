@@ -573,7 +573,20 @@ final class LibraryRepository {
     }
 
     private func isMediaRecordComplete(_ record: MediaRecord) -> Bool {
-        !record.title.isEmpty && record.posterPath != nil && (record.overview?.isEmpty == false || record.kind == .movie)
+        guard !record.title.isEmpty, record.posterPath != nil else { return false }
+
+        switch record.kind {
+        case .movie:
+            // Search results only cache title/poster. Do not present that partial
+            // record as a full movie detail, or the detail sheet has only its header.
+            return record.overview?.isEmpty == false
+                || record.backdropPath != nil
+                || record.runtimeMinutes != nil
+        case .show:
+            return record.overview?.isEmpty == false && record.seasonsData != nil
+        default:
+            return false
+        }
     }
 
     private func mapMediaRecord(_ record: MediaRecord) throws -> MediaDetails {
