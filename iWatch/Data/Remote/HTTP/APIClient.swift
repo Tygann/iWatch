@@ -21,6 +21,9 @@ final class APIClient {
         let (data, resp) = try await session.data(for: route.urlRequest())
         guard let http = resp as? HTTPURLResponse else { throw AppError.network("No response") }
         guard (200..<300).contains(http.statusCode) else {
+            if http.statusCode == 429 {
+                throw AppError.rateLimited(retryAfter: Self.retryAfter(from: http))
+            }
             throw AppError.httpStatus(code: http.statusCode,
                                       message: String(data: data, encoding: .utf8))
         }
@@ -40,6 +43,9 @@ final class APIClient {
         let (data, resp) = try await session.data(for: route.urlRequest())
         guard let http = resp as? HTTPURLResponse else { throw AppError.network("No response") }
         guard (200..<300).contains(http.statusCode) else {
+            if http.statusCode == 429 {
+                throw AppError.rateLimited(retryAfter: Self.retryAfter(from: http))
+            }
             throw AppError.httpStatus(code: http.statusCode,
                                       message: String(data: data, encoding: .utf8))
         }
@@ -55,6 +61,9 @@ final class APIClient {
         let (data, resp) = try await session.data(for: request)
         guard let http = resp as? HTTPURLResponse else { throw AppError.network("No response") }
         guard (200..<300).contains(http.statusCode) else {
+            if http.statusCode == 429 {
+                throw AppError.rateLimited(retryAfter: Self.retryAfter(from: http))
+            }
             throw AppError.httpStatus(code: http.statusCode,
                                       message: String(data: data, encoding: .utf8))
         }
@@ -80,6 +89,13 @@ final class APIClient {
             dec = d
         }
         return try dec.decode(T.self, from: data)
+    }
+}
+
+private extension APIClient {
+    nonisolated static func retryAfter(from response: HTTPURLResponse) -> TimeInterval? {
+        guard let value = response.value(forHTTPHeaderField: "Retry-After") else { return nil }
+        return TimeInterval(value)
     }
 }
 

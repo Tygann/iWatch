@@ -310,7 +310,7 @@ actor SyncEngine {
                 operation.claimedAt = nil
                 if isRetryable(error), operation.attemptCount < 5 {
                     operation.status = .pending
-                    operation.nextAttemptAt = attemptedAt.addingTimeInterval(retryDelay(forAttempt: operation.attemptCount))
+                    operation.nextAttemptAt = attemptedAt.addingTimeInterval(retryDelay(forAttempt: operation.attemptCount, error: error))
                 } else {
                     operation.status = .deadletter
                     operation.nextAttemptAt = nil
@@ -346,11 +346,15 @@ actor SyncEngine {
         if case let .httpStatus(code, _) = error as? AppError {
             return code == 408 || code == 425 || code == 429 || (500...599).contains(code)
         }
+        if case .rateLimited = error as? AppError { return true }
         return true
     }
 
-    private func retryDelay(forAttempt attempt: Int) -> TimeInterval {
-        min(pow(2, Double(max(attempt - 1, 0))) * 30, 30 * 60)
+    private func retryDelay(forAttempt attempt: Int, error: Error) -> TimeInterval {
+        if case let .rateLimited(retryAfter) = error as? AppError, let retryAfter {
+            return max(retryAfter, 1)
+        }
+        return min(pow(2, Double(max(attempt - 1, 0))) * 30, 30 * 60)
     }
 
     private func process(operation: SyncOperationRecord, context: ModelContext) async throws {
