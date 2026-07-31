@@ -1,0 +1,22 @@
+name: iOS verification
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject committed secrets
+        run: |
+          test ! -f iWatch/Secrets.plist
+          ! git grep -nE '(TRAKT_CLIENT_SECRET|TMDB_API_KEY).*[=:][[:space:]]*[A-Za-z0-9_-]{24,}' -- ':!iWatch/Secrets.example.plist'
+      - name: Check whitespace
+        run: git diff --check HEAD^ HEAD
+      - name: Build
+        run: xcodebuild -project iWatch.xcodeproj -scheme iWatch -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build
+      - name: Unit tests
+        run: xcodebuild test -project iWatch.xcodeproj -scheme iWatch -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:iWatchTests
