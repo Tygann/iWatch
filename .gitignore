@@ -1,0 +1,13 @@
+# Local credentials and developer-specific Xcode state
+iWatch/Secrets.plist
+*.xcuserstate
+*.xcscmblueprint
+**/xcuserdata/
+
+# Xcode build products
+DerivedData/
+build/
+*.xcresult
+
+# Local Codex diagnostics
+.codex-log/
