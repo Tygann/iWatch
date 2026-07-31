@@ -232,9 +232,10 @@ struct MediaDetailView: View {
                         await newModel.load()
                         guard !Task.isCancelled else { return }
                         model = newModel
-                    }
+                }
             }
         }
+        .presentationDetents([.large])
     }
 }
 
