@@ -371,6 +371,7 @@ private struct MediaDetailBody: View {
                             RatingBadge(rating: rating / 2)
                                 .font(.caption)
                         }
+                        .foregroundStyle(.gray)
 
                         if details.releaseDate != nil
                             || details.movieRuntimeMinutes != nil
@@ -683,6 +684,7 @@ private struct MediaDetailBody: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
+        .foregroundStyle(.secondary)
         .fixedSize(horizontal: true, vertical: false)
     }
 
