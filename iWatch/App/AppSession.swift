@@ -114,6 +114,7 @@ final class AppSession {
     func runSync(reason: SyncReason = .userInitiated) async {
         guard !isErasingAllData else { return }
         guard pendingTraktAccountKey == nil else { return }
+        guard TraktLinkStore.activeAccountKey != nil else { return }
         guard await refreshAuthState(), !isSyncing else { return }
         isSyncing = true
         syncMaintenanceMessage = nil
@@ -398,6 +399,19 @@ final class AppSession {
             switch status {
             case .connected:
                 traktConnected = true
+                guard TraktLinkStore.activeAccountKey != nil else {
+                    BackgroundRefresh.cancelScheduledRefresh()
+                    if pendingTraktAccountKey == nil {
+                        do {
+                            pendingTraktAccountKey = try await trakt.authenticatedAccount().syncKey
+                            traktLastError = nil
+                            syncMaintenanceMessage = "Choose how to link this Trakt account before syncing."
+                        } catch {
+                            traktLastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                        }
+                    }
+                    return false
+                }
                 BackgroundRefresh.scheduleAppRefresh()
                 return true
             case .disconnected:
@@ -481,6 +495,7 @@ final class AppSession {
     }
 
     private func completeTraktOAuth(callbackURL: URL) async {
+        var exchangedToken = false
         defer {
             traktIsConnecting = false
             pendingOAuthState = nil
@@ -493,11 +508,18 @@ final class AppSession {
 
             let code = try trakt.authorizationCode(from: callbackURL, expectedState: pendingOAuthState)
             _ = try await trakt.exchangeCodeForToken(code: code, redirectURI: traktRedirectURI)
+            exchangedToken = true
             pendingTraktAccountKey = try await trakt.authenticatedAccount().syncKey
             traktConnected = true
             traktLastError = nil
             syncMaintenanceMessage = "Choose how to link this Trakt account before syncing."
         } catch {
+            if exchangedToken {
+                await trakt.clearAuth()
+            }
+            traktConnected = false
+            pendingTraktAccountKey = nil
+            BackgroundRefresh.cancelScheduledRefresh()
             traktLastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             await refreshSyncDiagnostics()
         }

@@ -18,7 +18,7 @@ struct TraktAuthHardeningTests {
         let queryItems = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value) })
 
         #expect(request.state == "state-123")
-        #expect(components.host == "trakt.tv")
+        #expect(components.host == "auth.trakt.tv")
         #expect(components.path == "/oauth/authorize")
         #expect(queryItems["response_type"] == "code")
         #expect(queryItems["client_id"] == "client-id")
@@ -73,6 +73,7 @@ struct TraktAuthHardeningTests {
 
         MockTraktURLProtocol.handler = { request in
             let url = try #require(request.url)
+            #expect(url.host == "auth.trakt.tv")
             #expect(url.path == "/oauth/token")
             #expect(request.httpMethod == "POST")
 
@@ -107,6 +108,65 @@ struct TraktAuthHardeningTests {
         #expect(stored?.accessToken == "new-access")
         #expect(stored?.createdAt != nil)
     }
+
+    @Test
+    func authenticatedAccountUsesUUIDWhenLegacyTraktIDIsNull() async throws {
+        let authStore = InMemoryTraktAuthStore()
+        await authStore.save(token: validToken())
+
+        MockTraktURLProtocol.handler = { request in
+            let url = try #require(request.url)
+            #expect(url.path == "/users/settings")
+
+            let response = HTTPURLResponse(
+                url: url,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            let body = #"{"user":{"ids":{"trakt":null,"uuid":"A12B34CD-5678"}}}"#
+            return (response, Data(body.utf8))
+        }
+        defer { MockTraktURLProtocol.handler = nil }
+
+        let account = try await makeTraktService(authStore: authStore).authenticatedAccount()
+
+        #expect(account.syncKey == "trakt:uuid:a12b34cd-5678")
+    }
+
+    @Test
+    func authenticatedAccountPreservesLegacyTraktIDWhenAvailable() async throws {
+        let authStore = InMemoryTraktAuthStore()
+        await authStore.save(token: validToken())
+
+        MockTraktURLProtocol.handler = { request in
+            let url = try #require(request.url)
+            let response = HTTPURLResponse(
+                url: url,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            let body = #"{"user":{"ids":{"trakt":42,"uuid":"A12B34CD-5678"}}}"#
+            return (response, Data(body.utf8))
+        }
+        defer { MockTraktURLProtocol.handler = nil }
+
+        let account = try await makeTraktService(authStore: authStore).authenticatedAccount()
+
+        #expect(account.syncKey == "trakt:42")
+    }
+}
+
+private func validToken() -> TokenResponse {
+    TokenResponse(
+        accessToken: "valid-access",
+        tokenType: "bearer",
+        expiresIn: 3600,
+        refreshToken: "valid-refresh",
+        scope: "public",
+        createdAt: Int(Date().timeIntervalSince1970)
+    )
 }
 
 private func makeTraktService(authStore: TraktAuthStore = InMemoryTraktAuthStore()) -> TraktService {

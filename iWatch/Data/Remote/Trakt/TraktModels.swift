@@ -65,9 +65,19 @@ public struct TraktAuthorizationRequest: Sendable, Equatable {
 }
 
 struct TraktAccount: Codable, Sendable {
-    let id: Int
+    let ids: TraktAccountIDs
 
-    var syncKey: String { "trakt:\(id)" }
+    var syncKey: String {
+        if let traktID = ids.trakt {
+            return "trakt:\(traktID)"
+        }
+        return "trakt:uuid:\(ids.uuid.lowercased())"
+    }
+}
+
+struct TraktAccountIDs: Codable, Sendable {
+    let trakt: Int?
+    let uuid: String
 }
 
 struct TraktSettingsResponse: Codable, Sendable {

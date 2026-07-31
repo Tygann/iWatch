@@ -6,6 +6,7 @@ final class TraktService: TraktSyncing {
     private let clientSecret: String
     private let authStore: TraktAuthStore
     private let base = URL(string: "https://api.trakt.tv")!
+    private let authBase = URL(string: "https://auth.trakt.tv")!
     private let encoder: JSONEncoder
 
     init(apiClient: APIClient, clientId: String, clientSecret: String, authStore: TraktAuthStore = KeychainTraktAuthStore()) {
@@ -59,7 +60,7 @@ final class TraktService: TraktSyncing {
             throw TraktAuthError.invalidRedirectURI
         }
 
-        var comps = URLComponents(string: "https://trakt.tv/oauth/authorize")
+        var comps = URLComponents(url: authBase.appendingPathComponent("oauth/authorize"), resolvingAgainstBaseURL: false)
         comps?.queryItems = [
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "client_id", value: clientId),
@@ -274,7 +275,10 @@ final class TraktService: TraktSyncing {
 
     private func sendTokenRequest(body: [String: Any]) async throws -> TokenResponse {
         let bodyData = try JSONSerialization.data(withJSONObject: body)
-        let req = try await request(path: "oauth/token", method: "POST", body: bodyData, authorized: false)
+        var req = URLRequest(url: authBase.appendingPathComponent("oauth/token"))
+        req.httpMethod = "POST"
+        req.httpBody = bodyData
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         do {
             let token = try await api.send(req, decode: TokenResponse.self, decoder: .trakt)
