@@ -45,6 +45,7 @@ struct FoundationRewriteTests {
         let progressUpdates = await progress.values
         #expect(progressUpdates.contains(.downloadingWatchlist(1)))
         #expect(progressUpdates.contains(.downloadingHistory(1)))
+        #expect(progressUpdates.contains(.downloadingShowProgress))
         #expect(progressUpdates.contains(.saving(watchlistItems: 1, historyItems: 1)))
 
         let diagnostics = await engine.diagnostics()
@@ -556,6 +557,7 @@ struct FoundationRewriteTests {
         #expect(snapshot.getLastActivitiesCalls == 1)
         #expect(snapshot.getWatchlistCalls == 0)
         #expect(snapshot.getHistoryCalls == 0)
+        #expect(snapshot.getActiveShowProgressCalls == 1)
     }
 
     @Test
@@ -605,6 +607,107 @@ struct FoundationRewriteTests {
         #expect(rows.count == 1)
         #expect(rows[0].isInWatchlist == false)
         #expect(rows[0].dirty == false)
+    }
+
+    @Test
+    func activeTraktProgressSeedsDurableFollowing() async throws {
+        let persistence = makePersistence()
+        let remote = FakeTraktSyncRemote(
+            token: makeToken(),
+            lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now),
+            watchlist: [],
+            history: [makeEpisodeHistoryItem(historyID: 8001, watchedAt: .now)],
+            activeShowProgress: [makeActiveShowProgress()]
+        )
+        let engine = SyncEngine(
+            persistence: persistence,
+            trakt: remote,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+        )
+
+        try await engine.ensureInitialBaseline()
+
+        let rows = try fetchAll(WatchlistRecord.self, from: persistence)
+        #expect(rows.count == 1)
+        #expect(rows[0].mediaID.kind == .show)
+        #expect(rows[0].tmdbID == 22)
+        #expect(rows[0].isInWatchlist == true)
+        #expect(rows[0].dirty == false)
+        #expect(try fetchAll(SyncOperationRecord.self, from: persistence).isEmpty)
+    }
+
+    @Test
+    func activeProgressDoesNotUndoExplicitUnfollow() async throws {
+        let persistence = makePersistence()
+        let context = persistence.makeContext()
+        context.insert(
+            WatchlistRecord(
+                mediaID: MediaID(kind: .show, id: 22, traktID: 222),
+                isInWatchlist: false,
+                dirty: false
+            )
+        )
+        try context.save()
+
+        let engine = SyncEngine(
+            persistence: persistence,
+            trakt: FakeTraktSyncRemote(
+                token: makeToken(),
+                lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now),
+                watchlist: [],
+                history: [makeEpisodeHistoryItem(historyID: 8001, watchedAt: .now)],
+                activeShowProgress: [makeActiveShowProgress()]
+            ),
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+        )
+
+        try await engine.ensureInitialBaseline()
+
+        let rows = try fetchAll(WatchlistRecord.self, from: persistence)
+        #expect(rows.count == 1)
+        #expect(rows[0].isInWatchlist == false)
+    }
+
+    @Test
+    func watchedItemStaysFollowedAfterTraktAutoRemovesItFromWatchlist() async throws {
+        let persistence = makePersistence()
+        let context = persistence.makeContext()
+        let oldActivity = Date().addingTimeInterval(-3600)
+        context.insert(
+            WatchlistRecord(
+                mediaID: MediaID(kind: .movie, id: 11, traktID: 111),
+                isInWatchlist: true,
+                localUpdatedAt: oldActivity,
+                remoteUpdatedAt: oldActivity,
+                dirty: false
+            )
+        )
+        context.insert(
+            SyncStateRecord(
+                accountKey: "default",
+                initialBaselineComplete: true,
+                lastSuccessfulPullAt: oldActivity,
+                lastSuccessfulPushAt: oldActivity,
+                lastSeenRemoteActivityAt: oldActivity
+            )
+        )
+        try context.save()
+
+        let engine = SyncEngine(
+            persistence: persistence,
+            trakt: FakeTraktSyncRemote(
+                token: makeToken(),
+                lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now),
+                watchlist: [],
+                history: [makeMovieHistoryItem(historyID: 7001, watchedAt: .now)]
+            ),
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+        )
+
+        #expect(await engine.run(reason: .foreground) == true)
+        let rows = try fetchAll(WatchlistRecord.self, from: persistence)
+        #expect(rows.count == 1)
+        #expect(rows[0].isInWatchlist == true)
     }
 
     @Test
@@ -961,6 +1064,43 @@ private func makeMovieHistoryItem(historyID: Int, watchedAt: Date) -> TraktHisto
     )
 }
 
+private func makeEpisodeHistoryItem(historyID: Int, watchedAt: Date) -> TraktHistoryItemDTO {
+    TraktHistoryItemDTO(
+        id: historyID,
+        watchedAt: watchedAt,
+        action: "scrobble",
+        type: .episode,
+        movie: nil,
+        show: TraktShowDTO(
+            title: "Tracked Show",
+            year: 2024,
+            ids: TraktIDs(trakt: 222, slug: nil, tmdb: 22, imdb: nil)
+        ),
+        season: nil,
+        episode: TraktEpisodeDTO(
+            season: 1,
+            number: 1,
+            title: "Pilot",
+            ids: TraktIDs(trakt: 333, slug: nil, tmdb: 33, imdb: nil)
+        )
+    )
+}
+
+private func makeActiveShowProgress() -> TraktShowProgressDTO {
+    TraktShowProgressDTO(
+        show: TraktShowDTO(
+            title: "Tracked Show",
+            year: 2024,
+            ids: TraktIDs(trakt: 222, slug: nil, tmdb: 22, imdb: nil)
+        ),
+        progress: TraktShowProgressSummaryDTO(
+            aired: 10,
+            completed: 1,
+            lastWatchedAt: .now
+        )
+    )
+}
+
 private func makeLastActivities(watchlistAt: Date?, historyAt: Date?) -> TraktLastActivitiesDTO {
     TraktLastActivitiesDTO(
         all: [watchlistAt, historyAt].compactMap { $0 }.max(),
@@ -996,6 +1136,7 @@ private actor FakeTraktSyncRemote: TraktSyncing {
         let getLastActivitiesCalls: Int
         let getWatchlistCalls: Int
         let getHistoryCalls: Int
+        let getActiveShowProgressCalls: Int
         let addWatchlistCalls: Int
         let removeWatchlistCalls: Int
         let addHistoryCalls: Int
@@ -1006,11 +1147,13 @@ private actor FakeTraktSyncRemote: TraktSyncing {
     private let lastActivities: TraktLastActivitiesDTO
     private let watchlist: [TraktWatchlistItemDTO]
     private let history: [TraktHistoryItemDTO]
+    private let activeShowProgress: [TraktShowProgressDTO]
     private let addWatchlistDelayNanos: UInt64
 
     private var getLastActivitiesCalls = 0
     private var getWatchlistCalls = 0
     private var getHistoryCalls = 0
+    private var getActiveShowProgressCalls = 0
     private var addWatchlistCalls = 0
     private var removeWatchlistCalls = 0
     private var addHistoryCalls = 0
@@ -1020,11 +1163,13 @@ private actor FakeTraktSyncRemote: TraktSyncing {
          lastActivities: TraktLastActivitiesDTO,
          watchlist: [TraktWatchlistItemDTO],
          history: [TraktHistoryItemDTO],
+         activeShowProgress: [TraktShowProgressDTO] = [],
          addWatchlistDelayNanos: UInt64 = 0) {
         self.token = token
         self.lastActivities = lastActivities
         self.watchlist = watchlist
         self.history = history
+        self.activeShowProgress = activeShowProgress
         self.addWatchlistDelayNanos = addWatchlistDelayNanos
     }
 
@@ -1045,6 +1190,11 @@ private actor FakeTraktSyncRemote: TraktSyncing {
     func getHistory(startAt: Date?) async throws -> [TraktHistoryItemDTO] {
         getHistoryCalls += 1
         return history
+    }
+
+    func getActiveShowProgress() async throws -> [TraktShowProgressDTO] {
+        getActiveShowProgressCalls += 1
+        return activeShowProgress
     }
 
     func addToWatchlist(_ items: [MediaID]) async throws {
@@ -1075,6 +1225,7 @@ private actor FakeTraktSyncRemote: TraktSyncing {
             getLastActivitiesCalls: getLastActivitiesCalls,
             getWatchlistCalls: getWatchlistCalls,
             getHistoryCalls: getHistoryCalls,
+            getActiveShowProgressCalls: getActiveShowProgressCalls,
             addWatchlistCalls: addWatchlistCalls,
             removeWatchlistCalls: removeWatchlistCalls,
             addHistoryCalls: addHistoryCalls,

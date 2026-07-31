@@ -5,6 +5,7 @@ enum SyncProgress: Equatable, Sendable {
     case checkingLocalData
     case downloadingWatchlist(Int)
     case downloadingHistory(Int)
+    case downloadingShowProgress
     case saving(watchlistItems: Int, historyItems: Int)
     case uploadingChanges(Int)
     case complete
@@ -16,6 +17,7 @@ enum SyncProgress: Equatable, Sendable {
         case .checkingLocalData: return "Checking local data…"
         case .downloadingWatchlist: return "Downloading watchlist…"
         case .downloadingHistory: return "Downloading history…"
+        case .downloadingShowProgress: return "Downloading show progress…"
         case .saving: return "Saving Trakt library…"
         case .uploadingChanges: return "Uploading local changes…"
         case .complete: return "Up to Date"

@@ -7,7 +7,7 @@ import SwiftData
 private final class MoviesScreenModel {
     enum Segment: String, CaseIterable, Identifiable {
         case following = "Following"
-        case toWatch = "Watchlist"
+        case toWatch = "To Watch"
 
         var id: String { rawValue }
     }
@@ -149,7 +149,7 @@ private struct MoviesViewBody: View {
                                            description: Text(errorText))
                 } else if model.filteredItems.isEmpty {
                     ContentUnavailableView(
-                        model.segment == .following ? "No tracked movies yet" : "Nothing to watch",
+                        model.segment == .following ? "No followed movies yet" : "Nothing to watch",
                         systemImage: "film",
                         description: Text(model.segment == .following
                                           ? "Add movies from Search to start tracking."

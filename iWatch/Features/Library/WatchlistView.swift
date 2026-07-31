@@ -37,7 +37,7 @@ private final class WatchlistScreenModel {
         }
     }
 
-    var title: String { kind == .movie ? "Movie Watchlist" : "Continue Watching" }
+    var title: String { kind == .movie ? "To Watch" : "Continue Watching" }
 
     func markNextEpisodeWatched(for item: LibraryShowItem) async {
         guard let next = item.progress.nextEpisode else { return }
@@ -114,7 +114,7 @@ private struct WatchlistBody: View {
                 ContentUnavailableView(
                     "You’re all caught up",
                     systemImage: "tv",
-                    description: Text("No released unwatched episodes in your watchlist.")
+                    description: Text("No followed shows have a released unwatched episode.")
                 )
                 .frame(maxWidth: .infinity, minHeight: 300)
                 .padding(.top, 40)

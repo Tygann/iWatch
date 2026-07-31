@@ -309,10 +309,17 @@ actor SyncEngine {
                 await progress?(.downloadingHistory(count))
             }
             : []
+        await progress?(.downloadingShowProgress)
+        let activeShowProgress = try await trakt.getActiveShowProgress()
         if shouldPullWatchlist || shouldPullHistory {
             await progress?(.saving(watchlistItems: remoteWatchlist.count, historyItems: remoteHistory.count))
         }
         let now = Date()
+
+        if shouldPullHistory {
+            try mergeHistory(remoteHistory, context: context, now: now)
+        }
+        mergeActiveShowProgress(activeShowProgress, context: context, now: now)
 
         if shouldPullWatchlist {
             try mergeWatchlist(
@@ -320,12 +327,9 @@ actor SyncEngine {
                 context: context,
                 now: now,
                 allowRemoteRemoval: !initialBaseline,
-                remoteUpdatedAt: remoteActivities?.watchlistActivityAt
+                remoteUpdatedAt: remoteActivities?.watchlistActivityAt,
+                activeShowProgress: activeShowProgress
             )
-        }
-
-        if shouldPullHistory {
-            try mergeHistory(remoteHistory, context: context, now: now)
         }
 
         state.lastSuccessfulPullAt = now
@@ -468,7 +472,8 @@ actor SyncEngine {
                                 context: ModelContext,
                                 now: Date,
                                 allowRemoteRemoval: Bool,
-                                remoteUpdatedAt: Date?) throws {
+                                remoteUpdatedAt: Date?,
+                                activeShowProgress: [TraktShowProgressDTO]) throws {
         var remoteKeys = Set<String>()
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
         let existingWatchlist = allWatchlist(context: context)
@@ -534,8 +539,20 @@ actor SyncEngine {
 
         guard allowRemoteRemoval else { return }
 
-        let missingRows = existingWatchlist
-            .filter { $0.isInWatchlist && !$0.dirty && !remoteKeys.contains($0.mediaKey) }
+        let activeShowKeys = Set(activeShowProgress.compactMap { item -> String? in
+            guard item.progress.completed > 0,
+                  item.progress.completed < item.progress.aired,
+                  let tmdbID = item.show.ids.tmdb else { return nil }
+            return MediaID(kind: .show, id: tmdbID, traktID: item.show.ids.trakt).stableKey
+        })
+        let historyKeys = historyBackedMediaKeys(context: context)
+        let missingRows = existingWatchlist.filter {
+            $0.isInWatchlist
+                && !$0.dirty
+                && !remoteKeys.contains($0.mediaKey)
+                && !activeShowKeys.contains($0.mediaKey)
+                && !historyKeys.contains($0.mediaKey)
+        }
 
         guard !missingRows.isEmpty else { return }
 
@@ -550,6 +567,65 @@ actor SyncEngine {
             row.remoteUpdatedAt = remoteUpdatedAt ?? now
             row.localUpdatedAt = max(row.localUpdatedAt, now)
         }
+    }
+
+    private func mergeActiveShowProgress(_ remoteItems: [TraktShowProgressDTO],
+                                         context: ModelContext,
+                                         now: Date) {
+        let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
+        var watchlistByKey = Dictionary(
+            allWatchlist(context: context).map { ($0.mediaKey, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var mediaByKey = Dictionary(
+            allMedia(context: context).map { (mediaLookupKey(kind: $0.kind, tmdbID: $0.tmdbID), $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        for item in remoteItems {
+            guard item.progress.completed > 0,
+                  item.progress.completed < item.progress.aired,
+                  let tmdbID = item.show.ids.tmdb else { continue }
+
+            let mediaID = MediaID(kind: .show, id: tmdbID, traktID: item.show.ids.trakt)
+            upsertMediaIndexed(
+                mediaID: mediaID,
+                title: item.show.title ?? "Unknown",
+                year: item.show.year,
+                context: context,
+                mediaByKey: &mediaByKey
+            )
+
+            // A persisted false row is an explicit iWatch unfollow. Progress must
+            // not silently undo that choice on the next Trakt pull.
+            guard watchlistByKey[mediaID.stableKey] == nil else { continue }
+            let record = WatchlistRecord(
+                mediaID: mediaID,
+                isInWatchlist: true,
+                listedAt: item.progress.lastWatchedAt,
+                localUpdatedAt: now,
+                remoteUpdatedAt: item.progress.lastWatchedAt ?? now,
+                dirty: false,
+                generationID: generationID
+            )
+            context.insert(record)
+            watchlistByKey[mediaID.stableKey] = record
+        }
+    }
+
+    private func historyBackedMediaKeys(context: ModelContext) -> Set<String> {
+        Set(allEvents(context: context).compactMap { event -> String? in
+            guard !event.tombstoned else { return nil }
+            switch event.mediaID.kind {
+            case .movie:
+                return MediaID(kind: .movie, id: event.tmdbID, traktID: event.traktID).stableKey
+            case .episode:
+                guard let showTMDbID = event.showTMDbID else { return nil }
+                return MediaID(kind: .show, id: showTMDbID, traktID: event.showTraktID).stableKey
+            default:
+                return nil
+            }
+        })
     }
 
     private func mergeHistory(_ remoteItems: [TraktHistoryItemDTO],

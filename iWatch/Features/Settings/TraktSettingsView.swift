@@ -36,7 +36,7 @@ struct TraktSettingsView: View {
             }
             Button("Decide Later", role: .cancel) {}
         } message: {
-            Text("Import uses your Trakt library as the starting point. Upload sends this app’s existing watchlist and history to Trakt.")
+            Text("Import uses your Trakt Watchlist and active progress as the starting point. Upload sends existing Following items to Trakt Watchlist and watched history to Trakt.")
         }
         .confirmationDialog(
             "Disconnect Trakt?",
@@ -78,7 +78,7 @@ struct TraktSettingsView: View {
         } header: {
             Text("Account")
         } footer: {
-            Text("Trakt can keep your watchlist and watched history in sync with other apps and services connected to your Trakt account.")
+            Text("Follow actions sync to Trakt Watchlist and watched activity syncs to Trakt history. iWatch keeps Following durable after playback.")
         }
     }
 
