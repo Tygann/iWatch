@@ -258,15 +258,22 @@ final class LibraryRepository {
             .sorted(by: { $0.localUpdatedAt > $1.localUpdatedAt })
 
         let events = allWatchedEventRecords(context: context)
+        let mediaByKey = Dictionary(
+            allMediaRecords(context: context).map { ("\($0.kind.rawValue):\($0.tmdbID)", $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let watchedMovieIDs = Set(events.compactMap { event -> Int? in
+            guard event.mediaID.kind == .movie, !event.tombstoned else { return nil }
+            return event.tmdbID
+        })
         return watchlist.map { row in
-            let media = mediaRecord(for: row.mediaID, context: context)
-            let watched = events.contains { $0.mediaID.kind == .movie && $0.tmdbID == row.tmdbID && !$0.tombstoned }
+            let media = mediaByKey["\(MediaKind.movie.rawValue):\(row.tmdbID)"]
             return LibraryMovieItem(
                 mediaID: row.mediaID,
                 title: media?.title ?? "Unknown",
                 posterPath: media?.posterPath,
                 releaseDate: media?.releaseDate,
-                isWatched: watched
+                isWatched: watchedMovieIDs.contains(row.tmdbID)
             )
         }
     }
@@ -277,45 +284,55 @@ final class LibraryRepository {
             .filter { $0.mediaID.kind == .show && $0.isInWatchlist }
             .sorted(by: { $0.localUpdatedAt > $1.localUpdatedAt })
 
-        var items: [LibraryShowItem] = []
-        for row in rows {
-            let mediaID = row.mediaID
-            let progress = try await showProgress(for: mediaID)
-            let mediaRecord = mediaRecord(for: mediaID, context: persistence.makeContext())
-            let status = mapShowStatus(mediaRecord)
+        let mediaByID = Dictionary(
+            allMediaRecords(context: context)
+                .filter { $0.kind == .show }
+                .map { ($0.tmdbID, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let episodesByShowID = Dictionary(
+            grouping: allEpisodeRecords(context: context),
+            by: \.showTMDbID
+        )
+        let eventsByShowID = Dictionary(
+            grouping: allWatchedEventRecords(context: context).filter { !$0.tombstoned }
+        ) { event in
+            event.showTMDbID ?? -1
+        }
 
-            items.append(
-                LibraryShowItem(
-                    mediaID: mediaID,
-                    title: mediaRecord?.title ?? "Unknown",
-                    posterPath: mediaRecord?.posterPath,
-                    status: status,
-                    progress: progress
+        return rows.map { row in
+            let media = mediaByID[row.tmdbID]
+            return LibraryShowItem(
+                mediaID: row.mediaID,
+                title: media?.title ?? "Unknown",
+                posterPath: media?.posterPath,
+                status: mapShowStatus(media),
+                progress: makeShowProgress(
+                    for: row.mediaID,
+                    media: media,
+                    episodeRows: episodesByShowID[row.tmdbID] ?? [],
+                    events: eventsByShowID[row.tmdbID] ?? []
                 )
             )
         }
-        return items
     }
 
     func showProgress(for showID: MediaID) async throws -> ShowProgress {
-        var context = persistence.makeContext()
-        var episodeRows = allEpisodeRecords(forShowID: showID.tmdbID, context: context)
+        let context = persistence.makeContext()
+        let episodeRows = allEpisodeRecords(forShowID: showID.tmdbID, context: context)
+        let events = watchedEventRecords(forShowID: showID.tmdbID, context: context).filter { !$0.tombstoned }
+        return makeShowProgress(
+            for: showID,
+            media: mediaRecord(for: showID, context: context),
+            episodeRows: episodeRows,
+            events: events
+        )
+    }
 
-        if episodeRows.isEmpty {
-            _ = try await mediaDetails(for: MediaID(kind: .show, id: showID.tmdbID, traktID: showID.traktID))
-            context = persistence.makeContext()
-            if let media = mediaRecord(for: showID, context: context),
-               let seasons = decodeSeasons(media.seasonsData) {
-                for season in seasons where season.seasonNumber >= 0 {
-                    _ = try? await episodes(for: showID, seasonNumber: season.seasonNumber)
-                }
-                context = persistence.makeContext()
-                episodeRows = allEpisodeRecords(forShowID: showID.tmdbID, context: context)
-            }
-        }
-
-        let events = watchedEventRecords(forShowID: showID.tmdbID, context: context)
-            .filter { !$0.tombstoned }
+    private func makeShowProgress(for showID: MediaID,
+                                  media: MediaRecord?,
+                                  episodeRows: [EpisodeRecord],
+                                  events: [WatchedEventRecord]) -> ShowProgress {
         let watchedKeys = Set(events.compactMap { event -> String? in
             guard let season = event.seasonNumber, let episode = event.episodeNumber else { return nil }
             return "ep:\(showID.tmdbID):S\(season):E\(episode)"
@@ -345,7 +362,7 @@ final class LibraryRepository {
             ($0.airDate ?? .distantFuture) < ($1.airDate ?? .distantFuture)
         }
 
-        let totalEpisodes = mediaRecord(for: showID, context: context)?.totalEpisodes ?? trackableEpisodeRows.count.nonZero
+        let totalEpisodes = media?.totalEpisodes ?? trackableEpisodeRows.count.nonZero
         let next = remaining.first.map {
             ShowProgress.NextEpisode(
                 tmdbID: $0.tmdbID,
@@ -363,6 +380,35 @@ final class LibraryRepository {
             remainingReleased: remaining.count,
             nextEpisode: next
         )
+    }
+
+    func enrichMetadata(for mediaID: MediaID) async throws {
+        _ = try await mediaDetails(for: mediaID)
+    }
+
+    func enrichShowProgress(for showID: MediaID) async throws {
+        _ = try await mediaDetails(for: showID)
+
+        let context = persistence.makeContext()
+        guard let media = mediaRecord(for: showID, context: context),
+              let seasons = decodeSeasons(media.seasonsData) else {
+            return
+        }
+
+        let cachedEpisodeCounts = Dictionary(
+            grouping: allEpisodeRecords(forShowID: showID.tmdbID, context: context),
+            by: \.seasonNumber
+        )
+        .mapValues(\.count)
+
+        for season in seasons
+        where season.seasonNumber >= 0
+            && (season.episodeCount.map {
+                cachedEpisodeCounts[season.seasonNumber, default: 0] < $0
+            } ?? true) {
+            try Task.checkCancellation()
+            _ = try await episodes(for: showID, seasonNumber: season.seasonNumber)
+        }
     }
 
     private func cacheSearchItems(_ items: [SearchItem]) throws {

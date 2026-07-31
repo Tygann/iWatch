@@ -6,6 +6,37 @@ import UIKit
 @MainActor
 @Observable
 final class AppSession {
+    enum CloudSyncStatus: Equatable {
+        case idle
+        case exporting
+        case completed(Date)
+        case unavailable(String)
+        case failed(String)
+        case timedOut
+
+        var title: String {
+            switch self {
+            case .idle: return "Waiting"
+            case .exporting: return "Uploading…"
+            case .completed: return "Uploaded"
+            case .unavailable: return "Unavailable"
+            case .failed: return "Needs Attention"
+            case .timedOut: return "Continuing in Background"
+            }
+        }
+
+        var detail: String? {
+            switch self {
+            case let .completed(date):
+                return date.formatted(date: .abbreviated, time: .shortened)
+            case let .unavailable(message), let .failed(message):
+                return message
+            default:
+                return nil
+            }
+        }
+    }
+
     enum DataResetStatus: Equatable {
         case idle
         case deletingOnDevice
@@ -23,6 +54,8 @@ final class AppSession {
     private let authCoordinator = TraktAuthCoordinator()
     private var scheduledSyncTask: Task<Void, Never>?
     private var backgroundContinuationTask: Task<Void, Never>?
+    private var cloudSyncMonitorTask: Task<Void, Never>?
+    private var syncSaveStartedAt: Date?
     private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
     private var pendingOAuthState: String?
 
@@ -36,6 +69,8 @@ final class AppSession {
     var lastSyncAt: Date?
     var libraryRevision = 0
     var syncDiagnostics: SyncDiagnostics = .empty
+    var syncProgress: SyncProgress = .idle
+    var cloudSyncStatus: CloudSyncStatus = .idle
     var syncMaintenanceMessage: String?
     var cacheMaintenanceMessage: String?
     var dataResetStatus: DataResetStatus = .idle
@@ -117,13 +152,20 @@ final class AppSession {
         guard TraktLinkStore.activeAccountKey != nil else { return }
         guard await refreshAuthState(), !isSyncing else { return }
         isSyncing = true
+        let syncStartedAt = Date()
+        syncSaveStartedAt = nil
         syncMaintenanceMessage = nil
         defer {
             isSyncing = false
             endBackgroundTaskIfNeeded()
         }
 
-        let succeeded = await syncEngine.run(reason: reason)
+        let succeeded = await syncEngine.run(reason: reason) { [weak self] progress in
+            self?.syncProgress = progress
+            if case .saving = progress {
+                self?.syncSaveStartedAt = Date()
+            }
+        }
         await refreshSyncDiagnostics()
         guard succeeded else {
             _ = await refreshAuthState()
@@ -132,6 +174,8 @@ final class AppSession {
         }
 
         lastSyncAt = Date()
+        monitorCloudExport(startingAfter: syncSaveStartedAt ?? syncStartedAt)
+        syncSaveStartedAt = nil
         BackgroundRefresh.scheduleAppRefresh()
         markLibraryUpdated()
     }
@@ -139,6 +183,7 @@ final class AppSession {
     func logoutTrakt() {
         scheduledSyncTask?.cancel()
         backgroundContinuationTask?.cancel()
+        cloudSyncMonitorTask?.cancel()
         endBackgroundTaskIfNeeded()
         BackgroundRefresh.cancelScheduledRefresh()
         pendingOAuthState = nil
@@ -154,6 +199,8 @@ final class AppSession {
                 self.traktLastError = nil
                 self.syncMaintenanceMessage = nil
                 self.syncDiagnostics = .empty
+                self.syncProgress = .idle
+                self.cloudSyncStatus = .idle
             }
         }
     }
@@ -178,6 +225,7 @@ final class AppSession {
         syncMaintenanceMessage = nil
         scheduledSyncTask?.cancel()
         backgroundContinuationTask?.cancel()
+        cloudSyncMonitorTask?.cancel()
         endBackgroundTaskIfNeeded()
         BackgroundRefresh.cancelScheduledRefresh()
         pendingOAuthState = nil
@@ -200,6 +248,8 @@ final class AppSession {
             traktLastError = nil
             lastSyncAt = nil
             syncDiagnostics = .empty
+            syncProgress = .idle
+            cloudSyncStatus = .idle
             syncMaintenanceMessage = "All app data was erased. Trakt was disconnected on this device."
             cacheMaintenanceMessage = "Cleared local image and network caches."
             markLibraryUpdated()
@@ -307,6 +357,32 @@ final class AppSession {
 
     func refreshSyncDiagnostics() async {
         syncDiagnostics = await syncEngine.diagnostics()
+        if !isSyncing, syncProgress == .idle, syncDiagnostics.initialBaselineComplete {
+            syncProgress = .complete
+        }
+    }
+
+    private func monitorCloudExport(startingAfter date: Date) {
+        cloudSyncMonitorTask?.cancel()
+        cloudSyncStatus = .exporting
+        cloudSyncMonitorTask = Task { [weak self] in
+            guard let self else { return }
+            let confirmation = await self.cloudExportMonitor.waitForExport(
+                startingAfter: date,
+                timeout: .seconds(60)
+            )
+            guard !Task.isCancelled else { return }
+            switch confirmation {
+            case let .completed(completedAt):
+                self.cloudSyncStatus = .completed(completedAt)
+            case let .unavailable(message):
+                self.cloudSyncStatus = .unavailable(message)
+            case let .failed(message):
+                self.cloudSyncStatus = .failed(message)
+            case .timedOut:
+                self.cloudSyncStatus = .timedOut
+            }
+        }
     }
 
     func importTraktLibrary() async {

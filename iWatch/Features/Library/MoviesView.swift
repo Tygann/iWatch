@@ -17,6 +17,7 @@ private final class MoviesScreenModel {
 
     var items: [LibraryMovieItem] = []
     var isLoading = false
+    var isEnriching = false
     var errorText: String?
     var segment: Segment = .following
 
@@ -26,7 +27,8 @@ private final class MoviesScreenModel {
     }
 
     func load() async {
-        isLoading = true
+        let shouldShowLoading = items.isEmpty
+        if shouldShowLoading { isLoading = true }
         defer { isLoading = false }
 
         do {
@@ -36,6 +38,24 @@ private final class MoviesScreenModel {
             guard !error.isCancelled else { return }
             errorText = error.localizedDescription
             items = []
+        }
+    }
+
+    func enrichMissingMetadata() async {
+        guard !isEnriching else { return }
+        isEnriching = true
+        defer { isEnriching = false }
+
+        let missing = items.filter { $0.posterPath == nil }
+        for item in missing {
+            guard !Task.isCancelled else { return }
+            do {
+                try await repository.enrichMetadata(for: item.mediaID)
+                items = try await repository.movieLibraryItems()
+            } catch {
+                guard !error.isCancelled else { return }
+                // Metadata is optional; keep the imported library usable if enrichment fails.
+            }
         }
     }
 
@@ -182,6 +202,7 @@ private struct MoviesViewBody: View {
             }
             .task(id: session.libraryRevision) {
                 await model.load()
+                await model.enrichMissingMetadata()
             }
             .sheet(isPresented: $showSettings) {
                 NavigationStack {

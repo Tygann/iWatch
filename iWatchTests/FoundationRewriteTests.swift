@@ -19,8 +19,11 @@ struct FoundationRewriteTests {
             trakt: remote,
             deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
         )
+        let progress = SyncProgressCollector()
 
-        try await engine.ensureInitialBaseline()
+        try await engine.ensureInitialBaseline { update in
+            await progress.record(update)
+        }
 
         let snapshot = await remote.snapshot()
         #expect(snapshot.getLastActivitiesCalls == 1)
@@ -38,6 +41,16 @@ struct FoundationRewriteTests {
         #expect(states.first?.initialBaselineComplete == true)
         #expect(watchlistRows.count == 1)
         #expect(events.count == 1)
+
+        let progressUpdates = await progress.values
+        #expect(progressUpdates.contains(.downloadingWatchlist(1)))
+        #expect(progressUpdates.contains(.downloadingHistory(1)))
+        #expect(progressUpdates.contains(.saving(watchlistItems: 1, historyItems: 1)))
+
+        let diagnostics = await engine.diagnostics()
+        #expect(diagnostics.importedMovieCount == 1)
+        #expect(diagnostics.importedShowCount == 0)
+        #expect(diagnostics.importedHistoryCount == 1)
     }
 
     @Test
@@ -279,6 +292,33 @@ struct FoundationRewriteTests {
         #expect(progress.nextEpisode?.season == 1)
         #expect(progress.nextEpisode?.episode == 2)
         #expect(progress.nextEpisode?.tmdbID == 302)
+    }
+
+    @Test
+    func importedShowLibraryRendersBeforeRemoteMetadataEnrichment() async throws {
+        let persistence = makePersistence()
+        let repository = makeLibraryRepository(persistence: persistence)
+        let context = persistence.makeContext()
+        let showID = MediaID(kind: .show, id: 515, traktID: 5_150)
+
+        context.insert(
+            MediaRecord(
+                kind: .show,
+                tmdbID: showID.tmdbID,
+                traktID: showID.traktID,
+                title: "Imported Show"
+            )
+        )
+        context.insert(WatchlistRecord(mediaID: showID, isInWatchlist: true))
+        try context.save()
+
+        let items = try await repository.showLibraryItems()
+
+        #expect(items.count == 1)
+        #expect(items.first?.title == "Imported Show")
+        #expect(items.first?.posterPath == nil)
+        #expect(items.first?.progress.watchedCount == 0)
+        #expect(items.first?.progress.nextEpisode == nil)
     }
 
     @Test
@@ -940,6 +980,14 @@ private actor FixedDeviceIdentityStore: DeviceIdentityStore {
 
     func currentDeviceID() async -> String {
         id
+    }
+}
+
+private actor SyncProgressCollector {
+    private(set) var values: [SyncProgress] = []
+
+    func record(_ value: SyncProgress) {
+        values.append(value)
     }
 }
 

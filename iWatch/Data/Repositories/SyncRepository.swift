@@ -42,7 +42,7 @@ actor SyncEngine {
         self.resetGate = resetGate
     }
 
-    func ensureInitialBaseline() async throws {
+    func ensureInitialBaseline(progress: (@MainActor @Sendable (SyncProgress) async -> Void)? = nil) async throws {
         let token = await trakt.currentToken()
         guard token != nil else { return }
 
@@ -51,32 +51,41 @@ actor SyncEngine {
         let state = syncState(context: context)
         guard !state.initialBaselineComplete else { return }
 
-        try await pullAndMerge(into: context, state: state, initialBaseline: true)
+        try await pullAndMerge(into: context, state: state, initialBaseline: true, progress: progress)
         state.initialBaselineComplete = true
         try context.save()
     }
 
     @discardableResult
-    func run(reason: SyncReason) async -> Bool {
+    func run(reason: SyncReason,
+             progress: (@MainActor @Sendable (SyncProgress) async -> Void)? = nil) async -> Bool {
         guard await resetGate.allowsLibraryWork() else { return false }
         do {
             lastRunErrorDescription = nil
+
+            await progress?(.checkingLocalData)
 
             let repairContext = persistence.makeContext()
             _ = try performIntegrityRepair(context: repairContext, now: Date())
             try repairContext.save()
 
-            try await ensureInitialBaseline()
+            try await ensureInitialBaseline(progress: progress)
 
             let pullContext = persistence.makeContext()
             let state = syncState(context: pullContext)
-            try await pullAndMerge(into: pullContext, state: state, initialBaseline: false)
+            try await pullAndMerge(into: pullContext, state: state, initialBaseline: false, progress: progress)
             try pullContext.save()
 
+            let pendingCount = allOperations(context: persistence.makeContext())
+                .filter { $0.status == .pending || $0.status == .processing }
+                .count
+            await progress?(.uploadingChanges(pendingCount))
             try await pushPendingOperations()
+            await progress?(.complete)
             return true
         } catch {
             lastRunErrorDescription = descriptiveError(error)
+            await progress?(.failed(lastRunErrorDescription ?? "Sync failed."))
             #if DEBUG
             print("[SyncEngine] \(reason.rawValue) failed:", error)
             #endif
@@ -104,9 +113,14 @@ actor SyncEngine {
         let context = persistence.makeContext()
         let operations = allOperations(context: context)
         let state = syncState(context: context)
+        let watchlist = allWatchlist(context: context).filter(\.isInWatchlist)
+        let history = allEvents(context: context).filter { !$0.tombstoned }
 
         return SyncDiagnostics(
             initialBaselineComplete: state.initialBaselineComplete,
+            importedMovieCount: watchlist.filter { $0.mediaID.kind == .movie }.count,
+            importedShowCount: watchlist.filter { $0.mediaID.kind == .show }.count,
+            importedHistoryCount: history.count,
             pendingOperationCount: operations.filter { $0.status == .pending }.count,
             processingOperationCount: operations.filter { $0.status == .processing }.count,
             deadletterOperationCount: operations.filter { $0.status == .deadletter }.count,
@@ -276,7 +290,8 @@ actor SyncEngine {
 
     private func pullAndMerge(into context: ModelContext,
                               state: SyncStateRecord,
-                              initialBaseline: Bool) async throws {
+                              initialBaseline: Bool,
+                              progress: (@MainActor @Sendable (SyncProgress) async -> Void)? = nil) async throws {
         let previousRelevantActivityAt = state.lastSeenRemoteActivityAt
         let remoteActivities = try? await trakt.getLastActivities()
         let shouldPullWatchlist = initialBaseline || shouldPullWatchlist(remoteActivities, previousRelevantActivityAt: previousRelevantActivityAt)
@@ -284,8 +299,19 @@ actor SyncEngine {
             || state.lastSuccessfulPullAt == nil
             || shouldPullHistory(remoteActivities, previousRelevantActivityAt: previousRelevantActivityAt)
 
-        let remoteWatchlist = shouldPullWatchlist ? try await trakt.getWatchlist() : []
-        let remoteHistory = shouldPullHistory ? try await trakt.getHistory(startAt: initialBaseline ? nil : state.lastSuccessfulPullAt) : []
+        if shouldPullWatchlist { await progress?(.downloadingWatchlist(0)) }
+        let remoteWatchlist = shouldPullWatchlist
+            ? try await trakt.getWatchlist { count in await progress?(.downloadingWatchlist(count)) }
+            : []
+        if shouldPullHistory { await progress?(.downloadingHistory(0)) }
+        let remoteHistory = shouldPullHistory
+            ? try await trakt.getHistory(startAt: initialBaseline ? nil : state.lastSuccessfulPullAt) { count in
+                await progress?(.downloadingHistory(count))
+            }
+            : []
+        if shouldPullWatchlist || shouldPullHistory {
+            await progress?(.saving(watchlistItems: remoteWatchlist.count, historyItems: remoteHistory.count))
+        }
         let now = Date()
 
         if shouldPullWatchlist {
@@ -445,6 +471,15 @@ actor SyncEngine {
                                 remoteUpdatedAt: Date?) throws {
         var remoteKeys = Set<String>()
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
+        let existingWatchlist = allWatchlist(context: context)
+        var watchlistByKey = Dictionary(
+            existingWatchlist.map { ($0.mediaKey, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var mediaByKey = Dictionary(
+            allMedia(context: context).map { (mediaLookupKey(kind: $0.kind, tmdbID: $0.tmdbID), $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
 
         for item in remoteItems {
             switch item.type {
@@ -452,13 +487,17 @@ actor SyncEngine {
                 guard let movie = item.movie, let tmdbID = movie.ids.tmdb else { continue }
                 let mediaID = MediaID(kind: .movie, id: tmdbID, traktID: movie.ids.trakt)
                 remoteKeys.insert(mediaID.stableKey)
-                upsertMediaFromWatchlist(mediaID: mediaID, title: movie.title ?? "Unknown", year: movie.year, context: context)
-                let row = watchlistRecord(for: mediaID, context: context) ?? WatchlistRecord(
+                upsertMediaIndexed(mediaID: mediaID, title: movie.title ?? "Unknown", year: movie.year, context: context, mediaByKey: &mediaByKey)
+                let existing = watchlistByKey[mediaID.stableKey]
+                let row = existing ?? WatchlistRecord(
                     mediaID: mediaID,
                     isInWatchlist: true,
                     generationID: generationID
                 )
-                if row.modelContext == nil { context.insert(row) }
+                if existing == nil {
+                    context.insert(row)
+                    watchlistByKey[mediaID.stableKey] = row
+                }
                 if !row.dirty {
                     row.traktID = mediaID.traktID ?? row.traktID
                     row.isInWatchlist = true
@@ -470,13 +509,17 @@ actor SyncEngine {
                 guard let show = item.show, let tmdbID = show.ids.tmdb else { continue }
                 let mediaID = MediaID(kind: .show, id: tmdbID, traktID: show.ids.trakt)
                 remoteKeys.insert(mediaID.stableKey)
-                upsertMediaFromWatchlist(mediaID: mediaID, title: show.title ?? "Unknown", year: show.year, context: context)
-                let row = watchlistRecord(for: mediaID, context: context) ?? WatchlistRecord(
+                upsertMediaIndexed(mediaID: mediaID, title: show.title ?? "Unknown", year: show.year, context: context, mediaByKey: &mediaByKey)
+                let existing = watchlistByKey[mediaID.stableKey]
+                let row = existing ?? WatchlistRecord(
                     mediaID: mediaID,
                     isInWatchlist: true,
                     generationID: generationID
                 )
-                if row.modelContext == nil { context.insert(row) }
+                if existing == nil {
+                    context.insert(row)
+                    watchlistByKey[mediaID.stableKey] = row
+                }
                 if !row.dirty {
                     row.traktID = mediaID.traktID ?? row.traktID
                     row.isInWatchlist = true
@@ -491,7 +534,7 @@ actor SyncEngine {
 
         guard allowRemoteRemoval else { return }
 
-        let missingRows = allWatchlist(context: context)
+        let missingRows = existingWatchlist
             .filter { $0.isInWatchlist && !$0.dirty && !remoteKeys.contains($0.mediaKey) }
 
         guard !missingRows.isEmpty else { return }
@@ -513,14 +556,36 @@ actor SyncEngine {
                               context: ModelContext,
                               now: Date) throws {
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
+        var eventsByNaturalKey: [String: WatchedEventRecord] = [:]
+        var eventsByHistoryID: [Int: WatchedEventRecord] = [:]
+        var mediaByKey: [String: MediaRecord] = [:]
+        var episodesByTMDbID: [Int: EpisodeRecord] = [:]
+
+        for event in allEvents(context: context) {
+            eventsByNaturalKey[historyNaturalKey(
+                kind: event.mediaID.kind,
+                tmdbID: event.tmdbID,
+                watchedAt: event.watchedAt
+            ), default: event] = event
+            if let historyID = event.traktHistoryID {
+                eventsByHistoryID[historyID, default: event] = event
+            }
+        }
+        for media in allMedia(context: context) {
+            mediaByKey[mediaLookupKey(kind: media.kind, tmdbID: media.tmdbID), default: media] = media
+        }
+        for episode in allEpisodes(context: context) {
+            episodesByTMDbID[episode.tmdbID, default: episode] = episode
+        }
+
         for item in remoteItems {
             guard let watchedAt = item.watchedAt else { continue }
 
             switch item.type {
             case .movie:
                 guard let movie = item.movie, let tmdbID = movie.ids.tmdb else { continue }
-                let existing = eventRecord(kind: .movie, tmdbID: tmdbID, watchedAt: watchedAt, context: context)
-                    ?? eventRecord(historyID: item.id, context: context)
+                let naturalKey = historyNaturalKey(kind: .movie, tmdbID: tmdbID, watchedAt: watchedAt)
+                let existing = eventsByNaturalKey[naturalKey] ?? eventsByHistoryID[item.id]
                 let event = existing ?? WatchedEventRecord(
                     kind: .movie,
                     tmdbID: tmdbID,
@@ -533,7 +598,11 @@ actor SyncEngine {
                     updatedAt: now,
                     generationID: generationID
                 )
-                if existing == nil { context.insert(event) }
+                if existing == nil {
+                    context.insert(event)
+                    eventsByNaturalKey[naturalKey] = event
+                    eventsByHistoryID[item.id] = event
+                }
                 if event.tombstoned && event.dirty {
                     continue
                 }
@@ -543,17 +612,18 @@ actor SyncEngine {
                 event.dirty = false
                 event.tombstoned = false
                 event.updatedAt = now
-                upsertMediaFromWatchlist(
+                upsertMediaIndexed(
                     mediaID: MediaID(kind: .movie, id: tmdbID, traktID: movie.ids.trakt),
                     title: movie.title ?? "Unknown",
                     year: movie.year,
-                    context: context
+                    context: context,
+                    mediaByKey: &mediaByKey
                 )
             case .episode:
                 guard let episode = item.episode, let tmdbID = episode.ids.tmdb else { continue }
                 let showTMDbID = item.show?.ids.tmdb
-                let existing = eventRecord(kind: .episode, tmdbID: tmdbID, watchedAt: watchedAt, context: context)
-                    ?? eventRecord(historyID: item.id, context: context)
+                let naturalKey = historyNaturalKey(kind: .episode, tmdbID: tmdbID, watchedAt: watchedAt)
+                let existing = eventsByNaturalKey[naturalKey] ?? eventsByHistoryID[item.id]
                 let event = existing ?? WatchedEventRecord(
                     kind: .episode,
                     tmdbID: tmdbID,
@@ -570,7 +640,11 @@ actor SyncEngine {
                     updatedAt: now,
                     generationID: generationID
                 )
-                if existing == nil { context.insert(event) }
+                if existing == nil {
+                    context.insert(event)
+                    eventsByNaturalKey[naturalKey] = event
+                    eventsByHistoryID[item.id] = event
+                }
                 if event.tombstoned && event.dirty {
                     continue
                 }
@@ -586,17 +660,58 @@ actor SyncEngine {
                 event.updatedAt = now
 
                 if let showTMDbID {
-                    upsertMediaFromWatchlist(
+                    upsertMediaIndexed(
                         mediaID: MediaID(kind: .show, id: showTMDbID, traktID: item.show?.ids.trakt),
                         title: item.show?.title ?? "Unknown",
                         year: item.show?.year,
-                        context: context
+                        context: context,
+                        mediaByKey: &mediaByKey
                     )
-                    upsertEpisodeFromHistory(showTMDbID: showTMDbID, showTraktID: item.show?.ids.trakt, episode: episode, context: context)
+                    upsertEpisodeFromHistory(
+                        showTMDbID: showTMDbID,
+                        showTraktID: item.show?.ids.trakt,
+                        episode: episode,
+                        context: context,
+                        episodesByTMDbID: &episodesByTMDbID
+                    )
                 }
             default:
                 continue
             }
+        }
+    }
+
+    private func historyNaturalKey(kind: MediaKind, tmdbID: Int, watchedAt: Date) -> String {
+        "\(kind.rawValue):\(tmdbID):\(watchedAt.timeIntervalSinceReferenceDate.bitPattern)"
+    }
+
+    private func mediaLookupKey(kind: MediaKind, tmdbID: Int) -> String {
+        "\(kind.rawValue):\(tmdbID)"
+    }
+
+    private func upsertMediaIndexed(mediaID: MediaID,
+                                    title: String,
+                                    year: Int?,
+                                    context: ModelContext,
+                                    mediaByKey: inout [String: MediaRecord]) {
+        let key = mediaLookupKey(kind: mediaID.kind, tmdbID: mediaID.tmdbID)
+        if let existing = mediaByKey[key] {
+            existing.mediaKey = existing.mediaKey.isEmpty ? mediaID.stableKey : existing.mediaKey
+            existing.traktID = mediaID.traktID ?? existing.traktID
+            if existing.title.isEmpty { existing.title = title }
+            existing.releaseDate = existing.releaseDate ?? year.flatMap { Calendar.current.date(from: DateComponents(year: $0)) }
+            existing.updatedAt = .now
+        } else {
+            let record = MediaRecord(
+                kind: mediaID.kind,
+                tmdbID: mediaID.tmdbID,
+                traktID: mediaID.traktID,
+                title: title,
+                releaseDate: year.flatMap { Calendar.current.date(from: DateComponents(year: $0)) },
+                updatedAt: .now
+            )
+            context.insert(record)
+            mediaByKey[key] = record
         }
     }
 
@@ -1111,51 +1226,31 @@ actor SyncEngine {
         allEvents(context: context).first { $0.traktHistoryID == historyID }
     }
 
-    private func upsertMediaFromWatchlist(mediaID: MediaID, title: String, year: Int?, context: ModelContext) {
-        if let existing = allMedia(context: context).first(where: { $0.kind == mediaID.kind && $0.tmdbID == mediaID.tmdbID }) {
-            existing.mediaKey = existing.mediaKey.isEmpty ? mediaID.stableKey : existing.mediaKey
-            existing.traktID = mediaID.traktID ?? existing.traktID
-            if existing.title.isEmpty { existing.title = title }
-            existing.releaseDate = existing.releaseDate ?? year.flatMap { Calendar.current.date(from: DateComponents(year: $0)) }
-            existing.updatedAt = .now
-        } else {
-            context.insert(
-                MediaRecord(
-                    kind: mediaID.kind,
-                    tmdbID: mediaID.tmdbID,
-                    traktID: mediaID.traktID,
-                    title: title,
-                    releaseDate: year.flatMap { Calendar.current.date(from: DateComponents(year: $0)) },
-                    updatedAt: .now
-                )
-            )
-        }
-    }
-
     private func upsertEpisodeFromHistory(showTMDbID: Int,
                                           showTraktID: Int?,
                                           episode: TraktEpisodeDTO,
-                                          context: ModelContext) {
+                                          context: ModelContext,
+                                          episodesByTMDbID: inout [Int: EpisodeRecord]) {
         guard let season = episode.season, let number = episode.number, let tmdbID = episode.ids.tmdb else { return }
-        if let existing = allEpisodes(context: context).first(where: { $0.tmdbID == tmdbID }) {
+        if let existing = episodesByTMDbID[tmdbID] {
             existing.episodeKey = existing.episodeKey.isEmpty ? "ep:\(showTMDbID):S\(season):E\(number)" : existing.episodeKey
             existing.traktID = episode.ids.trakt ?? existing.traktID
             existing.showTraktID = showTraktID ?? existing.showTraktID
             existing.name = existing.name.isEmpty ? (episode.title ?? "Episode") : existing.name
             existing.updatedAt = .now
         } else {
-            context.insert(
-                EpisodeRecord(
-                    showTMDbID: showTMDbID,
-                    showTraktID: showTraktID,
-                    tmdbID: tmdbID,
-                    traktID: episode.ids.trakt,
-                    seasonNumber: season,
-                    episodeNumber: number,
-                    name: episode.title ?? "Episode",
-                    updatedAt: .now
-                )
+            let record = EpisodeRecord(
+                showTMDbID: showTMDbID,
+                showTraktID: showTraktID,
+                tmdbID: tmdbID,
+                traktID: episode.ids.trakt,
+                seasonNumber: season,
+                episodeNumber: number,
+                name: episode.title ?? "Episode",
+                updatedAt: .now
             )
+            context.insert(record)
+            episodesByTMDbID[tmdbID] = record
         }
     }
 }

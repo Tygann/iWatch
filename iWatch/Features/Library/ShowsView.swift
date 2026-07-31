@@ -10,6 +10,7 @@ private final class ShowsScreenModel {
 
     var items: [LibraryShowItem] = []
     var isLoading = false
+    var isEnriching = false
     var errorText: String?
 
     init(repository: LibraryRepository, session: AppSession) {
@@ -18,7 +19,8 @@ private final class ShowsScreenModel {
     }
 
     func load() async {
-        isLoading = true
+        let shouldShowLoading = items.isEmpty
+        if shouldShowLoading { isLoading = true }
         defer { isLoading = false }
 
         do {
@@ -28,6 +30,37 @@ private final class ShowsScreenModel {
             guard !error.isCancelled else { return }
             items = []
             errorText = error.localizedDescription
+        }
+    }
+
+    func enrichLibrary() async {
+        guard !isEnriching else { return }
+        isEnriching = true
+        defer { isEnriching = false }
+
+        for item in items where item.posterPath == nil {
+            guard !Task.isCancelled else { return }
+            do {
+                try await repository.enrichMetadata(for: item.mediaID)
+                items = try await repository.showLibraryItems()
+            } catch {
+                guard !error.isCancelled else { return }
+                // Keep rendering imported Trakt data when optional metadata is unavailable.
+            }
+        }
+
+        let progressCandidates = items.filter {
+            $0.progress.watchedCount > 0 && $0.progress.nextEpisode == nil
+        }
+        for item in progressCandidates {
+            guard !Task.isCancelled else { return }
+            do {
+                try await repository.enrichShowProgress(for: item.mediaID)
+                items = try await repository.showLibraryItems()
+            } catch {
+                guard !error.isCancelled else { return }
+                // Continue enriching other shows after an individual metadata failure.
+            }
         }
     }
 
@@ -156,6 +189,7 @@ private struct ShowsViewBody: View {
             }
             .task(id: session.libraryRevision) {
                 await model.load()
+                await model.enrichLibrary()
             }
             .sheet(isPresented: $showSettings) {
                 NavigationStack {

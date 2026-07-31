@@ -7,7 +7,9 @@ struct SyncDiagnosticsView: View {
 
     var body: some View {
         Form {
-            overviewSection
+            statusSection
+            importedLibrarySection
+            outboundQueueSection
             maintenanceSection
             resetSection
 
@@ -43,13 +45,71 @@ struct SyncDiagnosticsView: View {
         }
     }
 
-    private var overviewSection: some View {
+    private var statusSection: some View {
         Section {
+            LabeledContent("Trakt Sync") {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(session.syncProgress.title)
+                    if let detail = session.syncProgress.detail {
+                        Text(detail)
+                            .font(.caption)
+                    }
+                }
+                .foregroundStyle(.secondary)
+            }
+
+            LabeledContent("iCloud") {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(session.cloudSyncStatus.title)
+                    if let detail = session.cloudSyncStatus.detail {
+                        Text(detail)
+                            .font(.caption)
+                    }
+                }
+                .foregroundStyle(.secondary)
+            }
+
             LabeledContent("Initial Import") {
                 Text(session.syncDiagnostics.initialBaselineComplete ? "Complete" : "Pending")
                     .foregroundStyle(.secondary)
             }
 
+            if let lastRemoteActivityAt = session.syncDiagnostics.lastSeenRemoteActivityAt {
+                LabeledContent("Last Trakt Change") {
+                    Text(lastRemoteActivityAt.formatted(date: .abbreviated, time: .shortened))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            Text("Current Status")
+        }
+    }
+
+    private var importedLibrarySection: some View {
+        Section {
+            LabeledContent("Watchlist Movies") {
+                Text("\(session.syncDiagnostics.importedMovieCount)")
+                    .foregroundStyle(.secondary)
+            }
+
+            LabeledContent("Watchlist Shows") {
+                Text("\(session.syncDiagnostics.importedShowCount)")
+                    .foregroundStyle(.secondary)
+            }
+
+            LabeledContent("History Entries") {
+                Text("\(session.syncDiagnostics.importedHistoryCount)")
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Imported Library")
+        } footer: {
+            Text("These totals reflect Trakt data currently stored by iWatch.")
+        }
+    }
+
+    private var outboundQueueSection: some View {
+        Section {
             LabeledContent("Pending Changes") {
                 Text("\(session.syncDiagnostics.pendingOperationCount)")
                     .foregroundStyle(.secondary)
@@ -70,16 +130,10 @@ struct SyncDiagnosticsView: View {
                     .foregroundStyle(duplicateColor)
             }
 
-            if let lastRemoteActivityAt = session.syncDiagnostics.lastSeenRemoteActivityAt {
-                LabeledContent("Last Trakt Change") {
-                    Text(lastRemoteActivityAt.formatted(date: .abbreviated, time: .shortened))
-                        .foregroundStyle(.secondary)
-                }
-            }
         } header: {
-            Text("Current Status")
+            Text("Changes to Upload")
         } footer: {
-            Text("These values describe iWatch’s local Trakt sync queue and are mainly useful when troubleshooting.")
+            Text("Zero means iWatch has no local changes waiting to be sent to Trakt.")
         }
     }
 

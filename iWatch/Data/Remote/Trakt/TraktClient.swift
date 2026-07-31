@@ -151,8 +151,12 @@ final class TraktService: TraktSyncing {
     }
 
     func getWatchlist() async throws -> [TraktWatchlistItemDTO] {
+        try await getWatchlist(progress: nil)
+    }
+
+    func getWatchlist(progress: (@Sendable (Int) async -> Void)?) async throws -> [TraktWatchlistItemDTO] {
         try await refreshTokenIfNeeded()
-        return try await paginatedSyncItems { page in
+        return try await paginatedSyncItems(progress: progress) { page in
             try await request(
                 path: "sync/watchlist",
                 query: [
@@ -165,6 +169,10 @@ final class TraktService: TraktSyncing {
     }
 
     func getHistory(startAt: Date?) async throws -> [TraktHistoryItemDTO] {
+        try await getHistory(startAt: startAt, progress: nil)
+    }
+
+    func getHistory(startAt: Date?, progress: (@Sendable (Int) async -> Void)?) async throws -> [TraktHistoryItemDTO] {
         try await refreshTokenIfNeeded()
         var query: [URLQueryItem] = []
         query.append(URLQueryItem(name: "extended", value: "full"))
@@ -173,7 +181,7 @@ final class TraktService: TraktSyncing {
             let dateString = formatter.string(from: startAt)
             query.append(URLQueryItem(name: "start_at", value: dateString))
         }
-        return try await paginatedSyncItems { page in
+        return try await paginatedSyncItems(progress: progress) { page in
             var pageQuery = query
             pageQuery.append(URLQueryItem(name: "page", value: String(page)))
             pageQuery.append(URLQueryItem(name: "limit", value: String(Self.syncPageSize)))
@@ -244,6 +252,7 @@ final class TraktService: TraktSyncing {
     private static let syncPageSize = 100
 
     private func paginatedSyncItems<Item: Decodable>(
+        progress: (@Sendable (Int) async -> Void)?,
         requestForPage: (Int) async throws -> URLRequest
     ) async throws -> [Item] {
         var page = 1
@@ -256,6 +265,7 @@ final class TraktService: TraktSyncing {
                 decode: [Item].self
             )
             items.append(contentsOf: pageItems)
+            await progress?(items.count)
 
             guard pageItems.count == Self.syncPageSize else { return items }
             page += 1
