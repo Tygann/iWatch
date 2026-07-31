@@ -6,10 +6,20 @@ import UIKit
 @MainActor
 @Observable
 final class AppSession {
+    enum DataResetStatus: Equatable {
+        case idle
+        case deletingOnDevice
+        case waitingForICloud
+        case completed(Date)
+        case needsAttention(String)
+        case failed(String)
+    }
+
     private let trakt: TraktService
     private let syncEngine: SyncEngine
     private let configuredTraktRedirectURI: String
     private let cacheService: CacheService
+    private let cloudExportMonitor: any CloudExportMonitoring
     private let authCoordinator = TraktAuthCoordinator()
     private var scheduledSyncTask: Task<Void, Never>?
     private var backgroundContinuationTask: Task<Void, Never>?
@@ -28,12 +38,24 @@ final class AppSession {
     var syncDiagnostics: SyncDiagnostics = .empty
     var syncMaintenanceMessage: String?
     var cacheMaintenanceMessage: String?
+    var dataResetStatus: DataResetStatus = .idle
 
-    init(trakt: TraktService, syncEngine: SyncEngine, traktRedirectURI: String, cacheService: CacheService) {
+    init(trakt: TraktService,
+         syncEngine: SyncEngine,
+         traktRedirectURI: String,
+         cacheService: CacheService,
+         cloudExportMonitor: any CloudExportMonitoring) {
         self.trakt = trakt
         self.syncEngine = syncEngine
         self.configuredTraktRedirectURI = traktRedirectURI
         self.cacheService = cacheService
+        self.cloudExportMonitor = cloudExportMonitor
+
+        if DataResetReceiptStore.pendingResetAt != nil {
+            dataResetStatus = .needsAttention(
+                "The data was removed from this device, but the iCloud update still needs confirmation."
+            )
+        }
 
         Task { [weak self] in
             guard let self else { return }
@@ -90,6 +112,7 @@ final class AppSession {
     }
 
     func runSync(reason: SyncReason = .userInitiated) async {
+        guard !isErasingAllData else { return }
         guard pendingTraktAccountKey == nil else { return }
         guard await refreshAuthState(), !isSyncing else { return }
         isSyncing = true
@@ -118,9 +141,9 @@ final class AppSession {
         endBackgroundTaskIfNeeded()
         BackgroundRefresh.cancelScheduledRefresh()
         pendingOAuthState = nil
+        pendingTraktAccountKey = nil
         traktIsConnecting = false
         TraktLinkStore.clear()
-        pendingTraktAccountKey = nil
 
         Task { [weak self] in
             guard let self else { return }
@@ -148,6 +171,8 @@ final class AppSession {
         guard !isErasingAllData else { return }
 
         isErasingAllData = true
+        dataResetStatus = .deletingOnDevice
+        await syncEngine.beginDataReset()
         cacheMaintenanceMessage = nil
         syncMaintenanceMessage = nil
         scheduledSyncTask?.cancel()
@@ -155,15 +180,18 @@ final class AppSession {
         endBackgroundTaskIfNeeded()
         BackgroundRefresh.cancelScheduledRefresh()
         pendingOAuthState = nil
+        pendingTraktAccountKey = nil
         traktIsConnecting = false
         isSyncing = false
 
         defer { isErasingAllData = false }
 
         await trakt.clearAuth()
+        TraktLinkStore.clear()
 
         do {
-            try await syncEngine.eraseAllAppData()
+            let resetAt = try await syncEngine.eraseAllAppData()
+            DataResetReceiptStore.markPending(at: resetAt)
             clearStoredPreferences()
             await clearOnDeviceCaches(cacheService: cacheService)
 
@@ -174,9 +202,49 @@ final class AppSession {
             syncMaintenanceMessage = "All app data was erased. Trakt was disconnected on this device."
             cacheMaintenanceMessage = "Cleared local image and network caches."
             markLibraryUpdated()
+
+            await confirmCloudResetExport(startingAfter: resetAt)
         } catch {
             traktLastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            dataResetStatus = .failed(traktLastError ?? "The reset couldn’t be completed.")
             await refreshSyncDiagnostics()
+        }
+        await syncEngine.endDataReset()
+    }
+
+    func retryCloudResetConfirmation() async {
+        guard !isErasingAllData else { return }
+        isErasingAllData = true
+        dataResetStatus = .waitingForICloud
+        await syncEngine.beginDataReset()
+        defer { isErasingAllData = false }
+
+        do {
+            let resetAt = try await syncEngine.requestCloudResetConfirmation()
+            DataResetReceiptStore.markPending(at: resetAt)
+            await confirmCloudResetExport(startingAfter: resetAt)
+        } catch {
+            dataResetStatus = .needsAttention(error.localizedDescription)
+        }
+        await syncEngine.endDataReset()
+    }
+
+    private func confirmCloudResetExport(startingAfter resetAt: Date) async {
+        dataResetStatus = .waitingForICloud
+        let confirmation = await cloudExportMonitor.waitForExport(
+            startingAfter: resetAt,
+            timeout: .seconds(30)
+        )
+        switch confirmation {
+        case let .completed(date):
+            DataResetReceiptStore.markConfirmed()
+            dataResetStatus = .completed(date)
+        case let .unavailable(message), let .failed(message):
+            dataResetStatus = .needsAttention(message)
+        case .timedOut:
+            dataResetStatus = .needsAttention(
+                "The data was removed from this device, but iWatch couldn’t confirm the iCloud update yet. Keep iWatch installed and online."
+            )
         }
     }
 
@@ -242,13 +310,19 @@ final class AppSession {
 
     func importTraktLibrary() async {
         guard let accountKey = pendingTraktAccountKey else { return }
+        await syncEngine.beginDataReset()
+        var shouldSync = false
         do {
             try await syncEngine.resetLocalTraktSyncCache()
             TraktLinkStore.activeAccountKey = accountKey
             pendingTraktAccountKey = nil
-            await runSync(reason: .userInitiated)
+            shouldSync = true
         } catch {
             traktLastError = error.localizedDescription
+        }
+        await syncEngine.endDataReset()
+        if shouldSync {
+            await runSync(reason: .userInitiated)
         }
     }
 
@@ -297,6 +371,8 @@ final class AppSession {
     }
 
     func resetLocalTraktSyncCache() async {
+        await syncEngine.beginDataReset()
+        var shouldSync = false
         do {
             try await syncEngine.resetLocalTraktSyncCache()
             lastSyncAt = nil
@@ -304,12 +380,14 @@ final class AppSession {
             markLibraryUpdated()
             await refreshSyncDiagnostics()
 
-            if await refreshAuthState() {
-                await runSync(reason: .userInitiated)
-            }
+            shouldSync = await refreshAuthState()
         } catch {
             traktLastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             await refreshSyncDiagnostics()
+        }
+        await syncEngine.endDataReset()
+        if shouldSync {
+            await runSync(reason: .userInitiated)
         }
     }
 

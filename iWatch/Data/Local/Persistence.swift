@@ -13,7 +13,8 @@ nonisolated final class Persistence: @unchecked Sendable {
             WatchlistRecord.self,
             WatchedEventRecord.self,
             SyncOperationRecord.self,
-            SyncStateRecord.self
+            SyncStateRecord.self,
+            LibraryGenerationRecord.self
         ])
 
         let cloudKit = cloudKitDatabase ?? (inMemory ? .none : .private("iCloud.com.tyler.iWatch"))
@@ -40,38 +41,11 @@ nonisolated final class Persistence: @unchecked Sendable {
         do {
             self.modelContainer = try ModelContainer(for: schema, configurations: [config])
         } catch {
-            #if DEBUG
-            if inMemory == false, storeURL == nil {
-                Self.removeSwiftDataStores()
-                self.modelContainer = try! ModelContainer(for: schema, configurations: [config])
-            } else {
-                fatalError("Failed to create ModelContainer: \(error)")
-            }
-            #else
             fatalError("Failed to create ModelContainer: \(error)")
-            #endif
         }
     }
 
     func makeContext() -> ModelContext {
         ModelContext(modelContainer)
-    }
-}
-
-private extension Persistence {
-    /// Deletes likely SwiftData store files in Application Support.
-    nonisolated static func removeSwiftDataStores() {
-        let fm = FileManager.default
-        let base = URL.applicationSupportDirectory
-        guard let contents = try? fm.contentsOfDirectory(at: base, includingPropertiesForKeys: nil) else { return }
-
-        for url in contents {
-            // SwiftData uses `.store` files (and may create -wal/-shm sidecars)
-            if url.pathExtension == "store"
-                || url.lastPathComponent.hasSuffix("-wal")
-                || url.lastPathComponent.hasSuffix("-shm") {
-                try? fm.removeItem(at: url)
-            }
-        }
     }
 }

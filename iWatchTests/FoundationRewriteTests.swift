@@ -740,7 +740,83 @@ struct FoundationRewriteTests {
         #expect(try fetchAll(WatchedEventRecord.self, from: persistence).isEmpty)
         #expect(try fetchAll(SyncOperationRecord.self, from: persistence).isEmpty)
         #expect(try fetchAll(SyncStateRecord.self, from: persistence).isEmpty)
+        #expect(try fetchAll(LibraryGenerationRecord.self, from: persistence).count == 1)
     }
+
+    @Test
+    func resetGenerationRejectsRecordsReturningFromAnOfflineDevice() async throws {
+        let persistence = makePersistence()
+        let context = persistence.makeContext()
+        let mediaID = MediaID(kind: .movie, id: 42, traktID: 420)
+        context.insert(
+            WatchlistRecord(
+                mediaID: mediaID,
+                isInWatchlist: true,
+                generationID: LibraryGenerationPolicy.legacyGenerationID
+            )
+        )
+        try context.save()
+
+        let engine = SyncEngine(
+            persistence: persistence,
+            trakt: FakeTraktSyncRemote(
+                token: makeToken(),
+                lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now),
+                watchlist: [],
+                history: []
+            ),
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+        )
+        try await engine.eraseAllAppData()
+
+        let staleContext = persistence.makeContext()
+        staleContext.insert(
+            WatchlistRecord(
+                mediaID: mediaID,
+                isInWatchlist: true,
+                generationID: LibraryGenerationPolicy.legacyGenerationID
+            )
+        )
+        try staleContext.save()
+
+        let repository = makeLibraryRepository(persistence: persistence)
+        #expect(await repository.isInWatchlist(mediaID) == false)
+
+        let currentContext = persistence.makeContext()
+        let currentGeneration = LibraryGenerationPolicy.currentGeneration(in: currentContext)
+        currentContext.insert(
+            WatchlistRecord(
+                mediaID: mediaID,
+                isInWatchlist: true,
+                generationID: currentGeneration
+            )
+        )
+        try currentContext.save()
+
+        #expect(await repository.isInWatchlist(mediaID) == true)
+    }
+
+    @Test @MainActor
+    func libraryMutationsAreBlockedWhileResetIsInProgress() async throws {
+        let persistence = makePersistence()
+        let gate = AppDataResetGate()
+        let repository = makeLibraryRepository(persistence: persistence, resetGate: gate)
+        let mediaID = MediaID(kind: .movie, id: 88, traktID: 880)
+
+        await gate.beginReset()
+        do {
+            try await repository.setWatchlist(true, for: mediaID)
+            Issue.record("Expected the reset gate to reject the library mutation")
+        } catch {
+            // Expected: user mutations are held until reset finishes.
+        }
+        await gate.endReset()
+
+        #expect(try fetchAll(WatchlistRecord.self, from: persistence).isEmpty)
+        try await repository.setWatchlist(true, for: mediaID)
+        #expect(try fetchAll(WatchlistRecord.self, from: persistence).count == 1)
+    }
+
 
     @Test
     func viewsDoNotDependOnRemoteClientsOrPersistenceRecordsDirectly() throws {
@@ -782,10 +858,13 @@ private func makePersistence() -> Persistence {
 }
 
 @MainActor
-private func makeLibraryRepository(persistence: Persistence) -> LibraryRepository {
+private func makeLibraryRepository(
+    persistence: Persistence,
+    resetGate: AppDataResetGate = AppDataResetGate()
+) -> LibraryRepository {
     let apiClient = APIClient(session: .shared)
     let tmdb = TMDbService(apiClient: apiClient, apiKey: "test-key")
-    return LibraryRepository(persistence: persistence, tmdb: tmdb)
+    return LibraryRepository(persistence: persistence, tmdb: tmdb, resetGate: resetGate)
 }
 
 private func fetchAll<T: PersistentModel>(_ type: T.Type, from persistence: Persistence) throws -> [T] {

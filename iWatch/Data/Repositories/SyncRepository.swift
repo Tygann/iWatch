@@ -22,6 +22,7 @@ actor SyncEngine {
     private let persistence: Persistence
     private let trakt: any TraktSyncing
     private let deviceIdentityStore: DeviceIdentityStore
+    private let resetGate: AppDataResetGate
 
     private let suspiciousWatchlistRemovalThreshold = 25
     private let completedOperationRetention: TimeInterval = 24 * 60 * 60
@@ -31,10 +32,14 @@ actor SyncEngine {
 
     private var lastRunErrorDescription: String?
 
-    init(persistence: Persistence, trakt: any TraktSyncing, deviceIdentityStore: DeviceIdentityStore) {
+    init(persistence: Persistence,
+         trakt: any TraktSyncing,
+         deviceIdentityStore: DeviceIdentityStore,
+         resetGate: AppDataResetGate = AppDataResetGate()) {
         self.persistence = persistence
         self.trakt = trakt
         self.deviceIdentityStore = deviceIdentityStore
+        self.resetGate = resetGate
     }
 
     func ensureInitialBaseline() async throws {
@@ -42,6 +47,7 @@ actor SyncEngine {
         guard token != nil else { return }
 
         let context = persistence.makeContext()
+        try discardStaleGenerationRecords(context: context)
         let state = syncState(context: context)
         guard !state.initialBaselineComplete else { return }
 
@@ -52,6 +58,7 @@ actor SyncEngine {
 
     @discardableResult
     func run(reason: SyncReason) async -> Bool {
+        guard await resetGate.allowsLibraryWork() else { return false }
         do {
             lastRunErrorDescription = nil
 
@@ -133,6 +140,14 @@ actor SyncEngine {
         return Date().timeIntervalSince(lastSuccessfulSyncAt) >= maxStaleness
     }
 
+    func beginDataReset() async {
+        await resetGate.beginReset()
+    }
+
+    func endDataReset() async {
+        await resetGate.endReset()
+    }
+
     func enqueue(_ operation: SyncOperationPayload) async throws {
         let context = persistence.makeContext()
         let kind: SyncOperationKind
@@ -145,7 +160,8 @@ actor SyncEngine {
             kind = .addWatchlist
         }
         let data = try SyncPayloadCodec.encoder.encode(operation)
-        context.insert(SyncOperationRecord(kind: kind, payload: data))
+        let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
+        context.insert(SyncOperationRecord(kind: kind, payload: data, generationID: generationID))
         try context.save()
     }
 
@@ -181,17 +197,18 @@ actor SyncEngine {
 
     func resetLocalTraktSyncCache() throws {
         let context = persistence.makeContext()
+        _ = LibraryGenerationPolicy.rotateGeneration(in: context)
 
-        for operation in allOperations(context: context) {
+        for operation in rawOperations(context: context) {
             context.delete(operation)
         }
-        for row in allWatchlist(context: context) {
+        for row in rawWatchlist(context: context) {
             context.delete(row)
         }
-        for event in allEvents(context: context) {
+        for event in rawEvents(context: context) {
             context.delete(event)
         }
-        for state in allSyncStates(context: context) {
+        for state in rawSyncStates(context: context) {
             context.delete(state)
         }
 
@@ -207,30 +224,54 @@ actor SyncEngine {
         try context.save()
     }
 
-    func eraseAllAppData() throws {
+    @discardableResult
+    func eraseAllAppData() throws -> Date {
         let context = persistence.makeContext()
+        let resetAt = Date()
 
-        for media in allMedia(context: context) {
+        _ = LibraryGenerationPolicy.rotateGeneration(in: context, at: resetAt)
+
+        for media in rawMedia(context: context) {
             context.delete(media)
         }
-        for episode in allEpisodes(context: context) {
+        for episode in rawEpisodes(context: context) {
             context.delete(episode)
         }
-        for operation in allOperations(context: context) {
+        for operation in rawOperations(context: context) {
             context.delete(operation)
         }
-        for row in allWatchlist(context: context) {
+        for row in rawWatchlist(context: context) {
             context.delete(row)
         }
-        for event in allEvents(context: context) {
+        for event in rawEvents(context: context) {
             context.delete(event)
         }
-        for state in allSyncStates(context: context) {
+        for state in rawSyncStates(context: context) {
             context.delete(state)
         }
 
         lastRunErrorDescription = nil
         try context.save()
+        return resetAt
+    }
+
+    func requestCloudResetConfirmation() throws -> Date {
+        let context = persistence.makeContext()
+        let now = Date()
+        let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
+        let markers = (try? context.fetch(FetchDescriptor<LibraryGenerationRecord>())) ?? []
+        let marker = markers.max(by: { $0.changedAt < $1.changedAt })
+            ?? LibraryGenerationRecord(
+                generationID: generationID,
+                changedAt: .distantPast
+            )
+        if marker.modelContext == nil {
+            context.insert(marker)
+        }
+        marker.changedAt = now
+        try discardStaleGenerationRecords(context: context)
+        try context.save()
+        return now
     }
 
     private func pullAndMerge(into context: ModelContext,
@@ -403,6 +444,7 @@ actor SyncEngine {
                                 allowRemoteRemoval: Bool,
                                 remoteUpdatedAt: Date?) throws {
         var remoteKeys = Set<String>()
+        let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
 
         for item in remoteItems {
             switch item.type {
@@ -411,7 +453,11 @@ actor SyncEngine {
                 let mediaID = MediaID(kind: .movie, id: tmdbID, traktID: movie.ids.trakt)
                 remoteKeys.insert(mediaID.stableKey)
                 upsertMediaFromWatchlist(mediaID: mediaID, title: movie.title ?? "Unknown", year: movie.year, context: context)
-                let row = watchlistRecord(for: mediaID, context: context) ?? WatchlistRecord(mediaID: mediaID, isInWatchlist: true)
+                let row = watchlistRecord(for: mediaID, context: context) ?? WatchlistRecord(
+                    mediaID: mediaID,
+                    isInWatchlist: true,
+                    generationID: generationID
+                )
                 if row.modelContext == nil { context.insert(row) }
                 if !row.dirty {
                     row.traktID = mediaID.traktID ?? row.traktID
@@ -425,7 +471,11 @@ actor SyncEngine {
                 let mediaID = MediaID(kind: .show, id: tmdbID, traktID: show.ids.trakt)
                 remoteKeys.insert(mediaID.stableKey)
                 upsertMediaFromWatchlist(mediaID: mediaID, title: show.title ?? "Unknown", year: show.year, context: context)
-                let row = watchlistRecord(for: mediaID, context: context) ?? WatchlistRecord(mediaID: mediaID, isInWatchlist: true)
+                let row = watchlistRecord(for: mediaID, context: context) ?? WatchlistRecord(
+                    mediaID: mediaID,
+                    isInWatchlist: true,
+                    generationID: generationID
+                )
                 if row.modelContext == nil { context.insert(row) }
                 if !row.dirty {
                     row.traktID = mediaID.traktID ?? row.traktID
@@ -462,6 +512,7 @@ actor SyncEngine {
     private func mergeHistory(_ remoteItems: [TraktHistoryItemDTO],
                               context: ModelContext,
                               now: Date) throws {
+        let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
         for item in remoteItems {
             guard let watchedAt = item.watchedAt else { continue }
 
@@ -479,7 +530,8 @@ actor SyncEngine {
                     dirty: false,
                     tombstoned: false,
                     createdAt: now,
-                    updatedAt: now
+                    updatedAt: now,
+                    generationID: generationID
                 )
                 if existing == nil { context.insert(event) }
                 if event.tombstoned && event.dirty {
@@ -515,7 +567,8 @@ actor SyncEngine {
                     dirty: false,
                     tombstoned: false,
                     createdAt: now,
-                    updatedAt: now
+                    updatedAt: now,
+                    generationID: generationID
                 )
                 if existing == nil { context.insert(event) }
                 if event.tombstoned && event.dirty {
@@ -917,7 +970,10 @@ actor SyncEngine {
         if let existing = allSyncStates(context: context).first(where: { $0.accountKey == accountKey }) {
             return existing
         }
-        let state = SyncStateRecord(accountKey: accountKey)
+        let state = SyncStateRecord(
+            accountKey: accountKey,
+            generationID: LibraryGenerationPolicy.currentGeneration(in: context)
+        )
         context.insert(state)
         return state
     }
@@ -951,7 +1007,7 @@ actor SyncEngine {
     }
 
     private func allOperations(context: ModelContext) -> [SyncOperationRecord] {
-        (try? context.fetch(FetchDescriptor<SyncOperationRecord>())) ?? []
+        current(rawOperations(context: context), in: context, generation: \.generationID)
     }
 
     private func allMedia(context: ModelContext) -> [MediaRecord] {
@@ -963,15 +1019,76 @@ actor SyncEngine {
     }
 
     private func allWatchlist(context: ModelContext) -> [WatchlistRecord] {
-        (try? context.fetch(FetchDescriptor<WatchlistRecord>())) ?? []
+        current(rawWatchlist(context: context), in: context, generation: \.generationID)
     }
 
     private func allEvents(context: ModelContext) -> [WatchedEventRecord] {
-        (try? context.fetch(FetchDescriptor<WatchedEventRecord>())) ?? []
+        current(rawEvents(context: context), in: context, generation: \.generationID)
     }
 
     private func allSyncStates(context: ModelContext) -> [SyncStateRecord] {
+        current(rawSyncStates(context: context), in: context, generation: \.generationID)
+    }
+
+    private func rawOperations(context: ModelContext) -> [SyncOperationRecord] {
+        (try? context.fetch(FetchDescriptor<SyncOperationRecord>())) ?? []
+    }
+
+    private func rawMedia(context: ModelContext) -> [MediaRecord] {
+        (try? context.fetch(FetchDescriptor<MediaRecord>())) ?? []
+    }
+
+    private func rawEpisodes(context: ModelContext) -> [EpisodeRecord] {
+        (try? context.fetch(FetchDescriptor<EpisodeRecord>())) ?? []
+    }
+
+    private func rawWatchlist(context: ModelContext) -> [WatchlistRecord] {
+        (try? context.fetch(FetchDescriptor<WatchlistRecord>())) ?? []
+    }
+
+    private func rawEvents(context: ModelContext) -> [WatchedEventRecord] {
+        (try? context.fetch(FetchDescriptor<WatchedEventRecord>())) ?? []
+    }
+
+    private func rawSyncStates(context: ModelContext) -> [SyncStateRecord] {
         (try? context.fetch(FetchDescriptor<SyncStateRecord>())) ?? []
+    }
+
+    private func current<Record>(
+        _ records: [Record],
+        in context: ModelContext,
+        generation: KeyPath<Record, String>
+    ) -> [Record] {
+        let currentGeneration = LibraryGenerationPolicy.currentGeneration(in: context)
+        return records.filter {
+            LibraryGenerationPolicy.belongsToCurrentGeneration(
+                $0[keyPath: generation],
+                current: currentGeneration
+            )
+        }
+    }
+
+    private func discardStaleGenerationRecords(context: ModelContext) throws {
+        let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
+        for record in rawOperations(context: context)
+        where !LibraryGenerationPolicy.belongsToCurrentGeneration(record.generationID, current: generationID) {
+            context.delete(record)
+        }
+        for record in rawWatchlist(context: context)
+        where !LibraryGenerationPolicy.belongsToCurrentGeneration(record.generationID, current: generationID) {
+            context.delete(record)
+        }
+        for record in rawEvents(context: context)
+        where !LibraryGenerationPolicy.belongsToCurrentGeneration(record.generationID, current: generationID) {
+            context.delete(record)
+        }
+        for record in rawSyncStates(context: context)
+        where !LibraryGenerationPolicy.belongsToCurrentGeneration(record.generationID, current: generationID) {
+            context.delete(record)
+        }
+        if context.hasChanges {
+            try context.save()
+        }
     }
 
     private func operationRecord(id: UUID, context: ModelContext) -> SyncOperationRecord? {

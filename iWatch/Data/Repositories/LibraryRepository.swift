@@ -5,10 +5,12 @@ import SwiftData
 final class LibraryRepository {
     private let persistence: Persistence
     private let tmdb: TMDbService
+    private let resetGate: AppDataResetGate
 
-    init(persistence: Persistence, tmdb: TMDbService) {
+    init(persistence: Persistence, tmdb: TMDbService, resetGate: AppDataResetGate = AppDataResetGate()) {
         self.persistence = persistence
         self.tmdb = tmdb
+        self.resetGate = resetGate
     }
 
     func search(query: String) async throws -> [SearchItem] {
@@ -85,11 +87,21 @@ final class LibraryRepository {
     }
 
     func setWatchlist(_ inWatchlist: Bool, for id: MediaID) async throws {
+        guard await resetGate.allowsLibraryWork() else {
+            throw AppError.unknown("Wait for the library reset to finish before making changes.")
+        }
         let context = persistence.makeContext()
         let now = Date()
+        let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
 
         let existing = watchlistRecord(for: id, context: context)
-        let record = existing ?? WatchlistRecord(mediaID: id, isInWatchlist: inWatchlist, localUpdatedAt: now, dirty: true)
+        let record = existing ?? WatchlistRecord(
+            mediaID: id,
+            isInWatchlist: inWatchlist,
+            localUpdatedAt: now,
+            dirty: true,
+            generationID: generationID
+        )
         if existing == nil {
             context.insert(record)
         }
@@ -119,8 +131,12 @@ final class LibraryRepository {
     }
 
     func addWatchEvent(for id: MediaID, watchedAt: Date) async throws {
+        guard await resetGate.allowsLibraryWork() else {
+            throw AppError.unknown("Wait for the library reset to finish before making changes.")
+        }
         let context = persistence.makeContext()
         let now = Date()
+        let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
 
         let episodeMetadata = id.kind == .episode ? episodeRecord(forTMDbID: id.tmdbID, context: context) : nil
         let eventKey = WatchedEventRecord.makeEventKey(kind: id.kind, tmdbID: id.tmdbID, traktID: id.traktID, watchedAt: watchedAt)
@@ -140,7 +156,8 @@ final class LibraryRepository {
             dirty: true,
             tombstoned: false,
             createdAt: now,
-            updatedAt: now
+            updatedAt: now,
+            generationID: generationID
         )
         context.insert(event)
 
@@ -166,6 +183,9 @@ final class LibraryRepository {
     }
 
     func removeWatchEvent(eventID: UUID) async throws {
+        guard await resetGate.allowsLibraryWork() else {
+            throw AppError.unknown("Wait for the library reset to finish before making changes.")
+        }
         let context = persistence.makeContext()
         guard let event = watchedEventRecord(forRecordID: eventID, context: context) else { return }
 
@@ -507,6 +527,7 @@ final class LibraryRepository {
                                      payload: SyncOperationPayload,
                                      dedupeKey: String,
                                      context: ModelContext, accountKey: String) throws {
+        let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
         if let existing = syncOperation(forDedupeKey: dedupeKey, context: context), existing.status == .pending {
             existing.kindRaw = kind.rawValue
             existing.payload = try SyncPayloadCodec.encoder.encode(payload)
@@ -514,13 +535,16 @@ final class LibraryRepository {
             existing.claimedAt = nil
             existing.claimedByDeviceID = nil
             existing.accountKey = accountKey
+            existing.generationID = generationID
             return
         }
 
         let operation = SyncOperationRecord(
             kind: kind,
             payload: try SyncPayloadCodec.encoder.encode(payload),
-            dedupeKey: dedupeKey, accountKey: accountKey
+            dedupeKey: dedupeKey,
+            accountKey: accountKey,
+            generationID: generationID
         )
         context.insert(operation)
     }
@@ -726,11 +750,15 @@ final class LibraryRepository {
     }
 
     private func allWatchlistRecords(context: ModelContext) -> [WatchlistRecord] {
-        (try? context.fetch(FetchDescriptor<WatchlistRecord>())) ?? []
+        let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
+        return ((try? context.fetch(FetchDescriptor<WatchlistRecord>())) ?? [])
+            .filter { LibraryGenerationPolicy.belongsToCurrentGeneration($0.generationID, current: generationID) }
     }
 
     private func allWatchedEventRecords(context: ModelContext) -> [WatchedEventRecord] {
-        (try? context.fetch(FetchDescriptor<WatchedEventRecord>())) ?? []
+        let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
+        return ((try? context.fetch(FetchDescriptor<WatchedEventRecord>())) ?? [])
+            .filter { LibraryGenerationPolicy.belongsToCurrentGeneration($0.generationID, current: generationID) }
     }
 
     private func watchedEventRecords(for id: MediaID, context: ModelContext) -> [WatchedEventRecord] {
@@ -743,7 +771,9 @@ final class LibraryRepository {
     }
 
     private func allSyncOperations(context: ModelContext) -> [SyncOperationRecord] {
-        (try? context.fetch(FetchDescriptor<SyncOperationRecord>())) ?? []
+        let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
+        return ((try? context.fetch(FetchDescriptor<SyncOperationRecord>())) ?? [])
+            .filter { LibraryGenerationPolicy.belongsToCurrentGeneration($0.generationID, current: generationID) }
     }
 }
 

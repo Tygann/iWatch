@@ -44,6 +44,7 @@ nonisolated enum SyncPayloadCodec {
 @Model
 final class SyncOperationRecord {
     var id: UUID = UUID()
+    var generationID: String = ""
 
     var kindRaw: String = SyncOperationKind.addWatchlist.rawValue
     var statusRaw: String = SyncOperationStatus.pending.rawValue
@@ -62,7 +63,8 @@ final class SyncOperationRecord {
          dedupeKey: String? = nil,
          accountKey: String = "",
          status: SyncOperationStatus = .pending,
-         createdAt: Date = .now) {
+         createdAt: Date = .now,
+         generationID: String = "") {
         self.id = UUID()
         self.kindRaw = kind.rawValue
         self.statusRaw = status.rawValue
@@ -71,6 +73,7 @@ final class SyncOperationRecord {
         self.accountKey = accountKey
         self.createdAt = createdAt
         self.attemptCount = 0
+        self.generationID = generationID
     }
 
     var kind: SyncOperationKind {

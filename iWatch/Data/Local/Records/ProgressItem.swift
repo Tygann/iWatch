@@ -6,6 +6,7 @@ final class WatchedEventRecord {
     // CloudKit-backed SwiftData cannot enforce unique constraints, so repositories
     // treat this as the logical identity for manual upserts and dedupe.
     var eventKey: String = ""
+    var generationID: String = ""
 
     var recordID: UUID = UUID()
     var kindRaw: String = MediaKind.movie.rawValue
@@ -34,7 +35,8 @@ final class WatchedEventRecord {
          dirty: Bool = false,
          tombstoned: Bool = false,
          createdAt: Date = .now,
-         updatedAt: Date = .now) {
+         updatedAt: Date = .now,
+         generationID: String = "") {
         self.eventKey = Self.makeEventKey(kind: kind, tmdbID: tmdbID, traktID: traktID, watchedAt: watchedAt)
         self.recordID = UUID()
         self.kindRaw = kind.rawValue
@@ -50,6 +52,7 @@ final class WatchedEventRecord {
         self.tombstoned = tombstoned
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.generationID = generationID
     }
 
     var mediaID: MediaID {

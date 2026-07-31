@@ -6,6 +6,7 @@ final class WatchlistRecord {
     // CloudKit-backed SwiftData cannot enforce unique constraints, so repositories
     // treat this as the logical identity for manual upserts and dedupe.
     var mediaKey: String = ""
+    var generationID: String = ""
 
     var kindRaw: String = MediaKind.movie.rawValue
     var tmdbID: Int = 0
@@ -21,7 +22,8 @@ final class WatchlistRecord {
          listedAt: Date? = nil,
          localUpdatedAt: Date = .now,
          remoteUpdatedAt: Date? = nil,
-         dirty: Bool = false) {
+         dirty: Bool = false,
+         generationID: String = "") {
         self.mediaKey = mediaID.stableKey
         self.kindRaw = mediaID.kind.rawValue
         self.tmdbID = mediaID.tmdbID
@@ -31,6 +33,7 @@ final class WatchlistRecord {
         self.localUpdatedAt = localUpdatedAt
         self.remoteUpdatedAt = remoteUpdatedAt
         self.dirty = dirty
+        self.generationID = generationID
     }
 
     var mediaID: MediaID {

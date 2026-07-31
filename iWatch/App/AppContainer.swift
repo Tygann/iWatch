@@ -79,14 +79,17 @@ final class AppContainer {
             authStore: KeychainTraktAuthStore()
         )
         let deviceIdentityStore = KeychainDeviceIdentityStore()
-        let libraryRepository = LibraryRepository(persistence: persistence, tmdb: tmdb)
+        let resetGate = AppDataResetGate()
+        let libraryRepository = LibraryRepository(persistence: persistence, tmdb: tmdb, resetGate: resetGate)
         let contentRepository = ContentRepository(library: libraryRepository)
-        let syncEngine = SyncEngine(persistence: persistence, trakt: trakt, deviceIdentityStore: deviceIdentityStore)
+        let syncEngine = SyncEngine(persistence: persistence, trakt: trakt, deviceIdentityStore: deviceIdentityStore, resetGate: resetGate)
+        let cloudExportMonitor = CloudKitExportMonitor(containerIdentifier: "iCloud.com.tyler.iWatch")
         let session = AppSession(
             trakt: trakt,
             syncEngine: syncEngine,
             traktRedirectURI: config.traktRedirectURI,
-            cacheService: cacheService
+            cacheService: cacheService,
+            cloudExportMonitor: cloudExportMonitor
         )
         let router = AppRouter()
 
@@ -126,14 +129,17 @@ final class AppContainer {
             authStore: InMemoryTraktAuthStore()
         )
         let deviceIdentityStore = PreviewDeviceIdentityStore()
-        let libraryRepository = LibraryRepository(persistence: persistence, tmdb: tmdb)
+        let resetGate = AppDataResetGate()
+        let libraryRepository = LibraryRepository(persistence: persistence, tmdb: tmdb, resetGate: resetGate)
         let contentRepository = ContentRepository(library: libraryRepository)
-        let syncEngine = SyncEngine(persistence: persistence, trakt: trakt, deviceIdentityStore: deviceIdentityStore)
+        let syncEngine = SyncEngine(persistence: persistence, trakt: trakt, deviceIdentityStore: deviceIdentityStore, resetGate: resetGate)
+        let cloudExportMonitor = ImmediateCloudExportMonitor()
         let session = AppSession(
             trakt: trakt,
             syncEngine: syncEngine,
             traktRedirectURI: config.traktRedirectURI,
-            cacheService: cacheService
+            cacheService: cacheService,
+            cloudExportMonitor: cloudExportMonitor
         )
         let router = AppRouter(defaultTab: 0)
 
@@ -173,14 +179,17 @@ final class AppContainer {
             authStore: InMemoryTraktAuthStore()
         )
         let deviceIdentityStore = PreviewDeviceIdentityStore()
-        let libraryRepository = LibraryRepository(persistence: persistence, tmdb: tmdb)
+        let resetGate = AppDataResetGate()
+        let libraryRepository = LibraryRepository(persistence: persistence, tmdb: tmdb, resetGate: resetGate)
         let contentRepository = ContentRepository(library: libraryRepository)
-        let syncEngine = SyncEngine(persistence: persistence, trakt: trakt, deviceIdentityStore: deviceIdentityStore)
+        let syncEngine = SyncEngine(persistence: persistence, trakt: trakt, deviceIdentityStore: deviceIdentityStore, resetGate: resetGate)
+        let cloudExportMonitor = ImmediateCloudExportMonitor()
         let session = AppSession(
             trakt: trakt,
             syncEngine: syncEngine,
             traktRedirectURI: config.traktRedirectURI,
-            cacheService: cacheService
+            cacheService: cacheService,
+            cloudExportMonitor: cloudExportMonitor
         )
         let router = AppRouter(defaultTab: 0)
 
@@ -222,14 +231,17 @@ final class AppContainer {
             authStore: InMemoryTraktAuthStore()
         )
         let deviceIdentityStore = PreviewDeviceIdentityStore()
-        let libraryRepository = LibraryRepository(persistence: persistence, tmdb: tmdb)
+        let resetGate = AppDataResetGate()
+        let libraryRepository = LibraryRepository(persistence: persistence, tmdb: tmdb, resetGate: resetGate)
         let contentRepository = ContentRepository(library: libraryRepository)
-        let syncEngine = SyncEngine(persistence: persistence, trakt: trakt, deviceIdentityStore: deviceIdentityStore)
+        let syncEngine = SyncEngine(persistence: persistence, trakt: trakt, deviceIdentityStore: deviceIdentityStore, resetGate: resetGate)
+        let cloudExportMonitor = ImmediateCloudExportMonitor()
         let session = AppSession(
             trakt: trakt,
             syncEngine: syncEngine,
             traktRedirectURI: config.traktRedirectURI,
-            cacheService: cacheService
+            cacheService: cacheService,
+            cloudExportMonitor: cloudExportMonitor
         )
         let router = AppRouter(defaultTab: 0)
 
