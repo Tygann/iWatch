@@ -52,4 +52,30 @@ final class iWatchUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Search"].waitForExistence(timeout: 5))
     }
 
+    @MainActor
+    func testSettingsNavigation() throws {
+        let app = XCUIApplication()
+        app.launchArguments.append("UITEST_MODE")
+        app.launch()
+
+        let settingsButton = app.buttons["Settings"]
+        XCTAssertTrue(settingsButton.waitForExistence(timeout: 5))
+        settingsButton.tap()
+
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Preferences"].exists)
+        XCTAssertTrue(app.staticTexts["Sync"].exists)
+
+        app.buttons["Trakt, Not Connected"].tap()
+        XCTAssertTrue(app.navigationBars["Trakt"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Connect Trakt"].exists)
+
+        app.navigationBars["Trakt"].buttons.firstMatch.tap()
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'App Appearance,'")).firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["App Appearance"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["System"].exists)
+        XCTAssertTrue(app.staticTexts["Light"].exists)
+        XCTAssertTrue(app.staticTexts["Dark"].exists)
+    }
+
 }

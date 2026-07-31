@@ -151,6 +151,7 @@ private struct ShowsViewBody: View {
                             .foregroundStyle(.primary, .clear)
                             .scaleEffect(1.5)
                     }
+                    .accessibilityLabel("Settings")
                 }
             }
             .task(id: session.libraryRevision) {

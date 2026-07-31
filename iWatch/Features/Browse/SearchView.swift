@@ -156,6 +156,7 @@ private struct SearchViewBody: View {
                             .foregroundStyle(.primary, .clear)
                             .scaleEffect(1.5)
                     }
+                    .accessibilityLabel("Settings")
                 }
             }
         }

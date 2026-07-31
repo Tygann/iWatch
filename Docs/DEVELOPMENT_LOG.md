@@ -3,3 +3,4 @@
 ## 2026-07-31
 
 - Established repository safety, agent workflow, and the local-first/account-scoped Trakt sync contract.
+- Reorganized Settings around user-facing preferences and progressively disclosed Trakt, storage, diagnostic, and reset workflows; added durable Apple-platform design guidance.
