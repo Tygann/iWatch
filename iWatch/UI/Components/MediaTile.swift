@@ -37,13 +37,14 @@ struct MediaTile<ExtraMenu: View>: View {
                 selectedRef = ref
             }
         } label: {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(spacing: 6) {
                 PosterImage(path: posterPath)
                 if showTitle {
                     Text(title)
                         .font(.caption)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .lineLimit(2, reservesSpace: true)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity, alignment: .top)
                 }
             }
         }

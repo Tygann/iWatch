@@ -109,6 +109,16 @@ struct ArtworkAndPresentationTests {
     }
 
     @Test
+    func showStatusUsesConciseDisplayNames() {
+        #expect(makeShowDetails(status: "Returning Series").showStatusDisplayName == "Returning")
+        #expect(makeShowDetails(status: "Cancelled").showStatusDisplayName == "Canceled")
+        #expect(makeShowDetails(status: "Ended").showStatusDisplayName == "Ended")
+        #expect(makeShowDetails(status: "In Production").showStatusDisplayName == "In Production")
+        #expect(makeShowDetails(status: "Custom Status").showStatusDisplayName == "Custom Status")
+        #expect(makeShowDetails(status: "   ").showStatusDisplayName == nil)
+    }
+
+    @Test
     func artworkKindsUseTMDbSizesAppropriateForTheirContent() throws {
         let path = "/sample.jpg"
         let still = try #require(ImageURLBuilder.make(path, size: .episodeStill))
@@ -253,5 +263,29 @@ private func makeShow(
         listedAt: listedAt ?? Date(timeIntervalSince1970: TimeInterval(id)),
         lastWatchedAt: lastWatchedAt ?? Date(timeIntervalSince1970: TimeInterval(id)),
         needsProgressEnrichment: false
+    )
+}
+
+private func makeShowDetails(status: String?) -> MediaDetails {
+    .show(
+        ShowDetails(
+            common: MediaCommon(
+                id: 1,
+                traktID: nil,
+                title: "Show",
+                overview: nil,
+                tagline: nil,
+                posterPath: nil,
+                backdropPath: nil,
+                rating: nil,
+                ratingCount: nil,
+                genres: [],
+                releaseDate: nil
+            ),
+            seasons: [],
+            totalEpisodes: nil,
+            nextAirDate: nil,
+            status: status
+        )
     )
 }

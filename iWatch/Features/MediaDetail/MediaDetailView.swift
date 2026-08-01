@@ -344,6 +344,7 @@ private struct MediaDetailBody: View {
         let hasMetadata = details.rating != nil
             || details.releaseDate != nil
             || details.movieRuntimeMinutes != nil
+            || details.showStatusDisplayName != nil
             || !details.genres.isEmpty
 
         if hasMetadata {
@@ -375,6 +376,7 @@ private struct MediaDetailBody: View {
 
                         if details.releaseDate != nil
                             || details.movieRuntimeMinutes != nil
+                            || details.showStatusDisplayName != nil
                             || !details.genres.isEmpty {
                             metricDivider
                         }
@@ -384,13 +386,22 @@ private struct MediaDetailBody: View {
                         metric(title: "RELEASE",
                                value: releaseDate.formatted(.dateTime.year()),
                                caption: releaseDate.formatted(.dateTime.month(.abbreviated).day()))
-                        if details.movieRuntimeMinutes != nil || !details.genres.isEmpty {
+                        if details.movieRuntimeMinutes != nil
+                            || details.showStatusDisplayName != nil
+                            || !details.genres.isEmpty {
                             metricDivider
                         }
                     }
 
                     if let runtime = details.movieRuntimeMinutes {
                         metric(title: "RUNTIME", value: "\(runtime)", caption: "Minutes")
+                        if !details.genres.isEmpty {
+                            metricDivider
+                        }
+                    }
+
+                    if let status = details.showStatusDisplayName {
+                        metric(title: "STATUS", value: status, caption: "Series")
                         if !details.genres.isEmpty {
                             metricDivider
                         }

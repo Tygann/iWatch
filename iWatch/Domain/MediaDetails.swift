@@ -22,6 +22,31 @@ extension MediaDetails {
         return nil
     }
 
+    var showStatusDisplayName: String? {
+        guard case let .show(show) = self,
+              let status = show.status?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !status.isEmpty else {
+            return nil
+        }
+
+        switch status.lowercased() {
+        case "returning series":
+            return "Returning"
+        case "canceled", "cancelled":
+            return "Canceled"
+        case "ended":
+            return "Ended"
+        case "in production":
+            return "In Production"
+        case "planned":
+            return "Planned"
+        case "pilot":
+            return "Pilot"
+        default:
+            return status
+        }
+    }
+
     var mediaID: MediaID {
         switch self {
         case .movie(let movie):
