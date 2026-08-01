@@ -310,7 +310,7 @@ private func seedUITestData(into persistence: Persistence) {
         genres: ["Mystery", "Drama"],
         releaseDate: Calendar.current.date(from: DateComponents(year: 2023, month: 10, day: 1)),
         totalEpisodes: 2,
-        nextAirDate: nil,
+        nextAirDate: Calendar.current.date(byAdding: .day, value: 2, to: .now),
         statusRaw: "Returning Series",
         seasonsData: seasonsData
     )

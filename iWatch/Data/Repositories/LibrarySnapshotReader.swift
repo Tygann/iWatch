@@ -33,16 +33,37 @@ actor LibrarySnapshotReader {
             media.map { ("\($0.kindRaw):\($0.tmdbID)", $0) },
             uniquingKeysWith: { first, _ in first }
         )
-        let watchedIDs = Set(events.map(\.tmdbID))
+        let watchlistByID = Dictionary(
+            watchlist.map { ($0.tmdbID, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let latestEventByID = Dictionary(
+            grouping: events,
+            by: \.tmdbID
+        ).mapValues { events in
+            events.max { $0.watchedAt < $1.watchedAt }!
+        }
+        let historyOnlyIDs = latestEventByID.keys
+            .filter { watchlistByID[$0] == nil }
+            .sorted {
+                (latestEventByID[$0]?.watchedAt ?? .distantPast) >
+                    (latestEventByID[$1]?.watchedAt ?? .distantPast)
+            }
+        let movieIDs = watchlist.map(\.tmdbID) + historyOnlyIDs
 
-        return watchlist.map { row in
-            let media = mediaByKey["\(movieKind):\(row.tmdbID)"]
+        return movieIDs.compactMap { tmdbID in
+            let row = watchlistByID[tmdbID]
+            let event = latestEventByID[tmdbID]
+            guard let mediaID = row?.mediaID ?? event?.mediaID else { return nil }
+            let media = mediaByKey["\(movieKind):\(tmdbID)"]
             return LibraryMovieItem(
-                mediaID: row.mediaID,
+                mediaID: mediaID,
                 title: media?.title ?? "Unknown",
                 posterPath: media?.posterPath,
                 releaseDate: media?.releaseDate,
-                isWatched: watchedIDs.contains(row.tmdbID)
+                isInWatchlist: row != nil,
+                isWatched: event != nil,
+                lastWatchedAt: event?.watchedAt
             )
         }
     }
@@ -78,23 +99,42 @@ actor LibrarySnapshotReader {
                 }
             ))
         ) { $0.showTMDbID ?? -1 }
+        let watchlistByID = Dictionary(
+            watchlist.map { ($0.tmdbID, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let historyOnlyIDs = eventsByShowID.keys
+            .filter { $0 >= 0 && watchlistByID[$0] == nil }
+            .sorted {
+                (eventsByShowID[$0]?.map(\.watchedAt).max() ?? .distantPast) >
+                    (eventsByShowID[$1]?.map(\.watchedAt).max() ?? .distantPast)
+            }
+        let showIDs = watchlist.map(\.tmdbID) + historyOnlyIDs
 
-        return watchlist.map { row in
-            let media = mediaByID[row.tmdbID]
+        return showIDs.map { tmdbID in
+            let row = watchlistByID[tmdbID]
+            let history = eventsByShowID[tmdbID] ?? []
+            let media = mediaByID[tmdbID]
+            let episodes = episodesByShowID[tmdbID] ?? []
+            let mediaID = row?.mediaID ?? MediaID(
+                kind: .show,
+                id: tmdbID,
+                traktID: media?.traktID ?? history.compactMap(\.showTraktID).first
+            )
             return LibraryShowItem(
-                mediaID: row.mediaID,
+                mediaID: mediaID,
                 title: media?.title ?? "Unknown",
                 posterPath: media?.posterPath,
-                status: showStatus(from: media),
+                status: showStatus(from: media, episodes: episodes),
                 progress: showProgress(
-                    for: row.mediaID,
+                    for: mediaID,
                     media: media,
-                    episodes: episodesByShowID[row.tmdbID] ?? [],
-                    events: eventsByShowID[row.tmdbID] ?? []
+                    episodes: episodes,
+                    events: history
                 ),
                 needsProgressEnrichment: needsProgressEnrichment(
                     media: media,
-                    episodes: episodesByShowID[row.tmdbID] ?? []
+                    episodes: episodes
                 )
             )
         }
@@ -160,9 +200,13 @@ actor LibrarySnapshotReader {
         )
     }
 
-    private func showStatus(from record: MediaRecord?) -> ShowStatusSnapshot {
+    private func showStatus(from record: MediaRecord?, episodes: [EpisodeRecord]) -> ShowStatusSnapshot {
         let status = (record?.statusRaw ?? "").lowercased().replacingOccurrences(of: " ", with: "")
-        let nextAirDate = record?.nextAirDate
+        let startOfToday = Calendar.current.startOfDay(for: Date())
+        let nextAirDate = ([record?.nextAirDate] + episodes.map(\.airDate))
+            .compactMap { $0 }
+            .filter { Calendar.current.startOfDay(for: $0) >= startOfToday }
+            .min()
         let bucket: ShowStatusSnapshot.Bucket
         if status.contains("ended") || status.contains("canceled") || status.contains("cancelled") {
             bucket = .ended

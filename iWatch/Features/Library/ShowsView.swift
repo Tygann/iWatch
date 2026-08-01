@@ -82,8 +82,9 @@ private final class ShowsScreenModel {
         let days = cal.dateComponents([.day],
                                       from: cal.startOfDay(for: Date()),
                                       to: cal.startOfDay(for: date)).day ?? 0
-        if days <= 0 { return "Today" }
-        if days == 1 { return "Tomorrow" }
+        guard days >= 0 else { return nil }
+        if days == 0 { return "Today" }
+        if days == 1 { return "1 day" }
         return "\(days) days"
     }
 
@@ -137,7 +138,6 @@ private struct ShowsViewBody: View {
     @Binding var episodeRef: EpisodeRef?
     @Binding var showSettings: Bool
     @Environment(AppSession.self) private var session
-    @AppStorage("hideEndedShows") private var hideEndedShows = false
 
     private let cols = [GridItem(.adaptive(minimum: 110), spacing: 12)]
 
@@ -153,17 +153,18 @@ private struct ShowsViewBody: View {
                                            description: Text(errorText))
                 } else if model.snapshot.all.isEmpty {
                     ContentUnavailableView(
-                        "No tracked shows yet",
+                        "No shows yet",
                         systemImage: "tv",
-                        description: Text("Add TV shows from Search to start tracking.")
+                        description: Text("Add shows to your Watchlist from Search.")
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
                         continueWatchingSection
-                        statusSection(title: "Airing", bucket: .airing)
-                        statusSection(title: "Returning", bucket: .returning)
-                        statusSection(title: "Ended", bucket: .ended)
+                        comingUpSection
+                        librarySection(title: "Watchlist", items: model.snapshot.watchlist)
+                        librarySection(title: "Caught Up", items: model.snapshot.caughtUp)
+                        completedSection
                     }
                 }
             }
@@ -304,17 +305,16 @@ private struct ShowsViewBody: View {
     }
 
     @ViewBuilder
-    private func statusSection(title: String, bucket: ShowStatusSnapshot.Bucket) -> some View {
-        let items = model.snapshot.items(in: bucket)
-        if !items.isEmpty && !(hideEndedShows && bucket == .ended) {
+    private var comingUpSection: some View {
+        if !model.snapshot.comingUp.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                Text(title)
+                Text("Coming Up")
                     .font(.title3.weight(.semibold))
                     .padding(.horizontal)
                     .padding(.top, 12)
 
                 LazyVGrid(columns: cols, spacing: 12) {
-                    ForEach(items) { item in
+                    ForEach(model.snapshot.comingUp) { item in
                         VStack(spacing: 6) {
                             MediaTile(
                                 ref: item.mediaID,
@@ -324,7 +324,7 @@ private struct ShowsViewBody: View {
                                 selectedRef: $detailRef
                             )
 
-                            if bucket == .airing, let label = model.nextAirLabel(for: item) {
+                            if let label = model.nextAirLabel(for: item) {
                                 Text(label)
                                     .font(.footnote.weight(.semibold))
                                     .frame(maxWidth: .infinity)
@@ -337,6 +337,89 @@ private struct ShowsViewBody: View {
                 .padding(.horizontal, 12)
             }
         }
+    }
+
+    @ViewBuilder
+    private func librarySection(title: String, items: [LibraryShowItem]) -> some View {
+        if !items.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title)
+                    .font(.title3.weight(.semibold))
+                    .padding(.horizontal)
+                    .padding(.top, 12)
+
+                LazyVGrid(columns: cols, spacing: 12) {
+                    ForEach(items) { item in
+                        MediaTile(
+                            ref: item.mediaID,
+                            title: item.title,
+                            posterPath: item.posterPath,
+                            showTitle: true,
+                            selectedRef: $detailRef
+                        )
+                        .frame(width: 110)
+                    }
+                }
+                .padding(.horizontal, 12)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var completedSection: some View {
+        if !model.snapshot.completed.isEmpty {
+            NavigationLink {
+                ShowCollectionView(
+                    title: "Completed",
+                    items: model.snapshot.completed,
+                    detailRef: $detailRef
+                )
+            } label: {
+                HStack {
+                    Label("Completed", systemImage: "checkmark.circle")
+                    Spacer()
+                    Text(model.snapshot.completed.count, format: .number)
+                        .foregroundStyle(.secondary)
+                    Image(systemName: "chevron.right")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .font(.body.weight(.semibold))
+                .padding()
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 12)
+        }
+    }
+}
+
+private struct ShowCollectionView: View {
+    let title: String
+    let items: [LibraryShowItem]
+    @Binding var detailRef: MediaID?
+
+    private let cols = [GridItem(.adaptive(minimum: 110), spacing: 12)]
+
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: cols, spacing: 12) {
+                ForEach(items) { item in
+                    MediaTile(
+                        ref: item.mediaID,
+                        title: item.title,
+                        posterPath: item.posterPath,
+                        showTitle: true,
+                        selectedRef: $detailRef
+                    )
+                    .frame(width: 110)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
+        }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

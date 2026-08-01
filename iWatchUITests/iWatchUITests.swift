@@ -40,13 +40,15 @@ final class iWatchUITests: XCTestCase {
         XCTAssertTrue(movieTitle.waitForExistence(timeout: 5))
         movieTitle.tap()
 
-        XCTAssertTrue(app.buttons["Following"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Remove from watchlist"].waitForExistence(timeout: 5))
         if app.buttons["Close"].exists {
             app.buttons["Close"].tap()
         }
 
         showsTab.tap()
         XCTAssertTrue(app.staticTexts["UI Test Show"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Coming Up"].exists)
+        XCTAssertTrue(app.staticTexts["2 days"].exists)
 
         searchTab.tap()
         XCTAssertTrue(app.navigationBars["Search"].waitForExistence(timeout: 5))

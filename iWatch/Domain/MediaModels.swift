@@ -152,7 +152,9 @@ struct LibraryMovieItem: Identifiable, Equatable, Sendable {
     let title: String
     let posterPath: String?
     let releaseDate: Date?
+    let isInWatchlist: Bool
     let isWatched: Bool
+    let lastWatchedAt: Date?
 
     var id: Int { mediaID.id }
 }
@@ -171,42 +173,44 @@ struct LibraryShowItem: Identifiable, Equatable, Sendable {
 struct ShowLibrarySnapshot: Equatable, Sendable {
     let all: [LibraryShowItem]
     let continueWatching: [LibraryShowItem]
-    let airing: [LibraryShowItem]
-    let returning: [LibraryShowItem]
-    let ended: [LibraryShowItem]
+    let comingUp: [LibraryShowItem]
+    let watchlist: [LibraryShowItem]
+    let caughtUp: [LibraryShowItem]
+    let completed: [LibraryShowItem]
 
     static let empty = ShowLibrarySnapshot(items: [])
 
-    init(items: [LibraryShowItem]) {
+    init(items: [LibraryShowItem], referenceDate: Date = .now, calendar: Calendar = .current) {
         all = items
         continueWatching = items
-            .filter { $0.progress.nextEpisode != nil && $0.progress.remainingReleased > 0 }
+            .filter { $0.progress.watchedCount > 0 && $0.progress.remainingReleased > 0 }
             .sorted {
                 ($0.progress.nextEpisode?.airDate ?? .distantPast) >
                     ($1.progress.nextEpisode?.airDate ?? .distantPast)
             }
-        airing = Self.items(in: .airing, from: items)
-        returning = Self.items(in: .returning, from: items)
-        ended = Self.items(in: .ended, from: items)
-    }
-
-    func items(in bucket: ShowStatusSnapshot.Bucket) -> [LibraryShowItem] {
-        switch bucket {
-        case .airing: airing
-        case .returning: returning
-        case .ended: ended
-        }
-    }
-
-    private static func items(
-        in bucket: ShowStatusSnapshot.Bucket,
-        from items: [LibraryShowItem]
-    ) -> [LibraryShowItem] {
-        items
-            .filter { $0.status.bucket == bucket }
+        let startOfToday = calendar.startOfDay(for: referenceDate)
+        comingUp = items
+            .filter {
+                guard let nextAirDate = $0.status.nextAirDate else { return false }
+                return calendar.startOfDay(for: nextAirDate) >= startOfToday
+            }
             .sorted {
                 ($0.status.nextAirDate ?? .distantFuture) <
                     ($1.status.nextAirDate ?? .distantFuture)
             }
+        watchlist = items
+            .filter { $0.progress.watchedCount == 0 }
+            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        completed = items
+            .filter { $0.status.bucket == .ended && $0.progress.isComplete }
+            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        let completedIDs = Set(completed.map(\.id))
+        caughtUp = items
+            .filter {
+                $0.progress.watchedCount > 0 &&
+                    $0.progress.remainingReleased == 0 &&
+                    !completedIDs.contains($0.id)
+            }
+            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     }
 }

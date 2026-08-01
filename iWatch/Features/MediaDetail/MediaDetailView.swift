@@ -322,9 +322,10 @@ private struct MediaDetailBody: View {
                     Haptics.notification(.success)
                     Task { await model.toggleWatchlist() }
                 } label: {
-                    Text(model.isInWatchlist ? "Following" : "Follow")
+                    Text(model.isInWatchlist ? "In Watchlist" : "Add to Watchlist")
                         .bold()
-                        .frame(width: 90, height: 25)
+                        .frame(minWidth: 90, minHeight: 25)
+                        .padding(.horizontal, 6)
                 }
                 .buttonStyle(.borderedProminent)
                 .glassEffect(.regular, in: .capsule)

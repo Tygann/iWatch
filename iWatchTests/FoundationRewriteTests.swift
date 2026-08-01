@@ -819,6 +819,73 @@ struct FoundationRewriteTests {
     }
 
     @Test
+    func movieLibraryIncludesWatchlistAndHistoryOnlyItems() async throws {
+        let persistence = makePersistence()
+        let context = persistence.makeContext()
+        let earlier = Date(timeIntervalSince1970: 1_000)
+        let later = Date(timeIntervalSince1970: 2_000)
+
+        context.insert(MediaRecord(kind: .movie, tmdbID: 1, traktID: 10, title: "Saved"))
+        context.insert(MediaRecord(kind: .movie, tmdbID: 2, traktID: 20, title: "Watched"))
+        context.insert(WatchlistRecord(mediaID: MediaID(kind: .movie, id: 1, traktID: 10), isInWatchlist: true))
+        context.insert(WatchedEventRecord(kind: .movie, tmdbID: 2, traktID: 20, watchedAt: earlier))
+        context.insert(WatchedEventRecord(kind: .movie, tmdbID: 2, traktID: 20, watchedAt: later))
+        try context.save()
+
+        let items = try await LibrarySnapshotReader(persistence: persistence).movieItems()
+        let saved = try #require(items.first { $0.id == 1 })
+        let watched = try #require(items.first { $0.id == 2 })
+
+        #expect(saved.isInWatchlist)
+        #expect(!saved.isWatched)
+        #expect(!watched.isInWatchlist)
+        #expect(watched.isWatched)
+        #expect(watched.lastWatchedAt == later)
+    }
+
+    @Test
+    func showLibraryIncludesHistoryOnlyItems() async throws {
+        let persistence = makePersistence()
+        let context = persistence.makeContext()
+        context.insert(MediaRecord(
+            kind: .show,
+            tmdbID: 3,
+            traktID: 30,
+            title: "Finished",
+            totalEpisodes: 1,
+            statusRaw: "Ended"
+        ))
+        context.insert(EpisodeRecord(
+            showTMDbID: 3,
+            showTraktID: 30,
+            tmdbID: 31,
+            traktID: 310,
+            seasonNumber: 1,
+            episodeNumber: 1,
+            name: "Finale",
+            airDate: Date(timeIntervalSince1970: 1_000)
+        ))
+        context.insert(WatchedEventRecord(
+            kind: .episode,
+            tmdbID: 31,
+            traktID: 310,
+            showTMDbID: 3,
+            showTraktID: 30,
+            seasonNumber: 1,
+            episodeNumber: 1,
+            watchedAt: Date(timeIntervalSince1970: 2_000)
+        ))
+        try context.save()
+
+        let items = try await LibrarySnapshotReader(persistence: persistence).showItems()
+        let item = try #require(items.first)
+
+        #expect(item.mediaID == MediaID(kind: .show, id: 3, traktID: 30))
+        #expect(item.progress.isComplete)
+        #expect(item.status.bucket == .ended)
+    }
+
+    @Test
     func cloudKitCompatibleSchemaLoads() throws {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("iWatch-cloudkit-\(UUID().uuidString).store")

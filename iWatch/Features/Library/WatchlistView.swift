@@ -35,7 +35,8 @@ private final class WatchlistScreenModel {
 
         do {
             if kind == .movie {
-                movieItems = try await repository.movieLibraryItems(revision: revision).filter { !$0.isWatched }
+                movieItems = try await repository.movieLibraryItems(revision: revision)
+                    .filter { $0.isInWatchlist && !$0.isWatched }
             } else {
                 showItems = try await repository.showLibrarySnapshot(revision: revision).continueWatching
             }
@@ -47,7 +48,7 @@ private final class WatchlistScreenModel {
         }
     }
 
-    var title: String { kind == .movie ? "To Watch" : "Continue Watching" }
+    var title: String { kind == .movie ? "Watchlist" : "Continue Watching" }
 
     func markNextEpisodeWatched(for item: LibraryShowItem) async {
         guard let next = item.progress.nextEpisode else { return }

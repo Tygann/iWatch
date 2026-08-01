@@ -38,7 +38,7 @@ struct SyncDiagnosticsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This removes Trakt-derived Following and history data plus pending Trakt operations from this device, then rebuilds from Trakt. Unsynced local Trakt changes will be lost.")
+            Text("This removes Trakt-derived Watchlist and history data plus pending Trakt operations from this device, then rebuilds from Trakt. Unsynced local Trakt changes will be lost.")
         }
         .task {
             await session.refreshSyncDiagnostics()
@@ -87,12 +87,12 @@ struct SyncDiagnosticsView: View {
 
     private var importedLibrarySection: some View {
         Section {
-            LabeledContent("Following Movies") {
+            LabeledContent("Watchlist Movies") {
                 Text("\(session.syncDiagnostics.importedMovieCount)")
                     .foregroundStyle(.secondary)
             }
 
-            LabeledContent("Following Shows") {
+            LabeledContent("Watchlist Shows") {
                 Text("\(session.syncDiagnostics.importedShowCount)")
                     .foregroundStyle(.secondary)
             }
@@ -104,7 +104,7 @@ struct SyncDiagnosticsView: View {
         } header: {
             Text("Imported Library")
         } footer: {
-            Text("Following includes Trakt Watchlist items and active show progress retained by iWatch.")
+            Text("Watchlist includes Trakt Watchlist items and active show progress retained by iWatch.")
         }
     }
 

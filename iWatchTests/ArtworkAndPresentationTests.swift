@@ -65,21 +65,25 @@ struct ArtworkAndPresentationTests {
 
     @Test
     func showSnapshotPrecomputesSectionsAndOrdering() {
-        let older = Date(timeIntervalSince1970: 1_000)
-        let newer = Date(timeIntervalSince1970: 2_000)
+        let today = Date(timeIntervalSince1970: 1_000_000)
+        let tomorrow = today.addingTimeInterval(86_400)
+        let later = tomorrow.addingTimeInterval(86_400)
         let items = [
-            makeShow(id: 1, bucket: .airing, nextAirDate: newer, nextEpisodeAirDate: older),
-            makeShow(id: 2, bucket: .returning, nextAirDate: older, nextEpisodeAirDate: newer),
-            makeShow(id: 3, bucket: .ended, nextAirDate: nil, nextEpisodeAirDate: nil)
+            makeShow(id: 1, bucket: .airing, nextAirDate: later, nextEpisodeAirDate: today, watchedCount: 1),
+            makeShow(id: 2, bucket: .returning, nextAirDate: tomorrow, nextEpisodeAirDate: later, watchedCount: 1),
+            makeShow(id: 3, bucket: .ended, nextAirDate: nil, nextEpisodeAirDate: nil, watchedCount: 10, remainingReleased: 0, totalEpisodes: 10),
+            makeShow(id: 4, bucket: .returning, nextAirDate: nil, nextEpisodeAirDate: nil, watchedCount: 4, remainingReleased: 0),
+            makeShow(id: 5, bucket: .ended, nextAirDate: nil, nextEpisodeAirDate: today, watchedCount: 0)
         ]
 
-        let snapshot = ShowLibrarySnapshot(items: items)
+        let snapshot = ShowLibrarySnapshot(items: items, referenceDate: today)
 
-        #expect(snapshot.all.count == 3)
+        #expect(snapshot.all.count == 5)
         #expect(snapshot.continueWatching.map(\.id) == [2, 1])
-        #expect(snapshot.airing.map(\.id) == [1])
-        #expect(snapshot.returning.map(\.id) == [2])
-        #expect(snapshot.ended.map(\.id) == [3])
+        #expect(snapshot.comingUp.map(\.id) == [2, 1])
+        #expect(snapshot.watchlist.map(\.id) == [5])
+        #expect(snapshot.caughtUp.map(\.id) == [4])
+        #expect(snapshot.completed.map(\.id) == [3])
     }
 
     @Test
@@ -197,7 +201,10 @@ private func makeShow(
     id: Int,
     bucket: ShowStatusSnapshot.Bucket,
     nextAirDate: Date?,
-    nextEpisodeAirDate: Date?
+    nextEpisodeAirDate: Date?,
+    watchedCount: Int = 1,
+    remainingReleased: Int? = nil,
+    totalEpisodes: Int = 10
 ) -> LibraryShowItem {
     LibraryShowItem(
         mediaID: MediaID(kind: .show, id: id),
@@ -206,9 +213,9 @@ private func makeShow(
         status: ShowStatusSnapshot(bucket: bucket, nextAirDate: nextAirDate),
         progress: ShowProgress(
             watchedEpisodeKeys: [],
-            watchedCount: nextEpisodeAirDate == nil ? 0 : 1,
-            totalEpisodes: 10,
-            remainingReleased: nextEpisodeAirDate == nil ? 0 : 1,
+            watchedCount: watchedCount,
+            totalEpisodes: totalEpisodes,
+            remainingReleased: remainingReleased ?? (nextEpisodeAirDate == nil ? 0 : 1),
             nextEpisode: nextEpisodeAirDate.map {
                 ShowProgress.NextEpisode(
                     tmdbID: id * 100,

@@ -15,7 +15,7 @@ struct WatchlistMenu: View {
             if !hasLoadedWatchlistState {
                 ProgressView()
             } else if isInWatchlist {
-                Button(role: .destructive) {
+                Button {
                     Task {
                         try? await container.libraryRepository.setWatchlist(false, for: ref)
                         await MainActor.run {
@@ -24,7 +24,7 @@ struct WatchlistMenu: View {
                         }
                     }
                 } label: {
-                    Label("Unfollow", systemImage: "minus.circle")
+                    Label("Remove from Watchlist", systemImage: "minus.circle")
                 }
             } else {
                 Button {
@@ -36,7 +36,7 @@ struct WatchlistMenu: View {
                         }
                     }
                 } label: {
-                    Label("Follow", systemImage: "plus.circle")
+                    Label("Add to Watchlist", systemImage: "plus.circle")
                 }
             }
         }

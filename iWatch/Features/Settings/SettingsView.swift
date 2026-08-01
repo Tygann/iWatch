@@ -5,7 +5,6 @@ struct SettingsView: View {
     @Environment(AppSession.self) private var session
     @Environment(AppRouter.self) private var router
 
-    @AppStorage("hideEndedShows") private var hideEndedShows = false
     @AppStorage("appTheme") private var appTheme: AppTheme = .system
 
     var body: some View {
@@ -30,10 +29,6 @@ struct SettingsView: View {
                 Text("Search").tag(AppRouter.Tab.search.rawValue)
             } label: {
                 Label("Default Tab", systemImage: "rectangle.3.group")
-            }
-
-            Toggle(isOn: $hideEndedShows) {
-                Label("Hide Ended Shows", systemImage: "eye.slash")
             }
 
             NavigationLink {

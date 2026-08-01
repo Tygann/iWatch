@@ -5,13 +5,6 @@ import SwiftData
 @MainActor
 @Observable
 private final class MoviesScreenModel {
-    enum Segment: String, CaseIterable, Identifiable {
-        case following = "Following"
-        case toWatch = "To Watch"
-
-        var id: String { rawValue }
-    }
-
     private let repository: LibraryRepository
     private let session: AppSession
 
@@ -19,7 +12,6 @@ private final class MoviesScreenModel {
     var isLoading = false
     var isEnriching = false
     var errorText: String?
-    var segment: Segment = .following
     private var loadedRevision: Int?
     private var enrichedRevision: Int?
 
@@ -71,13 +63,14 @@ private final class MoviesScreenModel {
         }
     }
 
-    var filteredItems: [LibraryMovieItem] {
-        switch segment {
-        case .following:
-            return items
-        case .toWatch:
-            return items.filter { !$0.isWatched }
-        }
+    var watchlistItems: [LibraryMovieItem] {
+        items.filter { $0.isInWatchlist && !$0.isWatched }
+    }
+
+    var watchedItems: [LibraryMovieItem] {
+        items
+            .filter(\.isWatched)
+            .sorted { ($0.lastWatchedAt ?? .distantPast) > ($1.lastWatchedAt ?? .distantPast) }
     }
 
     func markWatched(_ item: LibraryMovieItem) async {
@@ -140,61 +133,25 @@ private struct MoviesViewBody: View {
 
     var body: some View {
         NavigationStack {
-            VStack {
-                Picker("Section", selection: $model.segment) {
-                    ForEach(MoviesScreenModel.Segment.allCases) { segment in
-                        Text(segment.rawValue).tag(segment)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-
+            Group {
                 if model.isLoading {
-                    Spacer()
                     ProgressView()
-                    Spacer()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let errorText = model.errorText {
                     ContentUnavailableView("Movies Error",
                                            systemImage: "exclamationmark.triangle",
                                            description: Text(errorText))
-                } else if model.filteredItems.isEmpty {
+                } else if model.items.isEmpty {
                     ContentUnavailableView(
-                        model.segment == .following ? "No followed movies yet" : "Nothing to watch",
+                        "No movies yet",
                         systemImage: "film",
-                        description: Text(model.segment == .following
-                                          ? "Add movies from Search to start tracking."
-                                          : "You’re all caught up on the movies you follow.")
+                        description: Text("Add movies to your Watchlist from Search.")
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
-                        LazyVGrid(columns: cols, spacing: 12) {
-                            ForEach(model.filteredItems) { item in
-                                MediaTile(
-                                    ref: item.mediaID,
-                                    title: item.title,
-                                    posterPath: item.posterPath,
-                                    showTitle: true,
-                                    selectedRef: $detailRef,
-                                    extraMenu: {
-                                    if item.isWatched {
-                                        Button("Mark as Unwatched") {
-                                            Haptics.notification(.success)
-                                            Task { await model.markUnwatched(item) }
-                                        }
-                                    } else {
-                                        Button("Mark as Watched") {
-                                            Haptics.notification(.success)
-                                            Task { await model.markWatched(item) }
-                                        }
-                                    }
-                                    }
-                                )
-                                .frame(width: 110)
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.top, 12)
+                        watchlistSection
+                        watchedSection
                     }
                 }
             }
@@ -236,6 +193,128 @@ private struct MoviesViewBody: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var watchlistSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Watchlist")
+                .font(.title3.weight(.semibold))
+                .padding(.horizontal)
+
+            if model.watchlistItems.isEmpty {
+                ContentUnavailableView(
+                    "Nothing to watch",
+                    systemImage: "checkmark.circle",
+                    description: Text("Add movies from Search to your Watchlist.")
+                )
+                .frame(maxWidth: .infinity, minHeight: 220)
+            } else {
+                LazyVGrid(columns: cols, spacing: 12) {
+                    ForEach(model.watchlistItems) { item in
+                        movieTile(item)
+                    }
+                }
+                .padding(.horizontal, 12)
+            }
+        }
+        .padding(.top, 12)
+    }
+
+    @ViewBuilder
+    private var watchedSection: some View {
+        if !model.watchedItems.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                NavigationLink {
+                    MovieCollectionView(
+                        title: "Watched",
+                        items: model.watchedItems,
+                        detailRef: $detailRef,
+                        markUnwatched: model.markUnwatched
+                    )
+                } label: {
+                    Text("Watched")
+                        .font(.title3.weight(.semibold))
+                    Image(systemName: "chevron.right")
+                        .font(.callout.weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 12) {
+                        ForEach(model.watchedItems.prefix(12)) { item in
+                            movieTile(item)
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                }
+            }
+            .padding(.top, 20)
+            .padding(.bottom, 12)
+        }
+    }
+
+    private func movieTile(_ item: LibraryMovieItem) -> some View {
+        MediaTile(
+            ref: item.mediaID,
+            title: item.title,
+            posterPath: item.posterPath,
+            showTitle: true,
+            selectedRef: $detailRef,
+            extraMenu: {
+                if item.isWatched {
+                    Button("Mark as Unwatched") {
+                        Haptics.notification(.success)
+                        Task { await model.markUnwatched(item) }
+                    }
+                } else {
+                    Button("Mark as Watched") {
+                        Haptics.notification(.success)
+                        Task { await model.markWatched(item) }
+                    }
+                }
+            }
+        )
+        .frame(width: 110)
+    }
+}
+
+private struct MovieCollectionView: View {
+    let title: String
+    let items: [LibraryMovieItem]
+    @Binding var detailRef: MediaID?
+    let markUnwatched: (LibraryMovieItem) async -> Void
+
+    private let cols = [GridItem(.adaptive(minimum: 110), spacing: 12)]
+
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: cols, spacing: 12) {
+                ForEach(items) { item in
+                    MediaTile(
+                        ref: item.mediaID,
+                        title: item.title,
+                        posterPath: item.posterPath,
+                        showTitle: true,
+                        selectedRef: $detailRef,
+                        extraMenu: {
+                            Button("Mark as Unwatched") {
+                                Haptics.notification(.success)
+                                Task { await markUnwatched(item) }
+                            }
+                        }
+                    )
+                    .frame(width: 110)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
+        }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
