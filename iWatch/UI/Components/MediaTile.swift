@@ -6,6 +6,7 @@ struct MediaTile<ExtraMenu: View>: View {
     let posterPath: String?
     var showTitle: Bool = false
     @Binding var selectedRef: MediaRef?
+    var onSelect: (() -> Void)?
 
     // extra context‑menu items (optional)
     @ViewBuilder var extraMenu: () -> ExtraMenu
@@ -16,6 +17,7 @@ struct MediaTile<ExtraMenu: View>: View {
         posterPath: String?,
         showTitle: Bool = false,
         selectedRef: Binding<MediaRef?>,
+        onSelect: (() -> Void)? = nil,
         @ViewBuilder extraMenu: @escaping () -> ExtraMenu = { EmptyView() }
     ) {
         self.ref = ref
@@ -23,11 +25,18 @@ struct MediaTile<ExtraMenu: View>: View {
         self.posterPath = posterPath
         self.showTitle = showTitle
         self._selectedRef = selectedRef
+        self.onSelect = onSelect
         self.extraMenu = extraMenu
     }
 
     var body: some View {
-        Button { selectedRef = ref } label: {
+        Button {
+            if let onSelect {
+                onSelect()
+            } else {
+                selectedRef = ref
+            }
+        } label: {
             VStack(alignment: .leading, spacing: 6) {
                 PosterImage(path: posterPath)
                 if showTitle {

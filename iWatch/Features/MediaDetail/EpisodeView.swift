@@ -50,6 +50,10 @@ private final class EpisodeScreenModel {
         return "\(showTitle) • S\(ref.season)E\(ref.episode) • \(episodeTitle)"
     }
 
+    var showRef: MediaID {
+        MediaID(kind: .show, id: ref.showId, traktID: ref.showTraktID)
+    }
+
     func load(forceRefresh: Bool = false) async {
         loadState = .loading
 
@@ -169,6 +173,15 @@ private struct EpisodeViewBody: View {
         .task(id: session.libraryRevision) {
             await model.refreshLibraryState()
         }
+        .toolbar {
+            ToolbarItem(placement: .secondaryAction) {
+                NavigationLink {
+                    MediaDetailView(ref: model.showRef)
+                } label: {
+                    Label("View Show", systemImage: "tv")
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -187,6 +200,17 @@ private struct EpisodeViewBody: View {
 
     private func detailsSection(_ details: EpisodeDetails) -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            NavigationLink {
+                MediaDetailView(ref: model.showRef)
+            } label: {
+                HStack(spacing: 4) {
+                    Text(model.showTitle.isEmpty ? "View Show" : model.showTitle)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.bold())
+                }
+                .font(.subheadline.weight(.semibold))
+            }
+
             let episodeName = details.name.isEmpty ? "" : details.name
             let separator = episodeName.isEmpty ? "" : " • "
 

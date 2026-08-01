@@ -126,6 +126,34 @@ struct ArtworkAndPresentationTests {
             cachedEpisodeCounts: [1: 10]
         ))
     }
+
+    @Test
+    func partialOrArtworkIncompleteSeasonCachesRefreshOnce() {
+        #expect(EpisodeSeasonCachePolicy.shouldRefresh(
+            cachedCount: 3,
+            expectedEpisodeCount: 7,
+            hasMissingArtwork: false,
+            attemptedArtworkRefresh: false
+        ))
+        #expect(EpisodeSeasonCachePolicy.shouldRefresh(
+            cachedCount: 10,
+            expectedEpisodeCount: 10,
+            hasMissingArtwork: true,
+            attemptedArtworkRefresh: false
+        ))
+        #expect(!EpisodeSeasonCachePolicy.shouldRefresh(
+            cachedCount: 10,
+            expectedEpisodeCount: 10,
+            hasMissingArtwork: true,
+            attemptedArtworkRefresh: true
+        ))
+        #expect(!EpisodeSeasonCachePolicy.shouldRefresh(
+            cachedCount: 10,
+            expectedEpisodeCount: 10,
+            hasMissingArtwork: false,
+            attemptedArtworkRefresh: false
+        ))
+    }
 }
 
 private final class MockArtworkURLProtocol: URLProtocol, @unchecked Sendable {

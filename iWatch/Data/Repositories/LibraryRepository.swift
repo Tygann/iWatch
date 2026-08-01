@@ -10,6 +10,7 @@ final class LibraryRepository {
     private var cachedMovieSnapshot: (revision: Int, items: [LibraryMovieItem])?
     private var cachedShowSnapshot: (revision: Int, snapshot: ShowLibrarySnapshot)?
     private var showSnapshotTask: (revision: Int, task: Task<ShowLibrarySnapshot, Error>)?
+    private var refreshedSeasonArtworkKeys: Set<String> = []
 
     init(persistence: Persistence, tmdb: TMDbService, resetGate: AppDataResetGate = AppDataResetGate()) {
         self.persistence = persistence
@@ -57,12 +58,26 @@ final class LibraryRepository {
     func episodes(for showID: MediaID, seasonNumber: Int, forceRefresh: Bool = false) async throws -> [EpisodeDetails] {
         let context = persistence.makeContext()
         let cached = episodeRecords(forShowID: showID.tmdbID, seasonNumber: seasonNumber, context: context)
-        if !forceRefresh, !cached.isEmpty {
+        let expectedEpisodeCount = mediaRecord(for: showID, context: context)
+            .flatMap { decodeSeasons($0.seasonsData) }
+            .flatMap { seasons in
+                seasons.first { $0.seasonNumber == seasonNumber }?.episodeCount
+            }
+        let seasonKey = "\(showID.tmdbID):\(seasonNumber)"
+        let shouldRefresh = EpisodeSeasonCachePolicy.shouldRefresh(
+            cachedCount: cached.count,
+            expectedEpisodeCount: expectedEpisodeCount,
+            hasMissingArtwork: cached.contains { $0.stillPath == nil },
+            attemptedArtworkRefresh: refreshedSeasonArtworkKeys.contains(seasonKey)
+        )
+
+        if !forceRefresh, !shouldRefresh {
             return cached.map(mapEpisodeRecord(_:))
         }
 
         let fresh = try await tmdb.seasonEpisodes(showId: showID.tmdbID, seasonNumber: seasonNumber)
         try upsertEpisodes(fresh, for: showID)
+        refreshedSeasonArtworkKeys.insert(seasonKey)
 
         let refreshedContext = persistence.makeContext()
         return episodeRecords(forShowID: showID.tmdbID, seasonNumber: seasonNumber, context: refreshedContext)
@@ -532,8 +547,8 @@ final class LibraryRepository {
                 existing.showTraktID = showID.traktID ?? existing.showTraktID
                 existing.name = episode.name
                 existing.airDate = episode.airDate
-                existing.stillPath = episode.stillPath
-                existing.overview = episode.overview
+                existing.stillPath = episode.stillPath ?? existing.stillPath
+                existing.overview = episode.overview ?? existing.overview
                 existing.extrasData = try episode.extras.map { try encoder.encode($0) } ?? existing.extrasData
                 existing.updatedAt = .now
             } else {
@@ -738,13 +753,26 @@ final class LibraryRepository {
     }
 
     private func episodeRecord(for ref: EpisodeRef, context: ModelContext) -> EpisodeRecord? {
-        allEpisodeRecords(forShowID: ref.showId, context: context).first {
-            $0.seasonNumber == ref.season && $0.episodeNumber == ref.episode
-        }
+        let showID = ref.showId
+        let seasonNumber = ref.season
+        let episodeNumber = ref.episode
+        var descriptor = FetchDescriptor<EpisodeRecord>(
+            predicate: #Predicate {
+                $0.showTMDbID == showID &&
+                    $0.seasonNumber == seasonNumber &&
+                    $0.episodeNumber == episodeNumber
+            }
+        )
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
     }
 
     private func episodeRecord(forTMDbID tmdbID: Int, context: ModelContext) -> EpisodeRecord? {
-        allEpisodeRecords(context: context).first { $0.tmdbID == tmdbID }
+        var descriptor = FetchDescriptor<EpisodeRecord>(
+            predicate: #Predicate { $0.tmdbID == tmdbID }
+        )
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
     }
 
     private func watchlistRecord(for id: MediaID, context: ModelContext) -> WatchlistRecord? {
@@ -772,17 +800,22 @@ final class LibraryRepository {
     }
 
     private func allEpisodeRecords(forShowID showID: Int, context: ModelContext) -> [EpisodeRecord] {
-        allEpisodeRecords(context: context)
-            .filter { $0.showTMDbID == showID }
-            .sorted {
-                if $0.seasonNumber != $1.seasonNumber { return $0.seasonNumber < $1.seasonNumber }
-                return $0.episodeNumber < $1.episodeNumber
-            }
+        (try? context.fetch(FetchDescriptor<EpisodeRecord>(
+            predicate: #Predicate { $0.showTMDbID == showID },
+            sortBy: [
+                SortDescriptor(\.seasonNumber),
+                SortDescriptor(\.episodeNumber)
+            ]
+        ))) ?? []
     }
 
     private func episodeRecords(forShowID showID: Int, seasonNumber: Int, context: ModelContext) -> [EpisodeRecord] {
-        allEpisodeRecords(forShowID: showID, context: context)
-            .filter { $0.seasonNumber == seasonNumber }
+        (try? context.fetch(FetchDescriptor<EpisodeRecord>(
+            predicate: #Predicate {
+                $0.showTMDbID == showID && $0.seasonNumber == seasonNumber
+            },
+            sortBy: [SortDescriptor(\.episodeNumber)]
+        ))) ?? []
     }
 
     private func allWatchlistRecords(context: ModelContext) -> [WatchlistRecord] {
@@ -810,6 +843,21 @@ final class LibraryRepository {
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
         return ((try? context.fetch(FetchDescriptor<SyncOperationRecord>())) ?? [])
             .filter { LibraryGenerationPolicy.belongsToCurrentGeneration($0.generationID, current: generationID) }
+    }
+}
+
+nonisolated enum EpisodeSeasonCachePolicy {
+    static func shouldRefresh(
+        cachedCount: Int,
+        expectedEpisodeCount: Int?,
+        hasMissingArtwork: Bool,
+        attemptedArtworkRefresh: Bool
+    ) -> Bool {
+        guard cachedCount > 0 else { return true }
+        if let expectedEpisodeCount, cachedCount < expectedEpisodeCount {
+            return true
+        }
+        return hasMissingArtwork && !attemptedArtworkRefresh
     }
 }
 

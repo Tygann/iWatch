@@ -20,10 +20,7 @@ struct PosterImage: View {
         .frame(width: width, height: height)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .clipped()
-        .overlay {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(.white.opacity(0.08), lineWidth: 0.5)
-        }
+        .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
         .accessibilityHidden(true)
     }
 

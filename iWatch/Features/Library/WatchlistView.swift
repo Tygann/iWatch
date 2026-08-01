@@ -72,6 +72,7 @@ struct WatchlistView: View {
 
     @State private var model: WatchlistScreenModel?
     @State private var detailRef: MediaID?
+    @State private var episodeRef: EpisodeRef?
 
     init(
         kind: MediaKind,
@@ -86,7 +87,7 @@ struct WatchlistView: View {
     var body: some View {
         Group {
             if let model {
-                WatchlistBody(model: model, detailRef: $detailRef)
+                WatchlistBody(model: model, detailRef: $detailRef, episodeRef: $episodeRef)
             } else {
                 ProgressView()
                     .task {
@@ -111,12 +112,23 @@ struct WatchlistView: View {
                     }
             }
         }
+        .sheet(item: $episodeRef) { ref in
+            NavigationStack {
+                EpisodeView(ref: ref)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button(role: .close) { episodeRef = nil }
+                        }
+                    }
+            }
+        }
     }
 }
 
 private struct WatchlistBody: View {
     @Bindable var model: WatchlistScreenModel
     @Binding var detailRef: MediaID?
+    @Binding var episodeRef: EpisodeRef?
     @Environment(AppSession.self) private var session
 
     private let cols = [GridItem(.adaptive(minimum: 110), spacing: 12)]
@@ -160,22 +172,43 @@ private struct WatchlistBody: View {
                         }
                     } else {
                         ForEach(model.showItems) { item in
+                            let next = item.progress.nextEpisode
                             MediaTile(
                                 ref: item.mediaID,
                                 title: item.title,
                                 posterPath: item.posterPath,
                                 showTitle: true,
-                                selectedRef: $detailRef
-                            ) {
-                                if item.progress.nextEpisode != nil {
-                                    Button {
-                                        Haptics.notification(.success)
-                                        Task { await model.markNextEpisodeWatched(for: item) }
-                                    } label: {
-                                        Label("Mark as Watched", systemImage: "rectangle.badge.checkmark")
+                                selectedRef: $detailRef,
+                                onSelect: {
+                                    episodeRef = next.map {
+                                        EpisodeRef(
+                                            showId: item.mediaID.tmdbID,
+                                            showTraktID: item.mediaID.traktID,
+                                            season: $0.season,
+                                            episode: $0.episode,
+                                            tmdbID: $0.tmdbID,
+                                            traktID: $0.traktID
+                                        )
+                                    }
+                                },
+                                extraMenu: {
+                                    Button { detailRef = item.mediaID } label: {
+                                        Label("View Show", systemImage: "tv")
+                                    }
+                                    if item.progress.nextEpisode != nil {
+                                        Button {
+                                            Haptics.notification(.success)
+                                            Task { await model.markNextEpisodeWatched(for: item) }
+                                        } label: {
+                                            Label("Mark as Watched", systemImage: "rectangle.badge.checkmark")
+                                        }
                                     }
                                 }
-                            }
+                            )
+                            .accessibilityLabel(
+                                next.map { "\(item.title), Season \($0.season) Episode \($0.episode), Continue Watching" }
+                                    ?? item.title
+                            )
                             .onTapGesture(count: 2) {
                                 Haptics.notification(.success)
                                 Task { await model.markNextEpisodeWatched(for: item) }
@@ -185,7 +218,7 @@ private struct WatchlistBody: View {
                                     Text("S\(next.season) E\(next.episode)")
                                         .font(.caption2.bold())
                                         .padding(3)
-                                        .background(.thinMaterial, in: .capsule)
+                                        .glassEffect()
                                         .padding(3)
                                 }
                             }

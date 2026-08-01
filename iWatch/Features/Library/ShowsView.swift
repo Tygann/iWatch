@@ -66,21 +66,9 @@ private final class ShowsScreenModel {
             await load(revision: session.libraryRevision, forceRefresh: true)
         }
 
-        let progressCandidates = snapshot.all.filter {
-            $0.progress.watchedCount > 0 && $0.needsProgressEnrichment
-        }
-        for item in progressCandidates {
-            guard !Task.isCancelled else { return }
-            do {
-                try await repository.enrichShowProgress(for: item.mediaID)
-            } catch {
-                guard !error.isCancelled else { return }
-                // Continue enriching other shows after an individual metadata failure.
-            }
-        }
-        if !progressCandidates.isEmpty {
-            await load(revision: session.libraryRevision, forceRefresh: true)
-        }
+        // Episode progress is enriched when a show/season is opened or during sync.
+        // Doing it for every followed show here blocks the main actor while SwiftData
+        // materializes large episode tables, making the first Shows navigation hang.
     }
 
     func nextEpisodeLabel(for item: LibraryShowItem) -> String? {
@@ -121,6 +109,7 @@ struct ShowsView: View {
     @State private var model: ShowsScreenModel?
     @State private var showSettings = false
     @State private var detailRef: MediaID?
+    @State private var episodeRef: EpisodeRef?
 
     var body: some View {
         Group {
@@ -128,6 +117,7 @@ struct ShowsView: View {
                 ShowsViewBody(
                     model: model,
                     detailRef: $detailRef,
+                    episodeRef: $episodeRef,
                     showSettings: $showSettings
                 )
             } else {
@@ -144,6 +134,7 @@ struct ShowsView: View {
 private struct ShowsViewBody: View {
     @Bindable var model: ShowsScreenModel
     @Binding var detailRef: MediaID?
+    @Binding var episodeRef: EpisodeRef?
     @Binding var showSettings: Bool
     @Environment(AppSession.self) private var session
     @AppStorage("hideEndedShows") private var hideEndedShows = false
@@ -213,6 +204,16 @@ private struct ShowsViewBody: View {
                         }
                 }
             }
+            .sheet(item: $episodeRef) { ref in
+                NavigationStack {
+                    EpisodeView(ref: ref)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button(role: .close) { episodeRef = nil }
+                            }
+                        }
+                }
+            }
         }
     }
 
@@ -239,29 +240,49 @@ private struct ShowsViewBody: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 12) {
                         ForEach(model.snapshot.continueWatching) { item in
+                            let next = item.progress.nextEpisode
                             MediaTile(
                                 ref: item.mediaID,
                                 title: item.title,
                                 posterPath: item.posterPath,
                                 showTitle: true,
-                                selectedRef: $detailRef
-                            ) {
-                                if item.progress.nextEpisode != nil {
-                                    Button {
-                                        Haptics.notification(.success)
-                                        Task { await model.markNextEpisodeWatched(for: item) }
-                                    } label: {
-                                        Label("Mark as Watched", systemImage: "rectangle.badge.checkmark")
+                                selectedRef: $detailRef,
+                                onSelect: {
+                                    episodeRef = next.map {
+                                        EpisodeRef(
+                                            showId: item.mediaID.tmdbID,
+                                            showTraktID: item.mediaID.traktID,
+                                            season: $0.season,
+                                            episode: $0.episode,
+                                            tmdbID: $0.tmdbID,
+                                            traktID: $0.traktID
+                                        )
+                                    }
+                                },
+                                extraMenu: {
+                                    Button { detailRef = item.mediaID } label: {
+                                        Label("View Show", systemImage: "tv")
+                                    }
+                                    if item.progress.nextEpisode != nil {
+                                        Button {
+                                            Haptics.notification(.success)
+                                            Task { await model.markNextEpisodeWatched(for: item) }
+                                        } label: {
+                                            Label("Mark as Watched", systemImage: "rectangle.badge.checkmark")
+                                        }
                                     }
                                 }
-                            }
+                            )
+                            .accessibilityLabel(
+                                next.map { "\(item.title), Season \($0.season) Episode \($0.episode), Continue Watching" }
+                                    ?? item.title
+                            )
                             .overlay(alignment: .topLeading) {
                                 if let next = model.nextEpisodeLabel(for: item) {
                                     Text(next)
                                         .font(.caption2.bold())
-                                        .padding(.horizontal, 5)
-                                        .padding(.vertical, 3)
-                                        .background(.thinMaterial, in: .capsule)
+                                        .padding(3)
+                                        .glassEffect()
                                         .padding(3)
                                 }
                             }

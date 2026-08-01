@@ -175,8 +175,8 @@ private struct MoviesViewBody: View {
                                     title: item.title,
                                     posterPath: item.posterPath,
                                     showTitle: true,
-                                    selectedRef: $detailRef
-                                ) {
+                                    selectedRef: $detailRef,
+                                    extraMenu: {
                                     if item.isWatched {
                                         Button("Mark as Unwatched") {
                                             Haptics.notification(.success)
@@ -188,7 +188,8 @@ private struct MoviesViewBody: View {
                                             Task { await model.markWatched(item) }
                                         }
                                     }
-                                }
+                                    }
+                                )
                                 .frame(width: 110)
                             }
                         }
