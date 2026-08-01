@@ -12,6 +12,8 @@ private final class ShowsScreenModel {
     var isLoading = false
     var isEnriching = false
     var errorText: String?
+    private var loadedRevision: Int?
+    private var enrichedRevision: Int?
 
     init(repository: LibraryRepository, session: AppSession) {
         self.repository = repository
@@ -19,6 +21,7 @@ private final class ShowsScreenModel {
     }
 
     func load(revision: Int, forceRefresh: Bool = false) async {
+        guard forceRefresh || loadedRevision != revision else { return }
         let shouldShowLoading = snapshot.all.isEmpty
         if shouldShowLoading { isLoading = true }
         defer { isLoading = false }
@@ -28,6 +31,7 @@ private final class ShowsScreenModel {
                 revision: revision,
                 forceRefresh: forceRefresh
             )
+            loadedRevision = revision
             errorText = nil
         } catch {
             guard !error.isCancelled else { return }
@@ -37,9 +41,15 @@ private final class ShowsScreenModel {
     }
 
     func enrichLibrary() async {
-        guard !isEnriching else { return }
+        let revision = session.libraryRevision
+        guard !isEnriching, enrichedRevision != revision else { return }
         isEnriching = true
-        defer { isEnriching = false }
+        defer {
+            isEnriching = false
+            if !Task.isCancelled {
+                enrichedRevision = revision
+            }
+        }
 
         let missingMetadata = snapshot.all.filter { $0.posterPath == nil }
         for item in missingMetadata {
@@ -249,8 +259,9 @@ private struct ShowsViewBody: View {
                                 if let next = model.nextEpisodeLabel(for: item) {
                                     Text(next)
                                         .font(.caption2.bold())
-                                        .padding(3)
-                                        .glassEffect()
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 3)
+                                        .background(.thinMaterial, in: .capsule)
                                         .padding(3)
                                 }
                             }

@@ -185,7 +185,7 @@ private struct WatchlistBody: View {
                                     Text("S\(next.season) E\(next.episode)")
                                         .font(.caption2.bold())
                                         .padding(3)
-                                        .glassEffect()
+                                        .background(.thinMaterial, in: .capsule)
                                         .padding(3)
                                 }
                             }

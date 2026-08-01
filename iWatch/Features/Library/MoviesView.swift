@@ -20,6 +20,8 @@ private final class MoviesScreenModel {
     var isEnriching = false
     var errorText: String?
     var segment: Segment = .following
+    private var loadedRevision: Int?
+    private var enrichedRevision: Int?
 
     init(repository: LibraryRepository, session: AppSession) {
         self.repository = repository
@@ -27,12 +29,14 @@ private final class MoviesScreenModel {
     }
 
     func load(revision: Int, forceRefresh: Bool = false) async {
+        guard forceRefresh || loadedRevision != revision else { return }
         let shouldShowLoading = items.isEmpty
         if shouldShowLoading { isLoading = true }
         defer { isLoading = false }
 
         do {
             items = try await repository.movieLibraryItems(revision: revision, forceRefresh: forceRefresh)
+            loadedRevision = revision
             errorText = nil
         } catch {
             guard !error.isCancelled else { return }
@@ -42,9 +46,15 @@ private final class MoviesScreenModel {
     }
 
     func enrichMissingMetadata() async {
-        guard !isEnriching else { return }
+        let revision = session.libraryRevision
+        guard !isEnriching, enrichedRevision != revision else { return }
         isEnriching = true
-        defer { isEnriching = false }
+        defer {
+            isEnriching = false
+            if !Task.isCancelled {
+                enrichedRevision = revision
+            }
+        }
 
         let missing = items.filter { $0.posterPath == nil }
         for item in missing {
