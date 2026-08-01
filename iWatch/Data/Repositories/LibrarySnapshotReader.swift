@@ -91,9 +91,29 @@ actor LibrarySnapshotReader {
                     media: media,
                     episodes: episodesByShowID[row.tmdbID] ?? [],
                     events: eventsByShowID[row.tmdbID] ?? []
+                ),
+                needsProgressEnrichment: needsProgressEnrichment(
+                    media: media,
+                    episodes: episodesByShowID[row.tmdbID] ?? []
                 )
             )
         }
+    }
+
+    private func needsProgressEnrichment(
+        media: MediaRecord?,
+        episodes: [EpisodeRecord]
+    ) -> Bool {
+        guard let seasonsData = media?.seasonsData,
+              let seasons = try? JSONDecoder().decode([StoredShowSeason].self, from: seasonsData) else {
+            return true
+        }
+
+        let cachedCounts = Dictionary(grouping: episodes, by: \.seasonNumber).mapValues(\.count)
+        return LibraryProgressEnrichmentPolicy.needsEnrichment(
+            seasons: seasons,
+            cachedEpisodeCounts: cachedCounts
+        )
     }
 
     private func showProgress(
@@ -153,5 +173,21 @@ actor LibrarySnapshotReader {
             bucket = .returning
         }
         return ShowStatusSnapshot(bucket: bucket, nextAirDate: nextAirDate)
+    }
+}
+
+nonisolated enum LibraryProgressEnrichmentPolicy {
+    static func needsEnrichment(
+        seasons: [StoredShowSeason],
+        cachedEpisodeCounts: [Int: Int]
+    ) -> Bool {
+        seasons.contains { season in
+            guard season.seasonNumber >= 0 else { return false }
+            let cachedCount = cachedEpisodeCounts[season.seasonNumber, default: 0]
+            if let expectedCount = season.episodeCount {
+                return cachedCount < expectedCount
+            }
+            return cachedCount == 0
+        }
     }
 }

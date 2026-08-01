@@ -163,6 +163,7 @@ struct LibraryShowItem: Identifiable, Equatable, Sendable {
     let posterPath: String?
     let status: ShowStatusSnapshot
     let progress: ShowProgress
+    let needsProgressEnrichment: Bool
 
     var id: Int { mediaID.id }
 }

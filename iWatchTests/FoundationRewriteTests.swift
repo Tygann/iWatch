@@ -320,6 +320,7 @@ struct FoundationRewriteTests {
         #expect(items.first?.posterPath == nil)
         #expect(items.first?.progress.watchedCount == 0)
         #expect(items.first?.progress.nextEpisode == nil)
+        #expect(items.first?.needsProgressEnrichment == true)
     }
 
     @Test

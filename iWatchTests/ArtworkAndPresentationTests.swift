@@ -103,6 +103,29 @@ struct ArtworkAndPresentationTests {
         cache.clear()
         #expect(cache.image(forKey: "poster") == nil)
     }
+
+    @Test
+    func progressEnrichmentOnlyRunsForIncompleteSeasonCaches() {
+        let seasons = [
+            StoredShowSeason(
+                id: 1,
+                traktID: nil,
+                seasonNumber: 1,
+                name: "Season 1",
+                episodeCount: 10,
+                posterPath: nil
+            )
+        ]
+
+        #expect(LibraryProgressEnrichmentPolicy.needsEnrichment(
+            seasons: seasons,
+            cachedEpisodeCounts: [1: 4]
+        ))
+        #expect(!LibraryProgressEnrichmentPolicy.needsEnrichment(
+            seasons: seasons,
+            cachedEpisodeCounts: [1: 10]
+        ))
+    }
 }
 
 private final class MockArtworkURLProtocol: URLProtocol, @unchecked Sendable {
@@ -167,6 +190,7 @@ private func makeShow(
                     airDate: $0
                 )
             }
-        )
+        ),
+        needsProgressEnrichment: false
     )
 }

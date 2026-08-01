@@ -57,7 +57,7 @@ private final class ShowsScreenModel {
         }
 
         let progressCandidates = snapshot.all.filter {
-            $0.progress.watchedCount > 0 && $0.progress.nextEpisode == nil
+            $0.progress.watchedCount > 0 && $0.needsProgressEnrichment
         }
         for item in progressCandidates {
             guard !Task.isCancelled else { return }

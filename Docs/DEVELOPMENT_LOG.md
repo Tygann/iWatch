@@ -6,6 +6,7 @@
 - Made decoded-memory hits synchronous so tab recreation does not flash placeholders, and separated poster, episode-still, backdrop, and profile URL sizing to match each TMDb artwork category.
 - Reduced library navigation churn with predicate-backed SwiftData reads, revision-keyed movie/show presentation snapshots, precomputed Shows sections, batched enrichment refreshes, and snapshot reuse when opening Continue Watching.
 - Moved read-only movie/show snapshot aggregation to a dedicated actor and prewarmed the revision-keyed Shows snapshot after launch so cold first-tab navigation does not block the main actor.
+- Prevented caught-up shows from repeatedly triggering season/progress enrichment after the Shows grid renders; enrichment now runs only when persisted season episode counts prove the cache is incomplete.
 - Added focused artwork and presentation-snapshot tests; verified all `iWatchTests`, Debug simulator navigation through Shows and Continue Watching, and a Release simulator build.
 
 ## 2026-07-31
