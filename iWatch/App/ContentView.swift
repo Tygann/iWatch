@@ -2,15 +2,28 @@ import SwiftUI
 import SwiftData
 
 struct ContentView: View {
+    @Environment(AppContainer.self) private var container
+    @Environment(AppSession.self) private var session
     @Environment(AppRouter.self) private var router
 
     var body: some View {
-        if ProcessInfo.processInfo.arguments.contains("UITEST_MODE") {
-            tabView
-        } else {
-            tabView
-                .tabBarMinimizeBehavior(.onScrollDown)
+        Group {
+            if ProcessInfo.processInfo.arguments.contains("UITEST_MODE") {
+                tabView
+            } else {
+                tabView
+                    .tabBarMinimizeBehavior(.onScrollDown)
+            }
         }
+        .task(id: session.libraryRevision) {
+            await prewarmShows()
+        }
+    }
+
+    private func prewarmShows() async {
+        _ = try? await container.libraryRepository.showLibrarySnapshot(
+            revision: session.libraryRevision
+        )
     }
 
     private var tabView: some View {
