@@ -68,7 +68,6 @@ final class AppContainer {
         let cacheService = CacheService.default
         let apiClient = APIClient.makeDefault(cacheService: cacheService)
 
-        ImageService.configureDefaultCache()
         let imageService = ImageService()
         let persistence = Persistence()
         let tmdb = TMDbService(apiClient: apiClient, apiKey: config.tmdbKey)
@@ -115,7 +114,6 @@ final class AppContainer {
         let cacheService = CacheService.default
         let apiClient = APIClient.makeDefault(cacheService: cacheService)
 
-        ImageService.configureDefaultCache()
         let imageService = ImageService()
         let persistence = Persistence(
             inMemory: true,
@@ -165,7 +163,6 @@ final class AppContainer {
         let cacheService = CacheService.default
         let apiClient = APIClient.makeDefault(cacheService: cacheService)
 
-        ImageService.configureDefaultCache()
         let imageService = ImageService()
         let persistence = Persistence(
             inMemory: true,
@@ -217,7 +214,6 @@ final class AppContainer {
         let cacheService = CacheService.default
         let apiClient = APIClient.makeDefault(cacheService: cacheService)
 
-        ImageService.configureDefaultCache()
         let imageService = ImageService()
         let persistence = Persistence(
             inMemory: true,

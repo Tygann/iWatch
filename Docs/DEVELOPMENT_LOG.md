@@ -1,5 +1,11 @@
 # Development log
 
+## 2026-08-01
+
+- Replaced SDWebImage with a native actor-isolated artwork pipeline using HTTP disk caching, in-flight request deduplication, bounded decoded-image memory, and off-main ImageIO downsampling sized for each SwiftUI surface.
+- Reduced library navigation churn with predicate-backed SwiftData reads, revision-keyed movie/show presentation snapshots, precomputed Shows sections, batched enrichment refreshes, and snapshot reuse when opening Continue Watching.
+- Added focused artwork and presentation-snapshot tests; verified all `iWatchTests`, Debug simulator navigation through Shows and Continue Watching, and a Release simulator build.
+
 ## 2026-07-31
 
 - Established repository safety, agent workflow, and the local-first/account-scoped Trakt sync contract.

@@ -26,13 +26,13 @@ private final class MoviesScreenModel {
         self.session = session
     }
 
-    func load() async {
+    func load(revision: Int, forceRefresh: Bool = false) async {
         let shouldShowLoading = items.isEmpty
         if shouldShowLoading { isLoading = true }
         defer { isLoading = false }
 
         do {
-            items = try await repository.movieLibraryItems()
+            items = try await repository.movieLibraryItems(revision: revision, forceRefresh: forceRefresh)
             errorText = nil
         } catch {
             guard !error.isCancelled else { return }
@@ -51,11 +51,13 @@ private final class MoviesScreenModel {
             guard !Task.isCancelled else { return }
             do {
                 try await repository.enrichMetadata(for: item.mediaID)
-                items = try await repository.movieLibraryItems()
             } catch {
                 guard !error.isCancelled else { return }
                 // Metadata is optional; keep the imported library usable if enrichment fails.
             }
+        }
+        if !missing.isEmpty {
+            await load(revision: session.libraryRevision, forceRefresh: true)
         }
     }
 
@@ -72,7 +74,7 @@ private final class MoviesScreenModel {
         do {
             try await repository.addWatchEvent(for: item.mediaID, watchedAt: Date())
             session.markLibraryUpdated(syncIfConnected: true)
-            await load()
+            await load(revision: session.libraryRevision)
         } catch {
             errorText = error.localizedDescription
         }
@@ -83,7 +85,7 @@ private final class MoviesScreenModel {
             do {
                 try await repository.removeWatchEvent(eventID: eventID)
                 session.markLibraryUpdated(syncIfConnected: true)
-                await load()
+            await load(revision: session.libraryRevision)
             } catch {
                 errorText = error.localizedDescription
             }
@@ -111,8 +113,6 @@ struct MoviesView: View {
                 ProgressView()
                     .task {
                         let newModel = MoviesScreenModel(repository: container.libraryRepository, session: session)
-                        await newModel.load()
-                        guard !Task.isCancelled else { return }
                         model = newModel
                     }
             }
@@ -201,7 +201,7 @@ private struct MoviesViewBody: View {
                 }
             }
             .task(id: session.libraryRevision) {
-                await model.load()
+                await model.load(revision: session.libraryRevision)
                 await model.enrichMissingMetadata()
             }
             .sheet(isPresented: $showSettings) {

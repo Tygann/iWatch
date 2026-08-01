@@ -1,6 +1,5 @@
 // PosterImage.swift
 import SwiftUI
-import SDWebImageSwiftUI
 
 struct PosterImage: View {
     let path: String?
@@ -9,9 +8,9 @@ struct PosterImage: View {
     var cornerRadius: CGFloat = 12
 
     var body: some View {
-        let url = ImageURLBuilder.make(path, size: .posterLarge)
+        let url = ImageURLBuilder.make(path, size: width <= 120 ? .posterTile : .posterLarge)
 
-        WebImage(url: url) { image in
+        CachedArtworkImage(url: url, targetSize: CGSize(width: width, height: height)) { image in
             image
                 .resizable()
                 .scaledToFill()

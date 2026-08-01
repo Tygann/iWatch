@@ -166,3 +166,46 @@ struct LibraryShowItem: Identifiable, Equatable, Sendable {
 
     var id: Int { mediaID.id }
 }
+
+struct ShowLibrarySnapshot: Equatable, Sendable {
+    let all: [LibraryShowItem]
+    let continueWatching: [LibraryShowItem]
+    let airing: [LibraryShowItem]
+    let returning: [LibraryShowItem]
+    let ended: [LibraryShowItem]
+
+    static let empty = ShowLibrarySnapshot(items: [])
+
+    init(items: [LibraryShowItem]) {
+        all = items
+        continueWatching = items
+            .filter { $0.progress.nextEpisode != nil && $0.progress.remainingReleased > 0 }
+            .sorted {
+                ($0.progress.nextEpisode?.airDate ?? .distantPast) >
+                    ($1.progress.nextEpisode?.airDate ?? .distantPast)
+            }
+        airing = Self.items(in: .airing, from: items)
+        returning = Self.items(in: .returning, from: items)
+        ended = Self.items(in: .ended, from: items)
+    }
+
+    func items(in bucket: ShowStatusSnapshot.Bucket) -> [LibraryShowItem] {
+        switch bucket {
+        case .airing: airing
+        case .returning: returning
+        case .ended: ended
+        }
+    }
+
+    private static func items(
+        in bucket: ShowStatusSnapshot.Bucket,
+        from items: [LibraryShowItem]
+    ) -> [LibraryShowItem] {
+        items
+            .filter { $0.status.bucket == bucket }
+            .sorted {
+                ($0.status.nextAirDate ?? .distantFuture) <
+                    ($1.status.nextAirDate ?? .distantFuture)
+            }
+    }
+}

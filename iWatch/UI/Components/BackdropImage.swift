@@ -1,6 +1,5 @@
 // BackdropImage.swift
 import SwiftUI
-import SDWebImageSwiftUI
 
 struct BackdropImage: View {
     let path: String?
@@ -9,7 +8,10 @@ struct BackdropImage: View {
     var body: some View {
         let url = ImageURLBuilder.make(path, size: .backdrop)
 
-        WebImage(url: url) { image in
+        CachedArtworkImage(
+            url: url,
+            targetSize: CGSize(width: 780.0 / 3.0, height: height)
+        ) { image in
             image
                 .resizable()
                 .scaledToFill()

@@ -12,24 +12,34 @@ private final class WatchlistScreenModel {
     var showItems: [LibraryShowItem] = []
     var isLoading = false
     var errorText: String?
+    private var loadedRevision: Int?
 
-    init(kind: MediaKind, repository: LibraryRepository, session: AppSession) {
+    init(
+        kind: MediaKind,
+        repository: LibraryRepository,
+        session: AppSession,
+        initialShowItems: [LibraryShowItem] = [],
+        initialRevision: Int? = nil
+    ) {
         self.kind = kind
         self.repository = repository
         self.session = session
+        self.showItems = initialShowItems
+        self.loadedRevision = initialRevision
     }
 
-    func load() async {
+    func load(revision: Int) async {
+        guard loadedRevision != revision else { return }
         isLoading = true
         defer { isLoading = false }
 
         do {
             if kind == .movie {
-                movieItems = try await repository.movieLibraryItems().filter { !$0.isWatched }
+                movieItems = try await repository.movieLibraryItems(revision: revision).filter { !$0.isWatched }
             } else {
-                showItems = try await repository.showLibraryItems()
-                    .filter { $0.progress.remainingReleased > 0 }
+                showItems = try await repository.showLibrarySnapshot(revision: revision).continueWatching
             }
+            loadedRevision = revision
             errorText = nil
         } catch {
             guard !error.isCancelled else { return }
@@ -44,7 +54,8 @@ private final class WatchlistScreenModel {
         do {
             try await repository.addWatchEvent(for: MediaID(kind: .episode, id: next.tmdbID, traktID: next.traktID), watchedAt: Date())
             session.markLibraryUpdated(syncIfConnected: true)
-            await load()
+            loadedRevision = nil
+            await load(revision: session.libraryRevision)
         } catch {
             errorText = error.localizedDescription
         }
@@ -53,12 +64,24 @@ private final class WatchlistScreenModel {
 
 struct WatchlistView: View {
     let kind: MediaKind
+    let initialShowItems: [LibraryShowItem]
+    let initialRevision: Int?
 
     @Environment(AppContainer.self) private var container
     @Environment(AppSession.self) private var session
 
     @State private var model: WatchlistScreenModel?
     @State private var detailRef: MediaID?
+
+    init(
+        kind: MediaKind,
+        initialShowItems: [LibraryShowItem] = [],
+        initialRevision: Int? = nil
+    ) {
+        self.kind = kind
+        self.initialShowItems = initialShowItems
+        self.initialRevision = initialRevision
+    }
 
     var body: some View {
         Group {
@@ -67,9 +90,13 @@ struct WatchlistView: View {
             } else {
                 ProgressView()
                     .task {
-                        let newModel = WatchlistScreenModel(kind: kind, repository: container.libraryRepository, session: session)
-                        await newModel.load()
-                        guard !Task.isCancelled else { return }
+                        let newModel = WatchlistScreenModel(
+                            kind: kind,
+                            repository: container.libraryRepository,
+                            session: session,
+                            initialShowItems: initialShowItems,
+                            initialRevision: initialRevision
+                        )
                         model = newModel
                     }
             }
@@ -179,7 +206,7 @@ private struct WatchlistBody: View {
         .navigationTitle(model.title)
         .navigationBarTitleDisplayMode(.inline)
         .task(id: session.libraryRevision) {
-            await model.load()
+            await model.load(revision: session.libraryRevision)
         }
     }
 }

@@ -8,7 +8,7 @@ private final class ShowsScreenModel {
     private let repository: LibraryRepository
     private let session: AppSession
 
-    var items: [LibraryShowItem] = []
+    var snapshot = ShowLibrarySnapshot.empty
     var isLoading = false
     var isEnriching = false
     var errorText: String?
@@ -18,17 +18,20 @@ private final class ShowsScreenModel {
         self.session = session
     }
 
-    func load() async {
-        let shouldShowLoading = items.isEmpty
+    func load(revision: Int, forceRefresh: Bool = false) async {
+        let shouldShowLoading = snapshot.all.isEmpty
         if shouldShowLoading { isLoading = true }
         defer { isLoading = false }
 
         do {
-            items = try await repository.showLibraryItems()
+            snapshot = try await repository.showLibrarySnapshot(
+                revision: revision,
+                forceRefresh: forceRefresh
+            )
             errorText = nil
         } catch {
             guard !error.isCancelled else { return }
-            items = []
+            snapshot = .empty
             errorText = error.localizedDescription
         }
     }
@@ -38,45 +41,36 @@ private final class ShowsScreenModel {
         isEnriching = true
         defer { isEnriching = false }
 
-        for item in items where item.posterPath == nil {
+        let missingMetadata = snapshot.all.filter { $0.posterPath == nil }
+        for item in missingMetadata {
             guard !Task.isCancelled else { return }
             do {
                 try await repository.enrichMetadata(for: item.mediaID)
-                items = try await repository.showLibraryItems()
             } catch {
                 guard !error.isCancelled else { return }
                 // Keep rendering imported Trakt data when optional metadata is unavailable.
             }
         }
 
-        let progressCandidates = items.filter {
+        if !missingMetadata.isEmpty {
+            await load(revision: session.libraryRevision, forceRefresh: true)
+        }
+
+        let progressCandidates = snapshot.all.filter {
             $0.progress.watchedCount > 0 && $0.progress.nextEpisode == nil
         }
         for item in progressCandidates {
             guard !Task.isCancelled else { return }
             do {
                 try await repository.enrichShowProgress(for: item.mediaID)
-                items = try await repository.showLibraryItems()
             } catch {
                 guard !error.isCancelled else { return }
                 // Continue enriching other shows after an individual metadata failure.
             }
         }
-    }
-
-    var continueWatching: [LibraryShowItem] {
-        items
-            .filter { $0.progress.nextEpisode != nil && $0.progress.remainingReleased > 0 }
-            .sorted {
-                ($0.progress.nextEpisode?.airDate ?? .distantPast) > ($1.progress.nextEpisode?.airDate ?? .distantPast)
-            }
-    }
-
-    func items(in bucket: ShowStatusSnapshot.Bucket) -> [LibraryShowItem] {
-        items.filter { $0.status.bucket == bucket }
-            .sorted {
-                ($0.status.nextAirDate ?? .distantFuture) < ($1.status.nextAirDate ?? .distantFuture)
-            }
+        if !progressCandidates.isEmpty {
+            await load(revision: session.libraryRevision, forceRefresh: true)
+        }
     }
 
     func nextEpisodeLabel(for item: LibraryShowItem) -> String? {
@@ -103,7 +97,7 @@ private final class ShowsScreenModel {
                 watchedAt: Date()
             )
             session.markLibraryUpdated(syncIfConnected: true)
-            await load()
+            await load(revision: session.libraryRevision)
         } catch {
             errorText = error.localizedDescription
         }
@@ -130,8 +124,6 @@ struct ShowsView: View {
                 ProgressView()
                     .task {
                         let newModel = ShowsScreenModel(repository: container.libraryRepository, session: session)
-                        await newModel.load()
-                        guard !Task.isCancelled else { return }
                         model = newModel
                     }
             }
@@ -158,7 +150,7 @@ private struct ShowsViewBody: View {
                     ContentUnavailableView("Shows Error",
                                            systemImage: "exclamationmark.triangle",
                                            description: Text(errorText))
-                } else if model.items.isEmpty {
+                } else if model.snapshot.all.isEmpty {
                     ContentUnavailableView(
                         "No tracked shows yet",
                         systemImage: "tv",
@@ -188,7 +180,7 @@ private struct ShowsViewBody: View {
                 }
             }
             .task(id: session.libraryRevision) {
-                await model.load()
+                await model.load(revision: session.libraryRevision)
                 await model.enrichLibrary()
             }
             .sheet(isPresented: $showSettings) {
@@ -216,10 +208,14 @@ private struct ShowsViewBody: View {
 
     @ViewBuilder
     private var continueWatchingSection: some View {
-        if !model.continueWatching.isEmpty {
+        if !model.snapshot.continueWatching.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 NavigationLink {
-                    WatchlistView(kind: .show)
+                    WatchlistView(
+                        kind: .show,
+                        initialShowItems: model.snapshot.continueWatching,
+                        initialRevision: session.libraryRevision
+                    )
                 } label: {
                     Text("Continue Watching")
                         .font(.title3.weight(.bold))
@@ -232,7 +228,7 @@ private struct ShowsViewBody: View {
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 12) {
-                        ForEach(model.continueWatching) { item in
+                        ForEach(model.snapshot.continueWatching) { item in
                             MediaTile(
                                 ref: item.mediaID,
                                 title: item.title,
@@ -277,7 +273,7 @@ private struct ShowsViewBody: View {
 
     @ViewBuilder
     private func statusSection(title: String, bucket: ShowStatusSnapshot.Bucket) -> some View {
-        let items = model.items(in: bucket)
+        let items = model.snapshot.items(in: bucket)
         if !items.isEmpty && !(hideEndedShows && bucket == .ended) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(title)

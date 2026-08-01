@@ -3,6 +3,7 @@ import Foundation
 struct ImageURLBuilder {
     enum Size: String {
         case posterSmall = "w185"
+        case posterTile = "w342"
         case posterLarge = "w500"
         case backdrop = "w780"
         case original = "original"

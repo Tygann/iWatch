@@ -6,6 +6,8 @@ final class LibraryRepository {
     private let persistence: Persistence
     private let tmdb: TMDbService
     private let resetGate: AppDataResetGate
+    private var cachedMovieSnapshot: (revision: Int, items: [LibraryMovieItem])?
+    private var cachedShowSnapshot: (revision: Int, snapshot: ShowLibrarySnapshot)?
 
     init(persistence: Persistence, tmdb: TMDbService, resetGate: AppDataResetGate = AppDataResetGate()) {
         self.persistence = persistence
@@ -253,13 +255,27 @@ final class LibraryRepository {
 
     func movieLibraryItems() async throws -> [LibraryMovieItem] {
         let context = persistence.makeContext()
-        let watchlist = allWatchlistRecords(context: context)
-            .filter { $0.mediaID.kind == .movie && $0.isInWatchlist }
-            .sorted(by: { $0.localUpdatedAt > $1.localUpdatedAt })
-
-        let events = allWatchedEventRecords(context: context)
+        let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
+        let includesLegacyRows = generationID == LibraryGenerationPolicy.legacyGenerationID
+        let movieKind = MediaKind.movie.rawValue
+        let watchlist = try context.fetch(FetchDescriptor<WatchlistRecord>(
+            predicate: #Predicate {
+                ($0.generationID == generationID || (includesLegacyRows && $0.generationID == "")) &&
+                    $0.kindRaw == movieKind && $0.isInWatchlist
+            },
+            sortBy: [SortDescriptor(\.localUpdatedAt, order: .reverse)]
+        ))
+        let events = try context.fetch(FetchDescriptor<WatchedEventRecord>(
+            predicate: #Predicate {
+                ($0.generationID == generationID || (includesLegacyRows && $0.generationID == "")) &&
+                    $0.kindRaw == movieKind && !$0.tombstoned
+            }
+        ))
+        let movieMedia = try context.fetch(FetchDescriptor<MediaRecord>(
+            predicate: #Predicate { $0.kindRaw == movieKind }
+        ))
         let mediaByKey = Dictionary(
-            allMediaRecords(context: context).map { ("\($0.kind.rawValue):\($0.tmdbID)", $0) },
+            movieMedia.map { ("\($0.kindRaw):\($0.tmdbID)", $0) },
             uniquingKeysWith: { first, _ in first }
         )
         let watchedMovieIDs = Set(events.compactMap { event -> Int? in
@@ -278,16 +294,32 @@ final class LibraryRepository {
         }
     }
 
+    func movieLibraryItems(revision: Int, forceRefresh: Bool = false) async throws -> [LibraryMovieItem] {
+        if !forceRefresh, let cachedMovieSnapshot, cachedMovieSnapshot.revision == revision {
+            return cachedMovieSnapshot.items
+        }
+        let items = try await movieLibraryItems()
+        cachedMovieSnapshot = (revision, items)
+        return items
+    }
+
     func showLibraryItems() async throws -> [LibraryShowItem] {
         let context = persistence.makeContext()
-        let rows = allWatchlistRecords(context: context)
-            .filter { $0.mediaID.kind == .show && $0.isInWatchlist }
-            .sorted(by: { $0.localUpdatedAt > $1.localUpdatedAt })
-
+        let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
+        let includesLegacyRows = generationID == LibraryGenerationPolicy.legacyGenerationID
+        let showKind = MediaKind.show.rawValue
+        let rows = try context.fetch(FetchDescriptor<WatchlistRecord>(
+            predicate: #Predicate {
+                ($0.generationID == generationID || (includesLegacyRows && $0.generationID == "")) &&
+                    $0.kindRaw == showKind && $0.isInWatchlist
+            },
+            sortBy: [SortDescriptor(\.localUpdatedAt, order: .reverse)]
+        ))
+        let showMedia = try context.fetch(FetchDescriptor<MediaRecord>(
+            predicate: #Predicate { $0.kindRaw == showKind }
+        ))
         let mediaByID = Dictionary(
-            allMediaRecords(context: context)
-                .filter { $0.kind == .show }
-                .map { ($0.tmdbID, $0) },
+            showMedia.map { ($0.tmdbID, $0) },
             uniquingKeysWith: { first, _ in first }
         )
         let episodesByShowID = Dictionary(
@@ -295,7 +327,12 @@ final class LibraryRepository {
             by: \.showTMDbID
         )
         let eventsByShowID = Dictionary(
-            grouping: allWatchedEventRecords(context: context).filter { !$0.tombstoned }
+            grouping: try context.fetch(FetchDescriptor<WatchedEventRecord>(
+                predicate: #Predicate {
+                    ($0.generationID == generationID || (includesLegacyRows && $0.generationID == "")) &&
+                        !$0.tombstoned
+                }
+            ))
         ) { event in
             event.showTMDbID ?? -1
         }
@@ -315,6 +352,15 @@ final class LibraryRepository {
                 )
             )
         }
+    }
+
+    func showLibrarySnapshot(revision: Int, forceRefresh: Bool = false) async throws -> ShowLibrarySnapshot {
+        if !forceRefresh, let cachedShowSnapshot, cachedShowSnapshot.revision == revision {
+            return cachedShowSnapshot.snapshot
+        }
+        let snapshot = ShowLibrarySnapshot(items: try await showLibraryItems())
+        cachedShowSnapshot = (revision, snapshot)
+        return snapshot
     }
 
     func showProgress(for showID: MediaID) async throws -> ShowProgress {
