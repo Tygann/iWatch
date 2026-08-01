@@ -292,6 +292,15 @@ private func seedUITestData(into persistence: Persistence) {
         releaseDate: Calendar.current.date(from: DateComponents(year: 2024, month: 3, day: 1)),
         runtimeMinutes: 118
     )
+    let watchedMovie = MediaRecord(
+        kind: .movie,
+        tmdbID: 102,
+        traktID: 1002,
+        title: "UI Test Watched Movie",
+        posterPath: "/ui-test-watched-movie.jpg",
+        releaseDate: Calendar.current.date(from: DateComponents(year: 2022, month: 8, day: 12)),
+        runtimeMinutes: 104
+    )
     let showSeasons = [
         StoredShowSeason(id: 201, traktID: 2001, seasonNumber: 1, name: "Season 1", episodeCount: 2, posterPath: "/ui-test-show-season-1.jpg")
     ]
@@ -357,11 +366,19 @@ private func seedUITestData(into persistence: Persistence) {
         episodeNumber: 1,
         watchedAt: Calendar.current.date(byAdding: .day, value: -2, to: .now) ?? .now
     )
+    let movieWatchEvent = WatchedEventRecord(
+        kind: .movie,
+        tmdbID: 102,
+        traktID: 1002,
+        watchedAt: Calendar.current.date(byAdding: .day, value: -3, to: .now) ?? .now
+    )
 
     context.insert(movie)
+    context.insert(watchedMovie)
     context.insert(show)
     episodes.forEach(context.insert(_:))
     watchlist.forEach(context.insert(_:))
     context.insert(watchEvent)
+    context.insert(movieWatchEvent)
     try? context.save()
 }

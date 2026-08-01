@@ -139,8 +139,6 @@ private struct ShowsViewBody: View {
     @Binding var showSettings: Bool
     @Environment(AppSession.self) private var session
 
-    private let cols = [GridItem(.adaptive(minimum: 110), spacing: 12)]
-
     var body: some View {
         NavigationStack {
             Group {
@@ -162,7 +160,7 @@ private struct ShowsViewBody: View {
                     ScrollView {
                         continueWatchingSection
                         comingUpSection
-                        librarySection(title: "Watchlist", items: model.snapshot.watchlist)
+                        librarySection(title: "Not Started", items: model.snapshot.watchlist)
                         librarySection(title: "Caught Up", items: model.snapshot.caughtUp)
                         completedSection
                     }
@@ -221,120 +219,104 @@ private struct ShowsViewBody: View {
     @ViewBuilder
     private var continueWatchingSection: some View {
         if !model.snapshot.continueWatching.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                NavigationLink {
-                    WatchlistView(
-                        kind: .show,
-                        initialShowItems: model.snapshot.continueWatching,
-                        initialRevision: session.libraryRevision
+            MediaCollectionRow(title: "Continue Watching") {
+                WatchlistView(
+                    kind: .show,
+                    initialShowItems: model.snapshot.continueWatching,
+                    initialRevision: session.libraryRevision
+                )
+            } content: {
+                ForEach(model.snapshot.continueWatching) { item in
+                    let next = item.progress.nextEpisode
+                    MediaTile(
+                        ref: item.mediaID,
+                        title: item.title,
+                        posterPath: item.posterPath,
+                        showTitle: false,
+                        selectedRef: $detailRef,
+                        onSelect: {
+                            episodeRef = next.map {
+                                EpisodeRef(
+                                    showId: item.mediaID.tmdbID,
+                                    showTraktID: item.mediaID.traktID,
+                                    season: $0.season,
+                                    episode: $0.episode,
+                                    tmdbID: $0.tmdbID,
+                                    traktID: $0.traktID
+                                )
+                            }
+                        },
+                        extraMenu: {
+                            Button { detailRef = item.mediaID } label: {
+                                Label("View Show", systemImage: "tv")
+                            }
+                            if item.progress.nextEpisode != nil {
+                                Button {
+                                    Haptics.notification(.success)
+                                    Task { await model.markNextEpisodeWatched(for: item) }
+                                } label: {
+                                    Label("Mark as Watched", systemImage: "rectangle.badge.checkmark")
+                                }
+                            }
+                        }
                     )
-                } label: {
-                    Text("Continue Watching")
-                        .font(.title3.weight(.bold))
-                    Image(systemName: "chevron.right")
-                        .font(.callout.weight(.bold))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.leading)
-                .buttonStyle(.plain)
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 12) {
-                        ForEach(model.snapshot.continueWatching) { item in
-                            let next = item.progress.nextEpisode
-                            MediaTile(
-                                ref: item.mediaID,
-                                title: item.title,
-                                posterPath: item.posterPath,
-                                showTitle: true,
-                                selectedRef: $detailRef,
-                                onSelect: {
-                                    episodeRef = next.map {
-                                        EpisodeRef(
-                                            showId: item.mediaID.tmdbID,
-                                            showTraktID: item.mediaID.traktID,
-                                            season: $0.season,
-                                            episode: $0.episode,
-                                            tmdbID: $0.tmdbID,
-                                            traktID: $0.traktID
-                                        )
-                                    }
-                                },
-                                extraMenu: {
-                                    Button { detailRef = item.mediaID } label: {
-                                        Label("View Show", systemImage: "tv")
-                                    }
-                                    if item.progress.nextEpisode != nil {
-                                        Button {
-                                            Haptics.notification(.success)
-                                            Task { await model.markNextEpisodeWatched(for: item) }
-                                        } label: {
-                                            Label("Mark as Watched", systemImage: "rectangle.badge.checkmark")
-                                        }
-                                    }
-                                }
-                            )
-                            .accessibilityLabel(
-                                next.map { "\(item.title), Season \($0.season) Episode \($0.episode), Continue Watching" }
-                                    ?? item.title
-                            )
-                            .overlay(alignment: .topLeading) {
-                                if let next = model.nextEpisodeLabel(for: item) {
-                                    Text(next)
-                                        .font(.caption2.bold())
-                                        .padding(3)
-                                        .glassEffect()
-                                        .padding(3)
-                                }
-                            }
-                            .overlay(alignment: .topTrailing) {
-                                if item.progress.remainingReleased > 0 {
-                                    SystemBadge(label: "\(item.progress.remainingReleased)", color: .red, height: 20)
-                                        .offset(x: 8, y: -8)
-                                }
-                            }
-                            .frame(width: 110)
+                    .accessibilityLabel(
+                        next.map { "\(item.title), Season \($0.season) Episode \($0.episode), Continue Watching" }
+                            ?? item.title
+                    )
+                    .overlay(alignment: .topLeading) {
+                        if let next = model.nextEpisodeLabel(for: item) {
+                            Text(next)
+                                .font(.caption2.bold())
+                                .padding(3)
+                                .glassEffect()
+                                .padding(3)
                         }
                     }
-                    .padding(.horizontal)
-                    .padding(.top, 8)
+                    .overlay(alignment: .topTrailing) {
+                        if item.progress.remainingReleased > 0 {
+                            SystemBadge(label: "\(item.progress.remainingReleased)", color: .red, height: 20)
+                                .offset(x: 8, y: -8)
+                        }
+                    }
+                    .frame(width: 110)
                 }
             }
-            .padding(.top, 12)
         }
     }
 
     @ViewBuilder
     private var comingUpSection: some View {
         if !model.snapshot.comingUp.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Coming Up")
-                    .font(.title3.weight(.semibold))
-                    .padding(.horizontal)
-                    .padding(.top, 12)
+            MediaCollectionRow(title: "Coming Up") {
+                ShowCollectionView(
+                    title: "Coming Up",
+                    items: model.snapshot.comingUp,
+                    detailRef: $detailRef,
+                    secondaryText: model.nextAirLabel
+                )
+            } content: {
+                ForEach(model.snapshot.comingUp) { item in
+                    VStack(spacing: 6) {
+                        MediaTile(
+                            ref: item.mediaID,
+                            title: item.title,
+                            posterPath: item.posterPath,
+                            showTitle: false,
+                            selectedRef: $detailRef
+                        )
 
-                LazyVGrid(columns: cols, spacing: 12) {
-                    ForEach(model.snapshot.comingUp) { item in
-                        VStack(spacing: 6) {
-                            MediaTile(
-                                ref: item.mediaID,
-                                title: item.title,
-                                posterPath: item.posterPath,
-                                showTitle: true,
-                                selectedRef: $detailRef
-                            )
-
-                            if let label = model.nextAirLabel(for: item) {
-                                Text(label)
-                                    .font(.footnote.weight(.semibold))
-                                    .frame(maxWidth: .infinity)
-                                    .multilineTextAlignment(.center)
-                            }
+                        if let label = model.nextAirLabel(for: item) {
+                            Text(label)
+                                .font(.footnote.weight(.semibold))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                                .frame(maxWidth: .infinity)
+                                .multilineTextAlignment(.center)
                         }
-                        .frame(width: 110)
                     }
+                    .frame(width: 110)
                 }
-                .padding(.horizontal, 12)
             }
         }
     }
@@ -342,25 +324,19 @@ private struct ShowsViewBody: View {
     @ViewBuilder
     private func librarySection(title: String, items: [LibraryShowItem]) -> some View {
         if !items.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(title)
-                    .font(.title3.weight(.semibold))
-                    .padding(.horizontal)
-                    .padding(.top, 12)
-
-                LazyVGrid(columns: cols, spacing: 12) {
-                    ForEach(items) { item in
-                        MediaTile(
-                            ref: item.mediaID,
-                            title: item.title,
-                            posterPath: item.posterPath,
-                            showTitle: true,
-                            selectedRef: $detailRef
-                        )
-                        .frame(width: 110)
-                    }
+            MediaCollectionRow(title: title) {
+                ShowCollectionView(title: title, items: items, detailRef: $detailRef)
+            } content: {
+                ForEach(items) { item in
+                    MediaTile(
+                        ref: item.mediaID,
+                        title: item.title,
+                        posterPath: item.posterPath,
+                        showTitle: false,
+                        selectedRef: $detailRef
+                    )
+                    .frame(width: 110)
                 }
-                .padding(.horizontal, 12)
             }
         }
     }
@@ -368,28 +344,25 @@ private struct ShowsViewBody: View {
     @ViewBuilder
     private var completedSection: some View {
         if !model.snapshot.completed.isEmpty {
-            NavigationLink {
+            MediaCollectionRow(title: "Completed") {
                 ShowCollectionView(
                     title: "Completed",
                     items: model.snapshot.completed,
                     detailRef: $detailRef
                 )
-            } label: {
-                HStack {
-                    Label("Completed", systemImage: "checkmark.circle")
-                    Spacer()
-                    Text(model.snapshot.completed.count, format: .number)
-                        .foregroundStyle(.secondary)
-                    Image(systemName: "chevron.right")
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+            } content: {
+                ForEach(model.snapshot.completed) { item in
+                    MediaTile(
+                        ref: item.mediaID,
+                        title: item.title,
+                        posterPath: item.posterPath,
+                        showTitle: false,
+                        selectedRef: $detailRef
+                    )
+                    .frame(width: 110)
                 }
-                .font(.body.weight(.semibold))
-                .padding()
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .padding(.top, 12)
+            .padding(.bottom, 12)
         }
     }
 }
@@ -398,20 +371,44 @@ private struct ShowCollectionView: View {
     let title: String
     let items: [LibraryShowItem]
     @Binding var detailRef: MediaID?
+    let secondaryText: (LibraryShowItem) -> String?
 
     private let cols = [GridItem(.adaptive(minimum: 110), spacing: 12)]
+
+    init(
+        title: String,
+        items: [LibraryShowItem],
+        detailRef: Binding<MediaID?>,
+        secondaryText: @escaping (LibraryShowItem) -> String? = { _ in nil }
+    ) {
+        self.title = title
+        self.items = items
+        self._detailRef = detailRef
+        self.secondaryText = secondaryText
+    }
 
     var body: some View {
         ScrollView {
             LazyVGrid(columns: cols, spacing: 12) {
                 ForEach(items) { item in
-                    MediaTile(
-                        ref: item.mediaID,
-                        title: item.title,
-                        posterPath: item.posterPath,
-                        showTitle: true,
-                        selectedRef: $detailRef
-                    )
+                    VStack(spacing: 6) {
+                        MediaTile(
+                            ref: item.mediaID,
+                            title: item.title,
+                            posterPath: item.posterPath,
+                            showTitle: true,
+                            selectedRef: $detailRef
+                        )
+
+                        if let text = secondaryText(item) {
+                            Text(text)
+                                .font(.footnote.weight(.semibold))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                                .frame(maxWidth: .infinity)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
                     .frame(width: 110)
                 }
             }

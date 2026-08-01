@@ -35,10 +35,12 @@ final class iWatchUITests: XCTestCase {
         XCTAssertTrue(moviesTab.waitForExistence(timeout: 5))
         XCTAssertTrue(showsTab.exists)
         XCTAssertTrue(searchTab.exists)
+        XCTAssertTrue(app.buttons["Watched"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["UI Test Watched Movie"].exists)
 
-        let movieTitle = app.staticTexts["UI Test Movie"]
-        XCTAssertTrue(movieTitle.waitForExistence(timeout: 5))
-        movieTitle.tap()
+        let movieTile = app.buttons["UI Test Movie"]
+        XCTAssertTrue(movieTile.waitForExistence(timeout: 5))
+        movieTile.tap()
 
         XCTAssertTrue(app.buttons["Remove from watchlist"].waitForExistence(timeout: 5))
         if app.buttons["Close"].exists {
@@ -46,9 +48,12 @@ final class iWatchUITests: XCTestCase {
         }
 
         showsTab.tap()
-        XCTAssertTrue(app.staticTexts["UI Test Show"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["UI Test Show, Season 1 Episode 2, Continue Watching"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Coming Up"].exists)
         XCTAssertTrue(app.staticTexts["2 days"].exists)
+
+        app.buttons["Continue Watching"].tap()
+        XCTAssertTrue(app.staticTexts["UI Test Show"].waitForExistence(timeout: 5))
 
         searchTab.tap()
         XCTAssertTrue(app.navigationBars["Search"].waitForExistence(timeout: 5))

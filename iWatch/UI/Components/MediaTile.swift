@@ -48,6 +48,7 @@ struct MediaTile<ExtraMenu: View>: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(title)
         .contextMenu {
             extraMenu()
             WatchlistMenu(ref: ref, title: title, posterPath: posterPath)

@@ -152,6 +152,7 @@ struct LibraryMovieItem: Identifiable, Equatable, Sendable {
     let title: String
     let posterPath: String?
     let releaseDate: Date?
+    let listedAt: Date?
     let isInWatchlist: Bool
     let isWatched: Bool
     let lastWatchedAt: Date?
@@ -165,6 +166,8 @@ struct LibraryShowItem: Identifiable, Equatable, Sendable {
     let posterPath: String?
     let status: ShowStatusSnapshot
     let progress: ShowProgress
+    let listedAt: Date?
+    let lastWatchedAt: Date?
     let needsProgressEnrichment: Bool
 
     var id: Int { mediaID.id }
@@ -185,8 +188,7 @@ struct ShowLibrarySnapshot: Equatable, Sendable {
         continueWatching = items
             .filter { $0.progress.watchedCount > 0 && $0.progress.remainingReleased > 0 }
             .sorted {
-                ($0.progress.nextEpisode?.airDate ?? .distantPast) >
-                    ($1.progress.nextEpisode?.airDate ?? .distantPast)
+                ($0.lastWatchedAt ?? .distantPast) > ($1.lastWatchedAt ?? .distantPast)
             }
         let startOfToday = calendar.startOfDay(for: referenceDate)
         comingUp = items
@@ -200,10 +202,10 @@ struct ShowLibrarySnapshot: Equatable, Sendable {
             }
         watchlist = items
             .filter { $0.progress.watchedCount == 0 }
-            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+            .sorted { ($0.listedAt ?? .distantPast) > ($1.listedAt ?? .distantPast) }
         completed = items
             .filter { $0.status.bucket == .ended && $0.progress.isComplete }
-            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+            .sorted { ($0.lastWatchedAt ?? .distantPast) > ($1.lastWatchedAt ?? .distantPast) }
         let completedIDs = Set(completed.map(\.id))
         caughtUp = items
             .filter {
@@ -211,6 +213,11 @@ struct ShowLibrarySnapshot: Equatable, Sendable {
                     $0.progress.remainingReleased == 0 &&
                     !completedIDs.contains($0.id)
             }
-            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+            .sorted {
+                let lhsAirDate = $0.status.nextAirDate ?? .distantFuture
+                let rhsAirDate = $1.status.nextAirDate ?? .distantFuture
+                if lhsAirDate != rhsAirDate { return lhsAirDate < rhsAirDate }
+                return ($0.lastWatchedAt ?? .distantPast) > ($1.lastWatchedAt ?? .distantPast)
+            }
     }
 }

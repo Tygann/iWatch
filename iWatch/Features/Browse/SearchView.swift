@@ -192,28 +192,21 @@ private struct SearchViewBody: View {
 
     @ViewBuilder
     private func trendingSection(title: String, items: [SearchItem]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.title2.bold())
-                .padding(.horizontal)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 12) {
-                    ForEach(items) { item in
-                        MediaTile(
-                            ref: item.mediaID,
-                            title: item.title,
-                            posterPath: item.posterPath,
-                            showTitle: true,
-                            selectedRef: $detailRef
-                        )
-                        .frame(width: 120)
-                    }
+        if !items.isEmpty {
+            MediaCollectionRow(title: title) {
+                SearchCollectionView(title: title, items: items, detailRef: $detailRef)
+            } content: {
+                ForEach(items) { item in
+                    MediaTile(
+                        ref: item.mediaID,
+                        title: item.title,
+                        posterPath: item.posterPath,
+                        showTitle: false,
+                        selectedRef: $detailRef
+                    )
+                    .frame(width: 110)
                 }
-                .scrollTargetLayout()
-                .padding(.horizontal, 4)
             }
-            .scrollTargetBehavior(.viewAligned)
         }
     }
 
@@ -276,6 +269,35 @@ private struct SearchViewBody: View {
                 }
             }
         }
+    }
+}
+
+private struct SearchCollectionView: View {
+    let title: String
+    let items: [SearchItem]
+    @Binding var detailRef: MediaID?
+
+    private let cols = [GridItem(.adaptive(minimum: 110), spacing: 12)]
+
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: cols, spacing: 12) {
+                ForEach(items) { item in
+                    MediaTile(
+                        ref: item.mediaID,
+                        title: item.title,
+                        posterPath: item.posterPath,
+                        showTitle: true,
+                        selectedRef: $detailRef
+                    )
+                    .frame(width: 110)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
+        }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

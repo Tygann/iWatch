@@ -61,6 +61,7 @@ actor LibrarySnapshotReader {
                 title: media?.title ?? "Unknown",
                 posterPath: media?.posterPath,
                 releaseDate: media?.releaseDate,
+                listedAt: row.flatMap { $0.listedAt ?? $0.localUpdatedAt },
                 isInWatchlist: row != nil,
                 isWatched: event != nil,
                 lastWatchedAt: event?.watchedAt
@@ -132,6 +133,8 @@ actor LibrarySnapshotReader {
                     episodes: episodes,
                     events: history
                 ),
+                listedAt: row.flatMap { $0.listedAt ?? $0.localUpdatedAt },
+                lastWatchedAt: history.map(\.watchedAt).max(),
                 needsProgressEnrichment: needsProgressEnrichment(
                     media: media,
                     episodes: episodes

@@ -64,7 +64,9 @@ private final class MoviesScreenModel {
     }
 
     var watchlistItems: [LibraryMovieItem] {
-        items.filter { $0.isInWatchlist && !$0.isWatched }
+        items
+            .filter { $0.isInWatchlist && !$0.isWatched }
+            .sorted { ($0.listedAt ?? .distantPast) > ($1.listedAt ?? .distantPast) }
     }
 
     var watchedItems: [LibraryMovieItem] {
@@ -150,7 +152,7 @@ private struct MoviesViewBody: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
-                        watchlistSection
+                        toWatchSection
                         watchedSection
                     }
                 }
@@ -196,10 +198,10 @@ private struct MoviesViewBody: View {
     }
 
     @ViewBuilder
-    private var watchlistSection: some View {
+    private var toWatchSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Watchlist")
-                .font(.title3.weight(.semibold))
+            Text("To Watch")
+                .font(.title3.weight(.bold))
                 .padding(.horizontal)
 
             if model.watchlistItems.isEmpty {
@@ -212,7 +214,7 @@ private struct MoviesViewBody: View {
             } else {
                 LazyVGrid(columns: cols, spacing: 12) {
                     ForEach(model.watchlistItems) { item in
-                        movieTile(item)
+                        movieTile(item, showTitle: false)
                     }
                 }
                 .padding(.horizontal, 12)
@@ -224,45 +226,28 @@ private struct MoviesViewBody: View {
     @ViewBuilder
     private var watchedSection: some View {
         if !model.watchedItems.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                NavigationLink {
-                    MovieCollectionView(
-                        title: "Watched",
-                        items: model.watchedItems,
-                        detailRef: $detailRef,
-                        markUnwatched: model.markUnwatched
-                    )
-                } label: {
-                    Text("Watched")
-                        .font(.title3.weight(.semibold))
-                    Image(systemName: "chevron.right")
-                        .font(.callout.weight(.bold))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal)
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 12) {
-                        ForEach(model.watchedItems.prefix(12)) { item in
-                            movieTile(item)
-                        }
-                    }
-                    .padding(.horizontal)
-                    .padding(.top, 8)
+            MediaCollectionRow(title: "Watched") {
+                MovieCollectionView(
+                    title: "Watched",
+                    items: model.watchedItems,
+                    detailRef: $detailRef,
+                    markUnwatched: model.markUnwatched
+                )
+            } content: {
+                ForEach(model.watchedItems.prefix(12)) { item in
+                    movieTile(item, showTitle: false)
                 }
             }
-            .padding(.top, 20)
             .padding(.bottom, 12)
         }
     }
 
-    private func movieTile(_ item: LibraryMovieItem) -> some View {
+    private func movieTile(_ item: LibraryMovieItem, showTitle: Bool) -> some View {
         MediaTile(
             ref: item.mediaID,
             title: item.title,
             posterPath: item.posterPath,
-            showTitle: true,
+            showTitle: showTitle,
             selectedRef: $detailRef,
             extraMenu: {
                 if item.isWatched {

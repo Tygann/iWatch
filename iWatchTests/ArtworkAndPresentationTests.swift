@@ -87,6 +87,28 @@ struct ArtworkAndPresentationTests {
     }
 
     @Test
+    func showSnapshotUsesPurposeDrivenOrdering() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let items = [
+            makeShow(id: 10, bucket: .returning, nextAirDate: nil, nextEpisodeAirDate: now, lastWatchedAt: now),
+            makeShow(id: 11, bucket: .returning, nextAirDate: nil, nextEpisodeAirDate: now, lastWatchedAt: now.addingTimeInterval(10)),
+            makeShow(id: 12, bucket: .returning, nextAirDate: nil, nextEpisodeAirDate: nil, watchedCount: 0, listedAt: now),
+            makeShow(id: 13, bucket: .returning, nextAirDate: nil, nextEpisodeAirDate: nil, watchedCount: 0, listedAt: now.addingTimeInterval(10)),
+            makeShow(id: 14, bucket: .ended, nextAirDate: nil, nextEpisodeAirDate: nil, watchedCount: 10, remainingReleased: 0, totalEpisodes: 10, lastWatchedAt: now),
+            makeShow(id: 15, bucket: .ended, nextAirDate: nil, nextEpisodeAirDate: nil, watchedCount: 10, remainingReleased: 0, totalEpisodes: 10, lastWatchedAt: now.addingTimeInterval(10)),
+            makeShow(id: 16, bucket: .returning, nextAirDate: now.addingTimeInterval(200), nextEpisodeAirDate: nil, watchedCount: 2, remainingReleased: 0),
+            makeShow(id: 17, bucket: .returning, nextAirDate: now.addingTimeInterval(100), nextEpisodeAirDate: nil, watchedCount: 2, remainingReleased: 0)
+        ]
+
+        let snapshot = ShowLibrarySnapshot(items: items, referenceDate: now)
+
+        #expect(snapshot.continueWatching.map(\.id) == [11, 10])
+        #expect(snapshot.watchlist.map(\.id) == [13, 12])
+        #expect(snapshot.completed.map(\.id) == [15, 14])
+        #expect(snapshot.caughtUp.map(\.id) == [17, 16])
+    }
+
+    @Test
     func artworkKindsUseTMDbSizesAppropriateForTheirContent() throws {
         let path = "/sample.jpg"
         let still = try #require(ImageURLBuilder.make(path, size: .episodeStill))
@@ -204,7 +226,9 @@ private func makeShow(
     nextEpisodeAirDate: Date?,
     watchedCount: Int = 1,
     remainingReleased: Int? = nil,
-    totalEpisodes: Int = 10
+    totalEpisodes: Int = 10,
+    listedAt: Date? = nil,
+    lastWatchedAt: Date? = nil
 ) -> LibraryShowItem {
     LibraryShowItem(
         mediaID: MediaID(kind: .show, id: id),
@@ -226,6 +250,8 @@ private func makeShow(
                 )
             }
         ),
+        listedAt: listedAt ?? Date(timeIntervalSince1970: TimeInterval(id)),
+        lastWatchedAt: lastWatchedAt ?? Date(timeIntervalSince1970: TimeInterval(id)),
         needsProgressEnrichment: false
     )
 }
