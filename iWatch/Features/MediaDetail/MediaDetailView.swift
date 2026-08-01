@@ -583,7 +583,7 @@ private struct MediaDetailBody: View {
                     EpisodeView(ref: episode.ref)
                 } label: {
                     HStack(alignment: .center, spacing: 12) {
-                        PosterImage(path: episode.stillPath, width: 120, height: 68)
+                        EpisodeStillImage(path: episode.stillPath)
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text("E\(episode.episodeNumber) • \(episode.name)")

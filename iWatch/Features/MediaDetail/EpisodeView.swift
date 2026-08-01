@@ -321,7 +321,7 @@ private struct CastCard: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            PosterImage(path: profilePath, width: 100, height: 140)
+            ProfileImage(path: profilePath)
                 .shadow(radius: 4)
 
             Text(name)

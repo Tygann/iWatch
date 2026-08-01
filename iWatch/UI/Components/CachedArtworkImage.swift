@@ -8,7 +8,7 @@ struct CachedArtworkImage<Content: View, Placeholder: View>: View {
     let placeholder: () -> Placeholder
 
     @Environment(\.displayScale) private var displayScale
-    @State private var loadedImage: UIImage?
+    @State private var loaded: (key: String, image: UIImage)?
 
     init(
         url: URL?,
@@ -24,23 +24,36 @@ struct CachedArtworkImage<Content: View, Placeholder: View>: View {
 
     var body: some View {
         Group {
-            if let loadedImage {
-                content(Image(uiImage: loadedImage))
+            if let displayedImage {
+                content(Image(uiImage: displayedImage))
             } else {
                 placeholder()
             }
         }
         .task(id: loadID) {
-            loadedImage = nil
+            let requestedID = loadID
+            if let image = ArtworkMemoryCache.shared.image(forKey: requestedID) {
+                loaded = (requestedID, image)
+                return
+            }
+
+            loaded = nil
             guard let url else { return }
             let image = await ArtworkLoader.shared.image(
                 for: url,
                 targetSize: targetSize,
                 displayScale: displayScale
             )
-            guard !Task.isCancelled else { return }
-            loadedImage = image
+            guard !Task.isCancelled, loadID == requestedID, let image else { return }
+            loaded = (requestedID, image)
         }
+    }
+
+    private var displayedImage: UIImage? {
+        if let loaded, loaded.key == loadID {
+            return loaded.image
+        }
+        return ArtworkMemoryCache.shared.image(forKey: loadID)
     }
 
     private var loadID: String {

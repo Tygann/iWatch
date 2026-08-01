@@ -14,9 +14,9 @@ struct ArtworkAndPresentationTests {
         defer { MockArtworkURLProtocol.responseData = nil }
 
         let loader = ArtworkLoader(
-            memoryCapacity: 4 * 1_024 * 1_024,
             diskCapacity: 0,
-            protocolClasses: [MockArtworkURLProtocol.self]
+            protocolClasses: [MockArtworkURLProtocol.self],
+            decodedImages: ArtworkMemoryCache(memoryCapacity: 4 * 1_024 * 1_024)
         )
         let first = await loader.image(
             for: url,
@@ -48,9 +48,9 @@ struct ArtworkAndPresentationTests {
         }
 
         let loader = ArtworkLoader(
-            memoryCapacity: 4 * 1_024 * 1_024,
             diskCapacity: 0,
-            protocolClasses: [MockArtworkURLProtocol.self]
+            protocolClasses: [MockArtworkURLProtocol.self],
+            decodedImages: ArtworkMemoryCache(memoryCapacity: 4 * 1_024 * 1_024)
         )
         async let first = loader.image(for: url, targetSize: CGSize(width: 100, height: 150), displayScale: 2)
         async let second = loader.image(for: url, targetSize: CGSize(width: 100, height: 150), displayScale: 2)
@@ -80,6 +80,28 @@ struct ArtworkAndPresentationTests {
         #expect(snapshot.airing.map(\.id) == [1])
         #expect(snapshot.returning.map(\.id) == [2])
         #expect(snapshot.ended.map(\.id) == [3])
+    }
+
+    @Test
+    func artworkKindsUseTMDbSizesAppropriateForTheirContent() throws {
+        let path = "/sample.jpg"
+        let still = try #require(ImageURLBuilder.make(path, size: .episodeStill))
+        let profile = try #require(ImageURLBuilder.make(path, size: .profile))
+
+        #expect(still.path.contains("/w300/"))
+        #expect(profile.path.contains("/h632/"))
+    }
+
+    @Test
+    func decodedMemoryCacheSupportsSynchronousReuseAndClear() {
+        let cache = ArtworkMemoryCache(memoryCapacity: 1_024 * 1_024)
+        let image = makeTestImage(size: CGSize(width: 20, height: 20))
+
+        cache.insert(image, forKey: "poster")
+        #expect(cache.image(forKey: "poster") != nil)
+
+        cache.clear()
+        #expect(cache.image(forKey: "poster") == nil)
     }
 }
 

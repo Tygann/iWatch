@@ -5,6 +5,8 @@ struct ImageURLBuilder {
         case posterSmall = "w185"
         case posterTile = "w342"
         case posterLarge = "w500"
+        case episodeStill = "w300"
+        case profile = "h632"
         case backdrop = "w780"
         case original = "original"
     }

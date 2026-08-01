@@ -2,19 +2,43 @@ import Foundation
 import ImageIO
 import UIKit
 
+nonisolated final class ArtworkMemoryCache: @unchecked Sendable {
+    static let shared = ArtworkMemoryCache()
+
+    private let images = NSCache<NSString, UIImage>()
+
+    init(memoryCapacity: Int = 48 * 1_024 * 1_024, countLimit: Int = 250) {
+        images.totalCostLimit = memoryCapacity
+        images.countLimit = countLimit
+    }
+
+    func image(forKey key: String) -> UIImage? {
+        images.object(forKey: key as NSString)
+    }
+
+    func insert(_ image: UIImage, forKey key: String) {
+        let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? 0
+        images.setObject(image, forKey: key as NSString, cost: cost)
+    }
+
+    func clear() {
+        images.removeAllObjects()
+    }
+}
+
 actor ArtworkLoader {
     static let shared = ArtworkLoader()
 
-    private let decodedImages = NSCache<NSString, UIImage>()
+    private let decodedImages: ArtworkMemoryCache
     private let urlCache: URLCache
     private let session: URLSession
     private var inFlight: [String: Task<UIImage?, Never>] = [:]
 
     init(
-        memoryCapacity: Int = 48 * 1_024 * 1_024,
         diskCapacity: Int = 256 * 1_024 * 1_024,
         directory: URL? = nil,
-        protocolClasses: [AnyClass]? = nil
+        protocolClasses: [AnyClass]? = nil,
+        decodedImages: ArtworkMemoryCache = .shared
     ) {
         let urlCache = URLCache(
             memoryCapacity: 16 * 1_024 * 1_024,
@@ -31,8 +55,7 @@ actor ArtworkLoader {
 
         self.urlCache = urlCache
         self.session = URLSession(configuration: configuration)
-        decodedImages.totalCostLimit = memoryCapacity
-        decodedImages.countLimit = 250
+        self.decodedImages = decodedImages
     }
 
     func image(for url: URL, targetSize: CGSize, displayScale: CGFloat) async -> UIImage? {
@@ -40,9 +63,8 @@ actor ArtworkLoader {
 
         let pixelSize = Self.pixelSize(for: targetSize, displayScale: displayScale)
         let key = Self.cacheKey(url: url, pixelSize: pixelSize)
-        let cacheKey = key as NSString
 
-        if let image = decodedImages.object(forKey: cacheKey) {
+        if let image = decodedImages.image(forKey: key) {
             return image
         }
 
@@ -76,14 +98,14 @@ actor ArtworkLoader {
         inFlight[key] = nil
         guard !Task.isCancelled, let image else { return nil }
 
-        decodedImages.setObject(image, forKey: cacheKey, cost: Self.decodedCost(of: image))
+        decodedImages.insert(image, forKey: key)
         return image
     }
 
     func clear() async {
         inFlight.values.forEach { $0.cancel() }
         inFlight.removeAll()
-        decodedImages.removeAllObjects()
+        decodedImages.clear()
         urlCache.removeAllCachedResponses()
     }
 
@@ -113,11 +135,6 @@ actor ArtworkLoader {
         ] as CFDictionary
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else { return nil }
         return UIImage(cgImage: image, scale: displayScale, orientation: .up)
-    }
-
-    nonisolated private static func decodedCost(of image: UIImage) -> Int {
-        guard let image = image.cgImage else { return 0 }
-        return image.bytesPerRow * image.height
     }
 }
 
