@@ -589,7 +589,7 @@ private struct MediaDetailBody: View {
     }
 
     private func episodeRow(_ episode: EpisodeDetails) -> some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
                 NavigationLink {
                     EpisodeView(ref: episode.ref)

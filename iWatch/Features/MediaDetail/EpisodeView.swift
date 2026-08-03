@@ -200,17 +200,6 @@ private struct EpisodeViewBody: View {
 
     private func detailsSection(_ details: EpisodeDetails) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            NavigationLink {
-                MediaDetailView(ref: model.showRef)
-            } label: {
-                HStack(spacing: 4) {
-                    Text(model.showTitle.isEmpty ? "View Show" : model.showTitle)
-                    Image(systemName: "chevron.right")
-                        .font(.caption.bold())
-                }
-                .font(.subheadline.weight(.semibold))
-            }
-
             let episodeName = details.name.isEmpty ? "" : details.name
             let separator = episodeName.isEmpty ? "" : " • "
 
@@ -253,6 +242,8 @@ private struct EpisodeViewBody: View {
             .tint(model.isWatched ? .accentColor : .secondary)
             .glassEffect(.regular, in: .capsule)
             .clipShape(.capsule)
+
+            Spacer()
 
             ShareLink(item: model.shareText, subject: Text(details.name.isEmpty ? "Episode" : details.name)) {
                 Label("Share", systemImage: "square.and.arrow.up.fill")

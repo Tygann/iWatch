@@ -87,9 +87,11 @@ final class LibraryRepository {
     func episodeDetails(for ref: EpisodeRef, forceRefresh: Bool = false) async throws -> EpisodeDetails {
         let context = persistence.makeContext()
         if !forceRefresh,
-           let record = episodeRecord(for: ref, context: context),
-           record.extrasData != nil {
-            return mapEpisodeRecord(record)
+           let record = episodeRecord(for: ref, context: context) {
+            let cached = mapEpisodeRecord(record)
+            if hasRichEpisodeDetails(cached) {
+                return cached
+            }
         }
 
         let fresh = try await tmdb.episodeDetails(
@@ -104,6 +106,18 @@ final class LibraryRepository {
             throw AppError.unknown("Unable to cache episode details.")
         }
         return mapEpisodeRecord(record)
+    }
+
+    private func hasRichEpisodeDetails(_ episode: EpisodeDetails) -> Bool {
+        guard let extras = episode.extras else { return false }
+
+        return !extras.cast.isEmpty
+            || !extras.guestStars.isEmpty
+            || !extras.crew.isEmpty
+            || !extras.images.isEmpty
+            || !extras.videos.isEmpty
+            || extras.externalIDs.imdb != nil
+            || extras.externalIDs.tvdb != nil
     }
 
     func setWatchlist(_ inWatchlist: Bool, for id: MediaID) async throws {
