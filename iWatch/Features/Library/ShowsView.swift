@@ -207,7 +207,7 @@ private struct ShowsViewBody: View {
                 NavigationStack {
                     EpisodeView(ref: ref)
                         .toolbar {
-                            ToolbarItem(placement: .topBarTrailing) {
+                            ToolbarItem(placement: .topBarLeading) {
                                 Button(role: .close) { episodeRef = nil }
                             }
                         }
@@ -271,12 +271,14 @@ private struct ShowsViewBody: View {
                                 .padding(3)
                                 .glassEffect()
                                 .padding(3)
+                                .allowsHitTesting(false)
                         }
                     }
                     .overlay(alignment: .topTrailing) {
                         if item.progress.remainingReleased > 0 {
                             SystemBadge(label: "\(item.progress.remainingReleased)", color: .red, height: 20)
                                 .offset(x: 8, y: -8)
+                                .allowsHitTesting(false)
                         }
                     }
                     .frame(width: 110)
@@ -297,7 +299,7 @@ private struct ShowsViewBody: View {
                 )
             } content: {
                 ForEach(model.snapshot.comingUp) { item in
-                    VStack(spacing: 6) {
+//                    VStack(spacing: 6) {
                         MediaTile(
                             ref: item.mediaID,
                             title: item.title,
@@ -306,13 +308,23 @@ private struct ShowsViewBody: View {
                             selectedRef: $detailRef
                         )
 
+//                        if let label = model.nextAirLabel(for: item) {
+//                            Text(label)
+//                                .font(.footnote.weight(.semibold))
+//                                .lineLimit(1)
+//                                .minimumScaleFactor(0.7)
+//                                .frame(maxWidth: .infinity)
+//                                .multilineTextAlignment(.center)
+//                        }
+//                    }
+                    .overlay(alignment: .topLeading) {
                         if let label = model.nextAirLabel(for: item) {
                             Text(label)
-                                .font(.footnote.weight(.semibold))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.7)
-                                .frame(maxWidth: .infinity)
-                                .multilineTextAlignment(.center)
+                                .font(.caption2.bold())
+                                .padding(3)
+                                .glassEffect()
+                                .padding(3)
+                                .allowsHitTesting(false)
                         }
                     }
                     .frame(width: 110)
@@ -391,7 +403,7 @@ private struct ShowCollectionView: View {
         ScrollView {
             LazyVGrid(columns: cols, spacing: 12) {
                 ForEach(items) { item in
-                    VStack(spacing: 6) {
+//                    VStack(spacing: 6) {
                         MediaTile(
                             ref: item.mediaID,
                             title: item.title,
@@ -400,13 +412,23 @@ private struct ShowCollectionView: View {
                             selectedRef: $detailRef
                         )
 
+//                        if let text = secondaryText(item) {
+//                            Text(text)
+//                                .font(.footnote.weight(.semibold))
+//                                .lineLimit(1)
+//                                .minimumScaleFactor(0.7)
+//                                .frame(maxWidth: .infinity)
+//                                .multilineTextAlignment(.center)
+//                        }
+//                    }
+                    .overlay(alignment: .topLeading) {
                         if let text = secondaryText(item) {
                             Text(text)
-                                .font(.footnote.weight(.semibold))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.7)
-                                .frame(maxWidth: .infinity)
-                                .multilineTextAlignment(.center)
+                                .font(.caption2.bold())
+                                .padding(3)
+                                .glassEffect()
+                                .padding(3)
+                                .allowsHitTesting(false)
                         }
                     }
                     .frame(width: 110)

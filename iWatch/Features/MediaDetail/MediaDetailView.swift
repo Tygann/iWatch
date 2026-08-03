@@ -721,12 +721,35 @@ private struct MediaDetailBody: View {
 }
 
 #Preview {
+    @Previewable @State var showSheet = true
     let container = AppContainer.preview()
-    NavigationStack {
-        MediaDetailView(ref: MediaID(kind: .show, id: 1399))
-    }
-    .environment(container)
-    .environment(container.session)
-    .environment(container.router)
-    .modelContainer(container.persistence.modelContainer)
+
+    Color.clear
+        .background(Color.gray)
+        .sheet(isPresented: $showSheet) {
+            NavigationStack {
+                MediaDetailView(ref: MediaID(kind: .show, id: 110492))
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button(role: .close) { }
+                        }
+                    }
+            }
+        }
+        .environment(container)
+        .environment(container.session)
+        .environment(container.router)
+        .modelContainer(container.persistence.modelContainer)
 }
+
+// MARK: - Media IDs
+
+// MARK: Shows
+// GoT: 1399
+// Wednesday: 119051
+// Peacemaker: 110492
+
+// MARK: Movies
+// Iron Man: 1726
+// Superman: 1061474
+// How to Train Your Dragon: 1087192

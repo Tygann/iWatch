@@ -236,7 +236,7 @@ private struct SearchViewBody: View {
                 ScrollView {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 12)], spacing: 12) {
                         ForEach(model.filteredResults) { item in
-                            VStack(alignment: .leading, spacing: 6) {
+//                            VStack(alignment: .leading, spacing: 6) {
                                 MediaTile(
                                     ref: item.mediaID,
                                     title: item.title,
@@ -245,20 +245,46 @@ private struct SearchViewBody: View {
                                     selectedRef: $detailRef
                                 )
 
-                                HStack {
-                                    if let year = item.year {
-                                        Text(year)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-
-                                    Spacer()
-
-                                    if model.selectedFilter == .top {
-                                        Text(item.kind == .movie ? "Movie" : "TV Show")
-                                            .font(.caption)
-                                            .foregroundStyle(item.kind == .movie ? .purple : .blue)
-                                    }
+//                                HStack {
+//                                    if let year = item.year {
+//                                        Text(year)
+//                                            .font(.caption)
+//                                            .foregroundStyle(.secondary)
+//                                    }
+//
+//                                    Spacer()
+//
+//                                    if model.selectedFilter == .top {
+//                                        Text(item.kind == .movie ? "Movie" : "TV Show")
+//                                            .font(.caption)
+//                                            .foregroundStyle(item.kind == .movie ? .purple : .blue)
+//                                    }
+//                                }
+//                            }
+                            .overlay(alignment: .topLeading) {
+                                if model.selectedFilter == .top {
+//                                    Text(item.kind == .movie ? "Movie" : "TV Show")
+                                    Image(systemName: item.kind == .movie ? "film.fill" : "tv.fill")
+                                        .font(.caption2.bold())
+//                                        .font(.caption)
+                                        .foregroundStyle(item.kind == .movie ? .purple : .blue)
+                                        .padding(3)
+//                                        .glassEffect()
+                                        .glassEffect(.regular, in: .circle)
+                                        .padding(3)
+                                        .allowsHitTesting(false)
+                                }
+                            }
+                            .overlay(alignment: .topTrailing) {
+                                if let year = item.year {
+                                    Text(year)
+                                        .font(.caption2.bold())
+//                                     .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .padding(3)
+                                        .glassEffect()
+                                        .padding(3)
+                                        .allowsHitTesting(false)
                                 }
                             }
                             .frame(width: 110)

@@ -354,12 +354,24 @@ private struct CastCard: View {
 }
 
 #Preview {
+    @Previewable @State var showSheet = true
     let container = AppContainer.preview()
-    NavigationStack {
-        EpisodeView(ref: EpisodeRef(showId: 1399, season: 1, episode: 1))
-    }
-    .environment(container)
-    .environment(container.session)
-    .environment(container.router)
-    .modelContainer(container.persistence.modelContainer)
+
+    Color.clear
+        .background(Color.gray)
+        .sheet(isPresented: $showSheet) {
+            NavigationStack {
+                EpisodeView(ref: EpisodeRef(showId: 1399, season: 1, episode: 1))
+            }
+        }
+        .environment(container)
+        .environment(container.session)
+        .environment(container.router)
+        .modelContainer(container.persistence.modelContainer)
 }
+
+// MARK: - Show IDs
+// GoT: 1399
+// Wednesday: 119051
+// Peacemaker: 110492
+// The Last of Us: 100088
