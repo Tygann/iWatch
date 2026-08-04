@@ -147,6 +147,35 @@ struct ShowProgress: Equatable, Sendable {
     }
 }
 
+enum ShowDisposition: String, Codable, Equatable, Sendable {
+    case active
+    case stopped
+}
+
+enum MovieLifecycle: Equatable, Sendable {
+    case available
+    case watchlisted
+    case watched(playCount: Int, lastWatchedAt: Date)
+}
+
+enum ShowLifecycle: Equatable, Sendable {
+    case available
+    case watchlisted
+    case watching
+    case caughtUp
+    case completed
+    case stopped
+}
+
+struct WatchHistoryItem: Identifiable, Equatable, Sendable {
+    let id: UUID
+    let mediaID: MediaID
+    let showID: MediaID?
+    let seasonNumber: Int?
+    let episodeNumber: Int?
+    let watchedAt: Date
+}
+
 struct LibraryMovieItem: Identifiable, Equatable, Sendable {
     let mediaID: MediaID
     let title: String
@@ -154,10 +183,20 @@ struct LibraryMovieItem: Identifiable, Equatable, Sendable {
     let releaseDate: Date?
     let listedAt: Date?
     let isInWatchlist: Bool
-    let isWatched: Bool
+    let playCount: Int
     let lastWatchedAt: Date?
 
     var id: Int { mediaID.id }
+
+    var isWatched: Bool { playCount > 0 }
+
+    var lifecycle: MovieLifecycle {
+        if isInWatchlist { return .watchlisted }
+        if let lastWatchedAt, playCount > 0 {
+            return .watched(playCount: playCount, lastWatchedAt: lastWatchedAt)
+        }
+        return .available
+    }
 }
 
 struct LibraryShowItem: Identifiable, Equatable, Sendable {
@@ -166,11 +205,23 @@ struct LibraryShowItem: Identifiable, Equatable, Sendable {
     let posterPath: String?
     let status: ShowStatusSnapshot
     let progress: ShowProgress
+    let isInWatchlist: Bool
+    let disposition: ShowDisposition
     let listedAt: Date?
     let lastWatchedAt: Date?
     let needsProgressEnrichment: Bool
 
     var id: Int { mediaID.id }
+
+    var lifecycle: ShowLifecycle {
+        if disposition == .stopped { return .stopped }
+        if progress.watchedCount == 0 {
+            return isInWatchlist ? .watchlisted : .available
+        }
+        if status.bucket == .ended && progress.isComplete { return .completed }
+        if progress.remainingReleased == 0 { return .caughtUp }
+        return .watching
+    }
 }
 
 struct ShowLibrarySnapshot: Equatable, Sendable {
@@ -186,13 +237,14 @@ struct ShowLibrarySnapshot: Equatable, Sendable {
     init(items: [LibraryShowItem], referenceDate: Date = .now, calendar: Calendar = .current) {
         all = items
         continueWatching = items
-            .filter { $0.progress.watchedCount > 0 && $0.progress.remainingReleased > 0 }
+            .filter { $0.lifecycle == .watching }
             .sorted {
                 ($0.lastWatchedAt ?? .distantPast) > ($1.lastWatchedAt ?? .distantPast)
             }
         let startOfToday = calendar.startOfDay(for: referenceDate)
         comingUp = items
             .filter {
+                guard $0.disposition == .active else { return false }
                 guard let nextAirDate = $0.status.nextAirDate else { return false }
                 return calendar.startOfDay(for: nextAirDate) >= startOfToday
             }
@@ -201,16 +253,15 @@ struct ShowLibrarySnapshot: Equatable, Sendable {
                     ($1.status.nextAirDate ?? .distantFuture)
             }
         watchlist = items
-            .filter { $0.progress.watchedCount == 0 }
+            .filter { $0.lifecycle == .watchlisted }
             .sorted { ($0.listedAt ?? .distantPast) > ($1.listedAt ?? .distantPast) }
         completed = items
-            .filter { $0.status.bucket == .ended && $0.progress.isComplete }
+            .filter { $0.lifecycle == .completed }
             .sorted { ($0.lastWatchedAt ?? .distantPast) > ($1.lastWatchedAt ?? .distantPast) }
         let completedIDs = Set(completed.map(\.id))
         caughtUp = items
             .filter {
-                $0.progress.watchedCount > 0 &&
-                    $0.progress.remainingReleased == 0 &&
+                $0.lifecycle == .caughtUp &&
                     !completedIDs.contains($0.id)
             }
             .sorted {

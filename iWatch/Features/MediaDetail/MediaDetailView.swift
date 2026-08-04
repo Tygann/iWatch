@@ -23,7 +23,9 @@ private final class MediaDetailScreenModel {
     var isInWatchlist = false
     var overviewExpanded = false
     var movieWatchEventID: UUID?
+    var moviePlayCount = 0
     var watchedEpisodeKeys: Set<String> = []
+    var showDisposition: ShowDisposition = .active
     var remainingReleasedEpisodes = 0
     var nextEpisode: ShowProgress.NextEpisode?
     var episodesBySeason: [Int: [EpisodeDetails]] = [:]
@@ -97,9 +99,12 @@ private final class MediaDetailScreenModel {
 
         switch ref.kind {
         case .movie:
-            movieWatchEventID = await libraryRepository.latestWatchEventID(for: ref)
+            let events = await libraryRepository.watchEvents(for: ref)
+            movieWatchEventID = events.first?.id
+            moviePlayCount = events.count
 
         case .show:
+            showDisposition = await libraryRepository.showDisposition(for: ref)
             do {
                 let progress = try await libraryRepository.showProgress(for: ref)
                 watchedEpisodeKeys = progress.watchedEpisodeKeys
@@ -175,6 +180,56 @@ private final class MediaDetailScreenModel {
         }
     }
 
+    func addMovieRewatch() async {
+        do {
+            try await libraryRepository.addWatchEvent(for: ref, watchedAt: Date())
+            session.markLibraryUpdated(syncIfConnected: true)
+            await refreshLibraryState()
+        } catch {
+            guard !error.isCancelled else { return }
+            loadState = .failed(error.localizedDescription)
+        }
+    }
+
+    func setShowDisposition(_ disposition: ShowDisposition) async {
+        do {
+            try await libraryRepository.setShowDisposition(disposition, for: ref)
+            session.markLibraryUpdated(syncIfConnected: true)
+            await refreshLibraryState()
+        } catch {
+            guard !error.isCancelled else { return }
+            loadState = .failed(error.localizedDescription)
+        }
+    }
+
+    var primaryLabel: String {
+        switch ref.kind {
+        case .movie:
+            if isInWatchlist { return "In Watchlist" }
+            if moviePlayCount > 1 { return "Watched \(moviePlayCount) Times" }
+            if isMovieWatched { return "Watched" }
+            return "Add to Watchlist"
+        case .show:
+            if showDisposition == .stopped { return "Stopped" }
+            if watchedEpisodeKeys.isEmpty {
+                return isInWatchlist ? "In Watchlist" : "Add to Watchlist"
+            }
+            if case let .loaded(.show(show)) = loadState,
+               show.status?.localizedCaseInsensitiveContains("ended") == true,
+               remainingReleasedEpisodes == 0,
+               show.totalEpisodes.map({ watchedEpisodeKeys.count >= $0 }) == true {
+                return "Completed"
+            }
+            return remainingReleasedEpisodes == 0 ? "Caught Up" : "Watching"
+        default:
+            return isInWatchlist ? "In Watchlist" : "Add to Watchlist"
+        }
+    }
+
+    var hasProgress: Bool {
+        isMovieWatched || !watchedEpisodeKeys.isEmpty
+    }
+
     func toggleEpisodeWatched(_ episode: EpisodeDetails) async {
         do {
             if let eventID = await libraryRepository.latestWatchEventID(for: episode.mediaID) {
@@ -241,6 +296,7 @@ struct MediaDetailView: View {
 private struct MediaDetailBody: View {
     @Bindable var model: MediaDetailScreenModel
     @Environment(AppSession.self) private var session
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Namespace private var seasonIndicatorNamespace
 
     @State private var scrollOffset: CGFloat = 0
@@ -299,44 +355,129 @@ private struct MediaDetailBody: View {
         }
     }
 
+    @ViewBuilder
     private func introSection(_ details: MediaDetails) -> some View {
-        HStack(alignment: .top, spacing: 16) {
-            PosterImage(path: details.posterPath)
-                .frame(width: 120, height: 180)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .shadow(radius: 6)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text(details.title)
-                    .font(.title2.bold())
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.85)
-
-                if let tagline = details.tagline, !tagline.isEmpty {
-                    Text(tagline)
-                }
-
-                Spacer()
-
-                Button {
-                    Haptics.notification(.success)
-                    Task { await model.toggleWatchlist() }
-                } label: {
-                    Text(model.isInWatchlist ? "In Watchlist" : "Add to Watchlist")
-                        .bold()
-                        .frame(minWidth: 90, minHeight: 25)
-                        .padding(.horizontal, 6)
-                }
-                .buttonStyle(.borderedProminent)
-                .glassEffect(.regular, in: .capsule)
-                .clipShape(.capsule)
-                .tint(model.isInWatchlist ? Color.accentColor : Color.secondary)
-                .accessibilityLabel(model.isInWatchlist ? "Remove from watchlist" : "Add to watchlist")
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 16) {
+                poster(for: details)
+                    .frame(maxWidth: .infinity)
+                introText(for: details)
+                lifecycleControl
+                    .frame(maxWidth: .infinity)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 9)
+            .padding(.horizontal, 20)
+        } else {
+            HStack(alignment: .top, spacing: 16) {
+                poster(for: details)
+                VStack(alignment: .leading, spacing: 8) {
+                    introText(for: details)
+                    Spacer()
+                    lifecycleControl
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 9)
+            }
+            .padding(.horizontal, 20)
         }
-        .padding(.horizontal, 20)
+    }
+
+    private func poster(for details: MediaDetails) -> some View {
+        PosterImage(path: details.posterPath)
+            .frame(width: 120, height: 180)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .shadow(radius: 6)
+    }
+
+    private func introText(for details: MediaDetails) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(details.title)
+                .font(.title2.bold())
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                .minimumScaleFactor(0.85)
+
+            if let tagline = details.tagline, !tagline.isEmpty {
+                Text(tagline)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var lifecycleControl: some View {
+        if model.hasProgress || model.showDisposition == .stopped {
+            Menu {
+                if model.ref.kind == .movie {
+                    Button {
+                        Task { await model.addMovieRewatch() }
+                    } label: {
+                        Label("Add Rewatch", systemImage: "arrow.clockwise")
+                    }
+                    Button {
+                        Task { await model.toggleMovieWatched() }
+                    } label: {
+                        Label("Remove Latest Play", systemImage: "minus.circle")
+                    }
+                    if !model.isInWatchlist {
+                        Button {
+                            Task { await model.toggleWatchlist() }
+                        } label: {
+                            Label("Watch Again", systemImage: "plus.circle")
+                        }
+                    } else {
+                        Button {
+                            Task { await model.toggleWatchlist() }
+                        } label: {
+                            Label("Remove from Watchlist", systemImage: "minus.circle")
+                        }
+                    }
+                } else if model.showDisposition == .stopped {
+                    Button {
+                        Task { await model.setShowDisposition(.active) }
+                    } label: {
+                        Label("Resume Watching", systemImage: "play.circle")
+                    }
+                } else {
+                    Button {
+                        Task { await model.setShowDisposition(.stopped) }
+                    } label: {
+                        Label("Stop Watching", systemImage: "stop.circle")
+                    }
+                }
+            } label: {
+                lifecycleLabel
+            }
+            .buttonStyle(.borderedProminent)
+            .glassEffect(.regular, in: .capsule)
+            .clipShape(.capsule)
+            .tint(Color.accentColor)
+            .accessibilityLabel("\(model.primaryLabel). Show options")
+        } else {
+            Button {
+                Haptics.notification(.success)
+                Task { await model.toggleWatchlist() }
+            } label: {
+                lifecycleLabel
+            }
+            .buttonStyle(.borderedProminent)
+            .glassEffect(.regular, in: .capsule)
+            .clipShape(.capsule)
+            .tint(model.isInWatchlist ? Color.accentColor : Color.secondary)
+            .accessibilityLabel(model.isInWatchlist ? "Remove from watchlist" : "Add to watchlist")
+        }
+    }
+
+    private var lifecycleLabel: some View {
+        Label(
+            model.primaryLabel,
+            systemImage: model.hasProgress ? "checkmark.circle.fill" :
+                (model.isInWatchlist ? "checkmark" : "plus")
+        )
+        .bold()
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(minWidth: 90, minHeight: 25)
+        .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil)
+        .padding(.horizontal, 6)
     }
 
     @ViewBuilder
@@ -677,8 +818,8 @@ private struct MediaDetailBody: View {
 
     private var metricDivider: some View {
         Divider()
-            .frame(height: 42)
-            .padding(.horizontal, 12)
+            .frame(height: dynamicTypeSize.isAccessibilitySize ? 120 : 42)
+            .padding(.horizontal, dynamicTypeSize.isAccessibilitySize ? 20 : 12)
     }
 
     private func metric(title: String, value: String, caption: String) -> some View {
@@ -697,6 +838,7 @@ private struct MediaDetailBody: View {
         }
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: true, vertical: false)
+        .padding(.horizontal, dynamicTypeSize.isAccessibilitySize ? 12 : 0)
     }
 
     private func displayTitle(for season: ShowDetails.Season) -> String {

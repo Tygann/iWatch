@@ -149,22 +149,6 @@ public struct TraktHistoryItemDTO: Codable, Sendable, Equatable {
     }
 }
 
-public struct TraktShowProgressDTO: Codable, Sendable, Equatable {
-    public let show: TraktShowDTO
-    public let progress: TraktShowProgressSummaryDTO
-}
-
-public struct TraktShowProgressSummaryDTO: Codable, Sendable, Equatable {
-    public let aired: Int
-    public let completed: Int
-    public let lastWatchedAt: Date?
-
-    enum CodingKeys: String, CodingKey {
-        case aired, completed
-        case lastWatchedAt = "last_watched_at"
-    }
-}
-
 public struct TraktLastActivitiesDTO: Codable, Sendable, Equatable {
     public let all: Date?
     public let movies: TraktActivityGroupDTO?
@@ -188,6 +172,11 @@ public struct TraktLastActivitiesDTO: Codable, Sendable, Equatable {
 public struct TraktActivityGroupDTO: Codable, Sendable, Equatable {
     public let watchedAt: Date?
     public let watchlistedAt: Date?
+
+    public init(watchedAt: Date?, watchlistedAt: Date?) {
+        self.watchedAt = watchedAt
+        self.watchlistedAt = watchlistedAt
+    }
 
     enum CodingKeys: String, CodingKey {
         case watchedAt = "watched_at"

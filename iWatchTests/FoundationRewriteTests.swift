@@ -45,7 +45,6 @@ struct FoundationRewriteTests {
         let progressUpdates = await progress.values
         #expect(progressUpdates.contains(.downloadingWatchlist(1)))
         #expect(progressUpdates.contains(.downloadingHistory(1)))
-        #expect(progressUpdates.contains(.downloadingShowProgress))
         #expect(progressUpdates.contains(.saving(watchlistItems: 1, historyItems: 1)))
 
         let diagnostics = await engine.diagnostics()
@@ -226,6 +225,111 @@ struct FoundationRewriteTests {
         #expect(events.first(where: { $0.recordID == second.recordID })?.tombstoned == false)
         #expect(operations.count == 1)
         #expect(payload.historyID == 9001)
+    }
+
+    @Test
+    func markingWatchlistedMovieWatchedMovesItToHistory() async throws {
+        let persistence = makePersistence()
+        let repository = makeLibraryRepository(persistence: persistence)
+        let context = persistence.makeContext()
+        let movieID = MediaID(kind: .movie, id: 11, traktID: 111)
+        context.insert(WatchlistRecord(mediaID: movieID, isInWatchlist: true))
+        try context.save()
+
+        try await repository.addWatchEvent(for: movieID, watchedAt: .now)
+
+        let watchlist = try #require(fetchAll(WatchlistRecord.self, from: persistence).first)
+        let events = try fetchAll(WatchedEventRecord.self, from: persistence)
+        let operations = try fetchAll(SyncOperationRecord.self, from: persistence)
+        #expect(watchlist.isInWatchlist == false)
+        #expect(events.count == 1)
+        #expect(Set(operations.map(\.kind)) == [.addHistory, .removeWatchlist])
+    }
+
+    @Test
+    func markingFirstEpisodeWatchedMovesParentShowOutOfWatchlistAndResumesIt() async throws {
+        let persistence = makePersistence()
+        let repository = makeLibraryRepository(persistence: persistence)
+        let context = persistence.makeContext()
+        let showID = MediaID(kind: .show, id: 22, traktID: 222)
+        context.insert(WatchlistRecord(mediaID: showID, isInWatchlist: true))
+        context.insert(ShowDispositionRecord(showID: showID, disposition: .stopped))
+        context.insert(EpisodeRecord(
+            showTMDbID: 22,
+            showTraktID: 222,
+            tmdbID: 33,
+            traktID: 333,
+            seasonNumber: 1,
+            episodeNumber: 1,
+            name: "Pilot",
+            airDate: .now
+        ))
+        try context.save()
+
+        try await repository.addWatchEvent(
+            for: MediaID(kind: .episode, id: 33, traktID: 333),
+            watchedAt: .now
+        )
+
+        #expect(try #require(fetchAll(WatchlistRecord.self, from: persistence).first).isInWatchlist == false)
+        #expect(try #require(fetchAll(ShowDispositionRecord.self, from: persistence).first).disposition == .active)
+        #expect(try fetchAll(WatchedEventRecord.self, from: persistence).count == 1)
+    }
+
+    @Test
+    func watchHistoryPreservesRewatchesInReverseChronologicalOrder() async throws {
+        let persistence = makePersistence()
+        let repository = makeLibraryRepository(persistence: persistence)
+        let movieID = MediaID(kind: .movie, id: 11, traktID: 111)
+        let earlier = Date().addingTimeInterval(-3_600)
+        let later = Date()
+
+        try await repository.addWatchEvent(for: movieID, watchedAt: earlier)
+        try await repository.addWatchEvent(for: movieID, watchedAt: later)
+
+        let history = await repository.watchHistory()
+        #expect(history.map(\.watchedAt) == [later, earlier])
+    }
+
+    @Test
+    func additiveDispositionSchemaPreservesExistingWatchlistAndHistory() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("iWatch-lifecycle-migration-\(UUID().uuidString).sqlite")
+        defer { removeStoreArtifacts(at: storeURL) }
+        let movieID = MediaID(kind: .movie, id: 11, traktID: 111)
+        let watchedAt = Date()
+
+        do {
+            let legacySchema = Schema([
+                MediaRecord.self,
+                EpisodeRecord.self,
+                WatchlistRecord.self,
+                WatchedEventRecord.self,
+                SyncOperationRecord.self,
+                SyncStateRecord.self,
+                LibraryGenerationRecord.self
+            ])
+            let configuration = ModelConfiguration(
+                "iWatch",
+                schema: legacySchema,
+                url: storeURL,
+                allowsSave: true,
+                cloudKitDatabase: .none
+            )
+            let container = try ModelContainer(for: legacySchema, configurations: [configuration])
+            let context = ModelContext(container)
+            context.insert(WatchlistRecord(mediaID: movieID, isInWatchlist: true))
+            context.insert(WatchedEventRecord(kind: .movie, tmdbID: 11, traktID: 111, watchedAt: watchedAt))
+            try context.save()
+        }
+
+        let migrated = Persistence(
+            storeURL: storeURL,
+            cloudKitDatabase: ModelConfiguration.CloudKitDatabase.none
+        )
+        #expect(try fetchAll(WatchlistRecord.self, from: migrated).count == 1)
+        #expect(try fetchAll(WatchedEventRecord.self, from: migrated).first?.watchedAt == watchedAt)
+        #expect(try fetchAll(ShowDispositionRecord.self, from: migrated).isEmpty)
     }
 
     @Test
@@ -558,7 +662,6 @@ struct FoundationRewriteTests {
         #expect(snapshot.getLastActivitiesCalls == 1)
         #expect(snapshot.getWatchlistCalls == 0)
         #expect(snapshot.getHistoryCalls == 0)
-        #expect(snapshot.getActiveShowProgressCalls == 1)
     }
 
     @Test
@@ -611,14 +714,108 @@ struct FoundationRewriteTests {
     }
 
     @Test
-    func activeTraktProgressSeedsDurableFollowing() async throws {
+    func userInitiatedSyncReconcilesRemoteHistoryDeletions() async throws {
+        let persistence = makePersistence()
+        let context = persistence.makeContext()
+        let oldActivity = Date().addingTimeInterval(-3_600)
+        context.insert(WatchedEventRecord(
+            kind: .movie,
+            tmdbID: 12,
+            traktID: 112,
+            watchedAt: oldActivity,
+            traktHistoryID: 7_002
+        ))
+        context.insert(WatchedEventRecord(
+            kind: .movie,
+            tmdbID: 11,
+            traktID: 111,
+            watchedAt: oldActivity.addingTimeInterval(-60),
+            traktHistoryID: 7_001
+        ))
+        context.insert(WatchedEventRecord(
+            kind: .movie,
+            tmdbID: 13,
+            traktID: 113,
+            watchedAt: oldActivity,
+            dirty: true
+        ))
+        context.insert(SyncStateRecord(
+            accountKey: "default",
+            initialBaselineComplete: true,
+            lastSuccessfulPullAt: oldActivity,
+            lastSuccessfulPushAt: oldActivity,
+            lastSeenRemoteActivityAt: oldActivity
+        ))
+        try context.save()
+
+        let engine = SyncEngine(
+            persistence: persistence,
+            trakt: FakeTraktSyncRemote(
+                token: makeToken(),
+                lastActivities: makeLastActivities(
+                    watchlistAt: oldActivity,
+                    historyAt: oldActivity
+                ),
+                watchlist: [],
+                history: [makeMovieHistoryItem(
+                    historyID: 7_001,
+                    watchedAt: oldActivity.addingTimeInterval(-60)
+                )]
+            ),
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+        )
+
+        #expect(await engine.run(reason: .userInitiated) == true)
+        let events = try fetchAll(WatchedEventRecord.self, from: persistence)
+        #expect(events.first(where: { $0.traktHistoryID == 7_002 })?.tombstoned == true)
+        #expect(events.first(where: { $0.traktHistoryID == 7_001 })?.tombstoned == false)
+        #expect(events.first(where: { $0.tmdbID == 13 })?.tombstoned == false)
+    }
+
+    @Test
+    func emptyRemoteHistoryPayloadCannotEraseExistingHistory() async throws {
+        let persistence = makePersistence()
+        let context = persistence.makeContext()
+        let oldActivity = Date().addingTimeInterval(-3_600)
+        context.insert(WatchedEventRecord(
+            kind: .movie,
+            tmdbID: 11,
+            traktID: 111,
+            watchedAt: oldActivity,
+            traktHistoryID: 7_001
+        ))
+        context.insert(SyncStateRecord(
+            accountKey: "default",
+            initialBaselineComplete: true,
+            lastSuccessfulPullAt: oldActivity,
+            lastSuccessfulPushAt: oldActivity,
+            lastSeenRemoteActivityAt: oldActivity
+        ))
+        try context.save()
+
+        let engine = SyncEngine(
+            persistence: persistence,
+            trakt: FakeTraktSyncRemote(
+                token: makeToken(),
+                lastActivities: makeLastActivities(watchlistAt: oldActivity, historyAt: oldActivity),
+                watchlist: [],
+                history: []
+            ),
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+        )
+
+        #expect(await engine.run(reason: .userInitiated) == true)
+        #expect(try #require(fetchAll(WatchedEventRecord.self, from: persistence).first).tombstoned == false)
+    }
+
+    @Test
+    func activeTraktProgressUsesHistoryWithoutCreatingWatchlistMembership() async throws {
         let persistence = makePersistence()
         let remote = FakeTraktSyncRemote(
             token: makeToken(),
             lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now),
             watchlist: [],
-            history: [makeEpisodeHistoryItem(historyID: 8001, watchedAt: .now)],
-            activeShowProgress: [makeActiveShowProgress()]
+            history: [makeEpisodeHistoryItem(historyID: 8001, watchedAt: .now)]
         )
         let engine = SyncEngine(
             persistence: persistence,
@@ -629,11 +826,8 @@ struct FoundationRewriteTests {
         try await engine.ensureInitialBaseline()
 
         let rows = try fetchAll(WatchlistRecord.self, from: persistence)
-        #expect(rows.count == 1)
-        #expect(rows[0].mediaID.kind == .show)
-        #expect(rows[0].tmdbID == 22)
-        #expect(rows[0].isInWatchlist == true)
-        #expect(rows[0].dirty == false)
+        #expect(rows.isEmpty)
+        #expect(try fetchAll(WatchedEventRecord.self, from: persistence).count == 1)
         #expect(try fetchAll(SyncOperationRecord.self, from: persistence).isEmpty)
     }
 
@@ -656,8 +850,7 @@ struct FoundationRewriteTests {
                 token: makeToken(),
                 lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now),
                 watchlist: [],
-                history: [makeEpisodeHistoryItem(historyID: 8001, watchedAt: .now)],
-                activeShowProgress: [makeActiveShowProgress()]
+                history: [makeEpisodeHistoryItem(historyID: 8001, watchedAt: .now)]
             ),
             deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
         )
@@ -670,7 +863,7 @@ struct FoundationRewriteTests {
     }
 
     @Test
-    func watchedItemStaysFollowedAfterTraktAutoRemovesItFromWatchlist() async throws {
+    func watchedItemLeavesWatchlistAfterTraktAutoRemovesIt() async throws {
         let persistence = makePersistence()
         let context = persistence.makeContext()
         let oldActivity = Date().addingTimeInterval(-3600)
@@ -708,7 +901,7 @@ struct FoundationRewriteTests {
         #expect(await engine.run(reason: .foreground) == true)
         let rows = try fetchAll(WatchlistRecord.self, from: persistence)
         #expect(rows.count == 1)
-        #expect(rows[0].isInWatchlist == true)
+        #expect(rows[0].isInWatchlist == false)
     }
 
     @Test
@@ -1154,22 +1347,10 @@ private func makeEpisodeHistoryItem(historyID: Int, watchedAt: Date) -> TraktHis
     )
 }
 
-private func makeActiveShowProgress() -> TraktShowProgressDTO {
-    TraktShowProgressDTO(
-        show: TraktShowDTO(
-            title: "Tracked Show",
-            year: 2024,
-            ids: TraktIDs(trakt: 222, slug: nil, tmdb: 22, imdb: nil)
-        ),
-        progress: TraktShowProgressSummaryDTO(
-            aired: 10,
-            completed: 1,
-            lastWatchedAt: .now
-        )
-    )
-}
-
-private func makeLastActivities(watchlistAt: Date?, historyAt: Date?) -> TraktLastActivitiesDTO {
+private func makeLastActivities(
+    watchlistAt: Date?,
+    historyAt: Date?
+) -> TraktLastActivitiesDTO {
     TraktLastActivitiesDTO(
         all: [watchlistAt, historyAt].compactMap { $0 }.max(),
         movies: TraktActivityGroupDTO(watchedAt: historyAt, watchlistedAt: watchlistAt),
@@ -1204,7 +1385,6 @@ private actor FakeTraktSyncRemote: TraktSyncing {
         let getLastActivitiesCalls: Int
         let getWatchlistCalls: Int
         let getHistoryCalls: Int
-        let getActiveShowProgressCalls: Int
         let addWatchlistCalls: Int
         let removeWatchlistCalls: Int
         let addHistoryCalls: Int
@@ -1215,13 +1395,11 @@ private actor FakeTraktSyncRemote: TraktSyncing {
     private let lastActivities: TraktLastActivitiesDTO
     private let watchlist: [TraktWatchlistItemDTO]
     private let history: [TraktHistoryItemDTO]
-    private let activeShowProgress: [TraktShowProgressDTO]
     private let addWatchlistDelayNanos: UInt64
 
     private var getLastActivitiesCalls = 0
     private var getWatchlistCalls = 0
     private var getHistoryCalls = 0
-    private var getActiveShowProgressCalls = 0
     private var addWatchlistCalls = 0
     private var removeWatchlistCalls = 0
     private var addHistoryCalls = 0
@@ -1231,13 +1409,11 @@ private actor FakeTraktSyncRemote: TraktSyncing {
          lastActivities: TraktLastActivitiesDTO,
          watchlist: [TraktWatchlistItemDTO],
          history: [TraktHistoryItemDTO],
-         activeShowProgress: [TraktShowProgressDTO] = [],
          addWatchlistDelayNanos: UInt64 = 0) {
         self.token = token
         self.lastActivities = lastActivities
         self.watchlist = watchlist
         self.history = history
-        self.activeShowProgress = activeShowProgress
         self.addWatchlistDelayNanos = addWatchlistDelayNanos
     }
 
@@ -1258,11 +1434,6 @@ private actor FakeTraktSyncRemote: TraktSyncing {
     func getHistory(startAt: Date?) async throws -> [TraktHistoryItemDTO] {
         getHistoryCalls += 1
         return history
-    }
-
-    func getActiveShowProgress() async throws -> [TraktShowProgressDTO] {
-        getActiveShowProgressCalls += 1
-        return activeShowProgress
     }
 
     func addToWatchlist(_ items: [MediaID]) async throws {
@@ -1293,7 +1464,6 @@ private actor FakeTraktSyncRemote: TraktSyncing {
             getLastActivitiesCalls: getLastActivitiesCalls,
             getWatchlistCalls: getWatchlistCalls,
             getHistoryCalls: getHistoryCalls,
-            getActiveShowProgressCalls: getActiveShowProgressCalls,
             addWatchlistCalls: addWatchlistCalls,
             removeWatchlistCalls: removeWatchlistCalls,
             addHistoryCalls: addHistoryCalls,

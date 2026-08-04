@@ -5,7 +5,6 @@ enum SyncProgress: Equatable, Sendable {
     case checkingLocalData
     case downloadingWatchlist(Int)
     case downloadingHistory(Int)
-    case downloadingShowProgress
     case saving(watchlistItems: Int, historyItems: Int)
     case uploadingChanges(Int)
     case complete
@@ -17,7 +16,6 @@ enum SyncProgress: Equatable, Sendable {
         case .checkingLocalData: return "Checking local data…"
         case .downloadingWatchlist: return "Downloading watchlist…"
         case .downloadingHistory: return "Downloading history…"
-        case .downloadingShowProgress: return "Downloading show progress…"
         case .saving: return "Saving Trakt library…"
         case .uploadingChanges: return "Uploading local changes…"
         case .complete: return "Up to Date"
@@ -84,6 +82,7 @@ struct SyncIntegrityRepairSummary: Equatable, Sendable {
     let episodesMerged: Int
     let watchlistMerged: Int
     let watchedEventsMerged: Int
+    let showDispositionsMerged: Int
     let operationsMerged: Int
     let syncStatesMerged: Int
     let prunedCompletedOperations: Int
@@ -93,6 +92,7 @@ struct SyncIntegrityRepairSummary: Equatable, Sendable {
         episodesMerged +
         watchlistMerged +
         watchedEventsMerged +
+        showDispositionsMerged +
         operationsMerged +
         syncStatesMerged +
         prunedCompletedOperations
@@ -103,6 +103,7 @@ struct SyncIntegrityRepairSummary: Equatable, Sendable {
         episodesMerged: 0,
         watchlistMerged: 0,
         watchedEventsMerged: 0,
+        showDispositionsMerged: 0,
         operationsMerged: 0,
         syncStatesMerged: 0,
         prunedCompletedOperations: 0

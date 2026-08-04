@@ -260,6 +260,8 @@ private func makeShow(
                 )
             }
         ),
+        isInWatchlist: watchedCount == 0,
+        disposition: .active,
         listedAt: listedAt ?? Date(timeIntervalSince1970: TimeInterval(id)),
         lastWatchedAt: lastWatchedAt ?? Date(timeIntervalSince1970: TimeInterval(id)),
         needsProgressEnrichment: false

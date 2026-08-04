@@ -43,6 +43,7 @@ actor LibrarySnapshotReader {
         ).mapValues { events in
             events.max { $0.watchedAt < $1.watchedAt }!
         }
+        let playCountByID = Dictionary(grouping: events, by: \.tmdbID).mapValues(\.count)
         let historyOnlyIDs = latestEventByID.keys
             .filter { watchlistByID[$0] == nil }
             .sorted {
@@ -63,7 +64,7 @@ actor LibrarySnapshotReader {
                 releaseDate: media?.releaseDate,
                 listedAt: row.flatMap { $0.listedAt ?? $0.localUpdatedAt },
                 isInWatchlist: row != nil,
-                isWatched: event != nil,
+                playCount: playCountByID[tmdbID, default: 0],
                 lastWatchedAt: event?.watchedAt
             )
         }
@@ -84,6 +85,15 @@ actor LibrarySnapshotReader {
         let media = try context.fetch(FetchDescriptor<MediaRecord>(
             predicate: #Predicate { $0.kindRaw == showKind }
         ))
+        let dispositions = try context.fetch(FetchDescriptor<ShowDispositionRecord>(
+            predicate: #Predicate {
+                $0.generationID == generationID || (includesLegacyRows && $0.generationID == "")
+            }
+        ))
+        let dispositionByID = Dictionary(
+            dispositions.map { ($0.tmdbID, $0.disposition) },
+            uniquingKeysWith: { first, _ in first }
+        )
         let mediaByID = Dictionary(
             media.map { ($0.tmdbID, $0) },
             uniquingKeysWith: { first, _ in first }
@@ -133,6 +143,8 @@ actor LibrarySnapshotReader {
                     episodes: episodes,
                     events: history
                 ),
+                isInWatchlist: row != nil,
+                disposition: dispositionByID[tmdbID] ?? .active,
                 listedAt: row.flatMap { $0.listedAt ?? $0.localUpdatedAt },
                 lastWatchedAt: history.map(\.watchedAt).max(),
                 needsProgressEnrichment: needsProgressEnrichment(

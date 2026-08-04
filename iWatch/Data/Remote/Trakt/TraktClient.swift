@@ -172,21 +172,6 @@ final class TraktService: TraktSyncing {
         try await getHistory(startAt: startAt, progress: nil)
     }
 
-    func getActiveShowProgress() async throws -> [TraktShowProgressDTO] {
-        try await refreshTokenIfNeeded()
-        return try await paginatedSyncItems(progress: nil) { page in
-            try await request(
-                path: "sync/progress/watched",
-                query: [
-                    URLQueryItem(name: "extended", value: "full"),
-                    URLQueryItem(name: "hide_completed", value: "true"),
-                    URLQueryItem(name: "page", value: String(page)),
-                    URLQueryItem(name: "limit", value: String(Self.syncPageSize))
-                ]
-            )
-        }
-    }
-
     func getHistory(startAt: Date?, progress: (@Sendable (Int) async -> Void)?) async throws -> [TraktHistoryItemDTO] {
         try await refreshTokenIfNeeded()
         var query: [URLQueryItem] = []

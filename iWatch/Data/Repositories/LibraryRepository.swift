@@ -161,6 +161,10 @@ final class LibraryRepository {
             context: context, accountKey: TraktLinkStore.activeAccountKey ?? ""
         )
 
+        if inWatchlist, id.kind == .show {
+            setShowDisposition(.active, for: id, context: context, now: now)
+        }
+
         try context.save()
     }
 
@@ -213,7 +217,91 @@ final class LibraryRepository {
             context: context, accountKey: TraktLinkStore.activeAccountKey ?? ""
         )
 
+        let planToWatchID: MediaID? = switch id.kind {
+        case .movie:
+            id
+        case .episode:
+            episodeMetadata.map {
+                MediaID(kind: .show, id: $0.showTMDbID, traktID: $0.showTraktID)
+            }
+        default:
+            nil
+        }
+
+        if let planToWatchID,
+           let watchlist = watchlistRecord(for: planToWatchID, context: context),
+           watchlist.isInWatchlist {
+            watchlist.isInWatchlist = false
+            watchlist.localUpdatedAt = now
+            watchlist.dirty = true
+            let watchlistPayload = SyncOperationPayload(
+                mediaKind: planToWatchID.kind,
+                tmdbID: planToWatchID.tmdbID,
+                traktID: planToWatchID.traktID,
+                showTMDbID: nil,
+                showTraktID: nil,
+                seasonNumber: nil,
+                episodeNumber: nil,
+                watchedAt: nil,
+                historyID: nil
+            )
+            try upsertSyncOperation(
+                kind: .removeWatchlist,
+                payload: watchlistPayload,
+                dedupeKey: "watchlist:\(planToWatchID.stableKey)",
+                context: context,
+                accountKey: TraktLinkStore.activeAccountKey ?? ""
+            )
+        }
+
+        if let showID = planToWatchID, showID.kind == .show {
+            setShowDisposition(.active, for: showID, context: context, now: now)
+        }
+
         try context.save()
+    }
+
+    func setShowDisposition(_ disposition: ShowDisposition, for showID: MediaID) async throws {
+        guard await resetGate.allowsLibraryWork() else {
+            throw AppError.unknown("Wait for the library reset to finish before making changes.")
+        }
+        let context = persistence.makeContext()
+        setShowDisposition(disposition, for: showID, context: context, now: Date())
+        try context.save()
+    }
+
+    func showDisposition(for showID: MediaID) async -> ShowDisposition {
+        let context = persistence.makeContext()
+        return showDispositionRecord(for: showID, context: context)?.disposition ?? .active
+    }
+
+    func watchEvents(for id: MediaID) async -> [WatchHistoryItem] {
+        let context = persistence.makeContext()
+        return watchedEventRecords(for: id, context: context)
+            .filter { !$0.tombstoned }
+            .sorted { $0.watchedAt > $1.watchedAt }
+            .map(makeHistoryItem(from:))
+    }
+
+    func watchHistory() async -> [WatchHistoryItem] {
+        let context = persistence.makeContext()
+        return allWatchedEventRecords(context: context)
+            .filter { !$0.tombstoned }
+            .sorted { $0.watchedAt > $1.watchedAt }
+            .map(makeHistoryItem(from:))
+    }
+
+    private func makeHistoryItem(from event: WatchedEventRecord) -> WatchHistoryItem {
+        WatchHistoryItem(
+            id: event.recordID,
+            mediaID: event.mediaID,
+            showID: event.showTMDbID.map { showTMDbID in
+                MediaID(kind: .show, id: showTMDbID, traktID: event.showTraktID)
+            },
+            seasonNumber: event.seasonNumber,
+            episodeNumber: event.episodeNumber,
+            watchedAt: event.watchedAt
+        )
     }
 
     func removeWatchEvent(eventID: UUID) async throws {
@@ -793,6 +881,29 @@ final class LibraryRepository {
         allWatchlistRecords(context: context).first { $0.mediaKey == id.stableKey }
     }
 
+    private func showDispositionRecord(for id: MediaID, context: ModelContext) -> ShowDispositionRecord? {
+        allShowDispositionRecords(context: context).first { $0.mediaKey == id.stableKey }
+    }
+
+    private func setShowDisposition(
+        _ disposition: ShowDisposition,
+        for showID: MediaID,
+        context: ModelContext,
+        now: Date
+    ) {
+        let record = showDispositionRecord(for: showID, context: context)
+            ?? ShowDispositionRecord(
+                showID: showID,
+                disposition: disposition,
+                updatedAt: now,
+                generationID: LibraryGenerationPolicy.currentGeneration(in: context)
+            )
+        if record.modelContext == nil { context.insert(record) }
+        record.traktID = showID.traktID ?? record.traktID
+        record.disposition = disposition
+        record.updatedAt = now
+    }
+
     private func watchedEventRecord(forRecordID recordID: UUID, context: ModelContext) -> WatchedEventRecord? {
         allWatchedEventRecords(context: context).first { $0.recordID == recordID }
     }
@@ -841,6 +952,12 @@ final class LibraryRepository {
     private func allWatchedEventRecords(context: ModelContext) -> [WatchedEventRecord] {
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
         return ((try? context.fetch(FetchDescriptor<WatchedEventRecord>())) ?? [])
+            .filter { LibraryGenerationPolicy.belongsToCurrentGeneration($0.generationID, current: generationID) }
+    }
+
+    private func allShowDispositionRecords(context: ModelContext) -> [ShowDispositionRecord] {
+        let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
+        return ((try? context.fetch(FetchDescriptor<ShowDispositionRecord>())) ?? [])
             .filter { LibraryGenerationPolicy.belongsToCurrentGeneration($0.generationID, current: generationID) }
     }
 

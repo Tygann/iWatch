@@ -12,6 +12,7 @@ nonisolated final class Persistence: @unchecked Sendable {
             EpisodeRecord.self,
             WatchlistRecord.self,
             WatchedEventRecord.self,
+            ShowDispositionRecord.self,
             SyncOperationRecord.self,
             SyncStateRecord.self,
             LibraryGenerationRecord.self

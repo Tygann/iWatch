@@ -36,7 +36,7 @@ private final class WatchlistScreenModel {
         do {
             if kind == .movie {
                 movieItems = try await repository.movieLibraryItems(revision: revision)
-                    .filter { $0.isInWatchlist && !$0.isWatched }
+                    .filter(\.isInWatchlist)
             } else {
                 showItems = try await repository.showLibrarySnapshot(revision: revision).continueWatching
             }
@@ -54,6 +54,17 @@ private final class WatchlistScreenModel {
         guard let next = item.progress.nextEpisode else { return }
         do {
             try await repository.addWatchEvent(for: MediaID(kind: .episode, id: next.tmdbID, traktID: next.traktID), watchedAt: Date())
+            session.markLibraryUpdated(syncIfConnected: true)
+            loadedRevision = nil
+            await load(revision: session.libraryRevision)
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    func stopWatching(_ item: LibraryShowItem) async {
+        do {
+            try await repository.setShowDisposition(.stopped, for: item.mediaID)
             session.markLibraryUpdated(syncIfConnected: true)
             loadedRevision = nil
             await load(revision: session.libraryRevision)
@@ -203,6 +214,11 @@ private struct WatchlistBody: View {
                                         } label: {
                                             Label("Mark as Watched", systemImage: "rectangle.badge.checkmark")
                                         }
+                                    }
+                                    Button {
+                                        Task { await model.stopWatching(item) }
+                                    } label: {
+                                        Label("Stop Watching", systemImage: "stop.circle")
                                     }
                                 }
                             )

@@ -1,5 +1,11 @@
 # Development log
 
+## 2026-08-04
+
+- Reframed Watchlist as a plan-to-watch queue and made movie/episode watch mutations atomically move started titles into event-backed History, matching Trakt's lifecycle without deleting existing library data.
+- Added derived movie/show lifecycle presentation, contextual Watched/Watching/Caught Up/Completed controls, rewatch actions, and a local Stop/Resume Watching disposition that preserves episode history.
+- Added provider-neutral chronological history projections, user-initiated full Trakt history-deletion reconciliation, additive store-migration coverage, and focused lifecycle/sync regression tests.
+
 ## 2026-08-01
 
 - Replaced SDWebImage with a native actor-isolated artwork pipeline using HTTP disk caching, in-flight request deduplication, bounded decoded-image memory, and off-main ImageIO downsampling sized for each SwiftUI surface.

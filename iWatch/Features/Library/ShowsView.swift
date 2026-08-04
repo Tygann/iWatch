@@ -101,6 +101,16 @@ private final class ShowsScreenModel {
             errorText = error.localizedDescription
         }
     }
+
+    func stopWatching(_ item: LibraryShowItem) async {
+        do {
+            try await repository.setShowDisposition(.stopped, for: item.mediaID)
+            session.markLibraryUpdated(syncIfConnected: true)
+            await load(revision: session.libraryRevision)
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
 }
 
 struct ShowsView: View {
@@ -257,6 +267,11 @@ private struct ShowsViewBody: View {
                                 } label: {
                                     Label("Mark as Watched", systemImage: "rectangle.badge.checkmark")
                                 }
+                            }
+                            Button {
+                                Task { await model.stopWatching(item) }
+                            } label: {
+                                Label("Stop Watching", systemImage: "stop.circle")
                             }
                         }
                     )

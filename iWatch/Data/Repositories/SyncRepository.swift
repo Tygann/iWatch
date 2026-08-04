@@ -51,7 +51,13 @@ actor SyncEngine {
         let state = syncState(context: context)
         guard !state.initialBaselineComplete else { return }
 
-        try await pullAndMerge(into: context, state: state, initialBaseline: true, progress: progress)
+        try await pullAndMerge(
+            into: context,
+            state: state,
+            initialBaseline: true,
+            reconcileRemoteHistory: false,
+            progress: progress
+        )
         state.initialBaselineComplete = true
         try context.save()
     }
@@ -73,7 +79,13 @@ actor SyncEngine {
 
             let pullContext = persistence.makeContext()
             let state = syncState(context: pullContext)
-            try await pullAndMerge(into: pullContext, state: state, initialBaseline: false, progress: progress)
+            try await pullAndMerge(
+                into: pullContext,
+                state: state,
+                initialBaseline: false,
+                reconcileRemoteHistory: reason == .userInitiated,
+                progress: progress
+            )
             try pullContext.save()
 
             let pendingCount = allOperations(context: persistence.makeContext())
@@ -222,6 +234,9 @@ actor SyncEngine {
         for event in rawEvents(context: context) {
             context.delete(event)
         }
+        for disposition in rawShowDispositions(context: context) {
+            context.delete(disposition)
+        }
         for state in rawSyncStates(context: context) {
             context.delete(state)
         }
@@ -260,6 +275,9 @@ actor SyncEngine {
         for event in rawEvents(context: context) {
             context.delete(event)
         }
+        for disposition in rawShowDispositions(context: context) {
+            context.delete(disposition)
+        }
         for state in rawSyncStates(context: context) {
             context.delete(state)
         }
@@ -291,11 +309,13 @@ actor SyncEngine {
     private func pullAndMerge(into context: ModelContext,
                               state: SyncStateRecord,
                               initialBaseline: Bool,
+                              reconcileRemoteHistory: Bool,
                               progress: (@MainActor @Sendable (SyncProgress) async -> Void)? = nil) async throws {
         let previousRelevantActivityAt = state.lastSeenRemoteActivityAt
         let remoteActivities = try? await trakt.getLastActivities()
         let shouldPullWatchlist = initialBaseline || shouldPullWatchlist(remoteActivities, previousRelevantActivityAt: previousRelevantActivityAt)
-        let shouldPullHistory = initialBaseline
+        let shouldPullHistory = reconcileRemoteHistory
+            || initialBaseline
             || state.lastSuccessfulPullAt == nil
             || shouldPullHistory(remoteActivities, previousRelevantActivityAt: previousRelevantActivityAt)
 
@@ -305,30 +325,32 @@ actor SyncEngine {
             : []
         if shouldPullHistory { await progress?(.downloadingHistory(0)) }
         let remoteHistory = shouldPullHistory
-            ? try await trakt.getHistory(startAt: initialBaseline ? nil : state.lastSuccessfulPullAt) { count in
+            ? try await trakt.getHistory(
+                startAt: (initialBaseline || reconcileRemoteHistory) ? nil : state.lastSuccessfulPullAt
+            ) { count in
                 await progress?(.downloadingHistory(count))
             }
             : []
-        await progress?(.downloadingShowProgress)
-        let activeShowProgress = try await trakt.getActiveShowProgress()
         if shouldPullWatchlist || shouldPullHistory {
             await progress?(.saving(watchlistItems: remoteWatchlist.count, historyItems: remoteHistory.count))
         }
         let now = Date()
 
         if shouldPullHistory {
-            try mergeHistory(remoteHistory, context: context, now: now)
+            try mergeHistory(
+                remoteHistory,
+                context: context,
+                now: now,
+                reconcileRemoteDeletions: reconcileRemoteHistory
+            )
         }
-        mergeActiveShowProgress(activeShowProgress, context: context, now: now)
-
         if shouldPullWatchlist {
             try mergeWatchlist(
                 remoteWatchlist,
                 context: context,
                 now: now,
                 allowRemoteRemoval: !initialBaseline,
-                remoteUpdatedAt: remoteActivities?.watchlistActivityAt,
-                activeShowProgress: activeShowProgress
+                remoteUpdatedAt: remoteActivities?.watchlistActivityAt
             )
         }
 
@@ -472,8 +494,7 @@ actor SyncEngine {
                                 context: ModelContext,
                                 now: Date,
                                 allowRemoteRemoval: Bool,
-                                remoteUpdatedAt: Date?,
-                                activeShowProgress: [TraktShowProgressDTO]) throws {
+                                remoteUpdatedAt: Date?) throws {
         var remoteKeys = Set<String>()
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
         let existingWatchlist = allWatchlist(context: context)
@@ -539,19 +560,10 @@ actor SyncEngine {
 
         guard allowRemoteRemoval else { return }
 
-        let activeShowKeys = Set(activeShowProgress.compactMap { item -> String? in
-            guard item.progress.completed > 0,
-                  item.progress.completed < item.progress.aired,
-                  let tmdbID = item.show.ids.tmdb else { return nil }
-            return MediaID(kind: .show, id: tmdbID, traktID: item.show.ids.trakt).stableKey
-        })
-        let historyKeys = historyBackedMediaKeys(context: context)
         let missingRows = existingWatchlist.filter {
             $0.isInWatchlist
                 && !$0.dirty
                 && !remoteKeys.contains($0.mediaKey)
-                && !activeShowKeys.contains($0.mediaKey)
-                && !historyKeys.contains($0.mediaKey)
         }
 
         guard !missingRows.isEmpty else { return }
@@ -569,68 +581,10 @@ actor SyncEngine {
         }
     }
 
-    private func mergeActiveShowProgress(_ remoteItems: [TraktShowProgressDTO],
-                                         context: ModelContext,
-                                         now: Date) {
-        let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
-        var watchlistByKey = Dictionary(
-            allWatchlist(context: context).map { ($0.mediaKey, $0) },
-            uniquingKeysWith: { first, _ in first }
-        )
-        var mediaByKey = Dictionary(
-            allMedia(context: context).map { (mediaLookupKey(kind: $0.kind, tmdbID: $0.tmdbID), $0) },
-            uniquingKeysWith: { first, _ in first }
-        )
-
-        for item in remoteItems {
-            guard item.progress.completed > 0,
-                  item.progress.completed < item.progress.aired,
-                  let tmdbID = item.show.ids.tmdb else { continue }
-
-            let mediaID = MediaID(kind: .show, id: tmdbID, traktID: item.show.ids.trakt)
-            upsertMediaIndexed(
-                mediaID: mediaID,
-                title: item.show.title ?? "Unknown",
-                year: item.show.year,
-                context: context,
-                mediaByKey: &mediaByKey
-            )
-
-            // A persisted false row is an explicit iWatch unfollow. Progress must
-            // not silently undo that choice on the next Trakt pull.
-            guard watchlistByKey[mediaID.stableKey] == nil else { continue }
-            let record = WatchlistRecord(
-                mediaID: mediaID,
-                isInWatchlist: true,
-                listedAt: item.progress.lastWatchedAt,
-                localUpdatedAt: now,
-                remoteUpdatedAt: item.progress.lastWatchedAt ?? now,
-                dirty: false,
-                generationID: generationID
-            )
-            context.insert(record)
-            watchlistByKey[mediaID.stableKey] = record
-        }
-    }
-
-    private func historyBackedMediaKeys(context: ModelContext) -> Set<String> {
-        Set(allEvents(context: context).compactMap { event -> String? in
-            guard !event.tombstoned else { return nil }
-            switch event.mediaID.kind {
-            case .movie:
-                return MediaID(kind: .movie, id: event.tmdbID, traktID: event.traktID).stableKey
-            case .episode:
-                guard let showTMDbID = event.showTMDbID else { return nil }
-                return MediaID(kind: .show, id: showTMDbID, traktID: event.showTraktID).stableKey
-            default:
-                return nil
-            }
-        })
-    }
-
     private func mergeHistory(_ remoteItems: [TraktHistoryItemDTO],
                               context: ModelContext,
-                              now: Date) throws {
+                              now: Date,
+                              reconcileRemoteDeletions: Bool) throws {
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
         var eventsByNaturalKey: [String: WatchedEventRecord] = [:]
         var eventsByHistoryID: [Int: WatchedEventRecord] = [:]
@@ -755,6 +709,21 @@ actor SyncEngine {
                 continue
             }
         }
+
+        if reconcileRemoteDeletions {
+            let remoteHistoryIDs = Set(remoteItems.map(\.id))
+            let missingEvents = allEvents(context: context).filter {
+                $0.traktHistoryID.map { !remoteHistoryIDs.contains($0) } == true && !$0.dirty
+            }
+            guard !remoteItems.isEmpty || missingEvents.isEmpty else {
+                lastRunErrorDescription = "Skipped remote history removals because Trakt returned an empty history payload."
+                return
+            }
+            for event in missingEvents {
+                event.tombstoned = true
+                event.updatedAt = now
+            }
+        }
     }
 
     private func historyNaturalKey(kind: MediaKind, tmdbID: Int, watchedAt: Date) -> String {
@@ -796,6 +765,7 @@ actor SyncEngine {
         let episodesMerged = repairEpisodeDuplicates(context: context)
         let watchlistMerged = repairWatchlistDuplicates(context: context)
         let watchedEventsMerged = repairWatchedEventDuplicates(context: context)
+        let showDispositionsMerged = repairShowDispositionDuplicates(context: context)
         let operationsMerged = repairSyncOperationDuplicates(context: context, now: now)
         let syncStatesMerged = repairSyncStateDuplicates(context: context)
         let prunedCompletedOperations = pruneCompletedOperations(context: context, now: now)
@@ -805,6 +775,7 @@ actor SyncEngine {
             episodesMerged: episodesMerged,
             watchlistMerged: watchlistMerged,
             watchedEventsMerged: watchedEventsMerged,
+            showDispositionsMerged: showDispositionsMerged,
             operationsMerged: operationsMerged,
             syncStatesMerged: syncStatesMerged,
             prunedCompletedOperations: prunedCompletedOperations
@@ -900,6 +871,25 @@ actor SyncEngine {
         return merged
     }
 
+    private func repairShowDispositionDuplicates(context: ModelContext) -> Int {
+        let groups = Dictionary(grouping: allShowDispositions(context: context)) {
+            $0.mediaKey.isEmpty ? "show:\($0.tmdbID)" : $0.mediaKey
+        }
+        var merged = 0
+
+        for group in groups.values where group.count > 1 {
+            let ordered = group.sorted { $0.updatedAt > $1.updatedAt }
+            guard let canonical = ordered.first else { continue }
+            canonical.mediaKey = canonical.mediaKey.isEmpty ? "show:\(canonical.tmdbID)" : canonical.mediaKey
+            for duplicate in ordered.dropFirst() {
+                canonical.traktID = canonical.traktID ?? duplicate.traktID
+                context.delete(duplicate)
+                merged += 1
+            }
+        }
+        return merged
+    }
+
     private func repairSyncOperationDuplicates(context: ModelContext, now: Date) -> Int {
         let groups = Dictionary(grouping: allOperations(context: context).filter { !($0.dedupeKey?.isEmpty ?? true) }) {
             $0.dedupeKey ?? UUID().uuidString
@@ -972,6 +962,7 @@ actor SyncEngine {
         + duplicateOverflowCount(for: allEpisodes(context: context).map { $0.episodeKey.isEmpty ? "ep:\($0.showTMDbID):S\($0.seasonNumber):E\($0.episodeNumber)" : $0.episodeKey })
         + duplicateOverflowCount(for: allWatchlist(context: context).map { $0.mediaKey.isEmpty ? "\($0.kindRaw):\($0.tmdbID)" : $0.mediaKey })
         + duplicateOverflowCount(for: allEvents(context: context).map { eventDeduplicationKey($0) })
+        + duplicateOverflowCount(for: allShowDispositions(context: context).map { $0.mediaKey.isEmpty ? "show:\($0.tmdbID)" : $0.mediaKey })
         + duplicateOverflowCount(for: allOperations(context: context).compactMap(\.dedupeKey))
         + duplicateOverflowCount(for: allSyncStates(context: context).map { $0.accountKey.isEmpty ? "default" : $0.accountKey })
     }
@@ -1217,6 +1208,10 @@ actor SyncEngine {
         current(rawEvents(context: context), in: context, generation: \.generationID)
     }
 
+    private func allShowDispositions(context: ModelContext) -> [ShowDispositionRecord] {
+        current(rawShowDispositions(context: context), in: context, generation: \.generationID)
+    }
+
     private func allSyncStates(context: ModelContext) -> [SyncStateRecord] {
         current(rawSyncStates(context: context), in: context, generation: \.generationID)
     }
@@ -1239,6 +1234,10 @@ actor SyncEngine {
 
     private func rawEvents(context: ModelContext) -> [WatchedEventRecord] {
         (try? context.fetch(FetchDescriptor<WatchedEventRecord>())) ?? []
+    }
+
+    private func rawShowDispositions(context: ModelContext) -> [ShowDispositionRecord] {
+        (try? context.fetch(FetchDescriptor<ShowDispositionRecord>())) ?? []
     }
 
     private func rawSyncStates(context: ModelContext) -> [SyncStateRecord] {
@@ -1270,6 +1269,10 @@ actor SyncEngine {
             context.delete(record)
         }
         for record in rawEvents(context: context)
+        where !LibraryGenerationPolicy.belongsToCurrentGeneration(record.generationID, current: generationID) {
+            context.delete(record)
+        }
+        for record in rawShowDispositions(context: context)
         where !LibraryGenerationPolicy.belongsToCurrentGeneration(record.generationID, current: generationID) {
             context.delete(record)
         }

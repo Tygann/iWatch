@@ -65,7 +65,7 @@ private final class MoviesScreenModel {
 
     var watchlistItems: [LibraryMovieItem] {
         items
-            .filter { $0.isInWatchlist && !$0.isWatched }
+            .filter(\.isInWatchlist)
             .sorted { ($0.listedAt ?? .distantPast) > ($1.listedAt ?? .distantPast) }
     }
 
@@ -251,7 +251,11 @@ private struct MoviesViewBody: View {
             selectedRef: $detailRef,
             extraMenu: {
                 if item.isWatched {
-                    Button("Mark as Unwatched") {
+                    Button("Add Rewatch") {
+                        Haptics.notification(.success)
+                        Task { await model.markWatched(item) }
+                    }
+                    Button("Remove Latest Play") {
                         Haptics.notification(.success)
                         Task { await model.markUnwatched(item) }
                     }
