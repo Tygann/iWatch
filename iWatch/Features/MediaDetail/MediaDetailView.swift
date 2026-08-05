@@ -362,7 +362,7 @@ private struct MediaDetailBody: View {
                 poster(for: details)
                     .frame(maxWidth: .infinity)
                 introText(for: details)
-                lifecycleControl
+                detailActions
                     .frame(maxWidth: .infinity)
             }
             .padding(.horizontal, 20)
@@ -372,7 +372,7 @@ private struct MediaDetailBody: View {
                 VStack(alignment: .leading, spacing: 8) {
                     introText(for: details)
                     Spacer()
-                    lifecycleControl
+                    detailActions
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 9)
@@ -463,6 +463,27 @@ private struct MediaDetailBody: View {
             .clipShape(.capsule)
             .tint(model.isInWatchlist ? Color.accentColor : Color.secondary)
             .accessibilityLabel(model.isInWatchlist ? "Remove from watchlist" : "Add to watchlist")
+        }
+    }
+
+    @ViewBuilder
+    private var detailActions: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            lifecycleControl
+
+            if model.ref.kind == .movie, !model.isMovieWatched {
+                Button {
+                    Haptics.notification(.success)
+                    Task { await model.toggleMovieWatched() }
+                } label: {
+                    Label("Mark as Watched", systemImage: "checkmark.circle")
+                        .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil)
+                }
+                .buttonStyle(.bordered)
+                .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil,
+                       alignment: .leading)
+                .accessibilityLabel("Mark as watched")
+            }
         }
     }
 

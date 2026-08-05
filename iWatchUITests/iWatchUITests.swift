@@ -43,6 +43,7 @@ final class iWatchUITests: XCTestCase {
         movieTile.tap()
 
         XCTAssertTrue(app.buttons["Remove from watchlist"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Mark as watched"].exists)
         if app.buttons["Close"].exists {
             app.buttons["Close"].tap()
         }
