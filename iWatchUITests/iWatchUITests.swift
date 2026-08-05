@@ -48,6 +48,11 @@ final class iWatchUITests: XCTestCase {
             app.buttons["Close"].tap()
         }
 
+        movieTile.press(forDuration: 1)
+        XCTAssertTrue(app.buttons["Mark as Watched"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Remove from Watchlist"].exists)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1)).tap()
+
         showsTab.tap()
         XCTAssertTrue(app.buttons["UI Test Show, Season 1 Episode 2, Continue Watching"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Coming Up"].exists)
@@ -58,6 +63,19 @@ final class iWatchUITests: XCTestCase {
 
         searchTab.tap()
         XCTAssertTrue(app.navigationBars["Search"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testWatchlistMovieDoubleTapMarksWatched() throws {
+        let app = XCUIApplication()
+        app.launchArguments.append("UITEST_MODE")
+        app.launch()
+
+        let movieTile = app.buttons["UI Test Movie"]
+        XCTAssertTrue(movieTile.waitForExistence(timeout: 5))
+        movieTile.doubleTap()
+
+        XCTAssertTrue(app.staticTexts["Nothing to watch"].waitForExistence(timeout: 5))
     }
 
     @MainActor

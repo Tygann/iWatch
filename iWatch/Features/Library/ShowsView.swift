@@ -260,15 +260,18 @@ private struct ShowsViewBody: View {
                             Button { detailRef = item.mediaID } label: {
                                 Label("View Show", systemImage: "tv")
                             }
-                            if item.progress.nextEpisode != nil {
+                            Divider()
+                            if let next = item.progress.nextEpisode {
                                 Button {
                                     Haptics.notification(.success)
                                     Task { await model.markNextEpisodeWatched(for: item) }
                                 } label: {
-                                    Label("Mark as Watched", systemImage: "rectangle.badge.checkmark")
+                                    Label("Mark S\(next.season) E\(next.episode) as Watched", systemImage: "checkmark.circle")
                                 }
                             }
+                            Divider()
                             Button {
+                                Haptics.notification(.success)
                                 Task { await model.stopWatching(item) }
                             } label: {
                                 Label("Stop Watching", systemImage: "stop.circle")
@@ -279,6 +282,10 @@ private struct ShowsViewBody: View {
                         next.map { "\(item.title), Season \($0.season) Episode \($0.episode), Continue Watching" }
                             ?? item.title
                     )
+                    .onTapGesture(count: 2) {
+                        Haptics.notification(.success)
+                        Task { await model.markNextEpisodeWatched(for: item) }
+                    }
                     .overlay(alignment: .topLeading) {
                         if let next = model.nextEpisodeLabel(for: item) {
                             Text(next)

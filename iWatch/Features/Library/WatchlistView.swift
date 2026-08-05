@@ -62,6 +62,17 @@ private final class WatchlistScreenModel {
         }
     }
 
+    func markMovieWatched(_ item: LibraryMovieItem) async {
+        do {
+            try await repository.addWatchEvent(for: item.mediaID, watchedAt: Date())
+            session.markLibraryUpdated(syncIfConnected: true)
+            loadedRevision = nil
+            await load(revision: session.libraryRevision)
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
     func stopWatching(_ item: LibraryShowItem) async {
         do {
             try await repository.setShowDisposition(.stopped, for: item.mediaID)
@@ -178,8 +189,21 @@ private struct WatchlistBody: View {
                                 title: item.title,
                                 posterPath: item.posterPath,
                                 showTitle: true,
-                                selectedRef: $detailRef
+                                selectedRef: $detailRef,
+                                extraMenu: {
+                                    Button {
+                                        Haptics.notification(.success)
+                                        Task { await model.markMovieWatched(item) }
+                                    } label: {
+                                        Label("Mark as Watched", systemImage: "checkmark.circle")
+                                    }
+                                    Divider()
+                                }
                             )
+                            .onTapGesture(count: 2) {
+                                Haptics.notification(.success)
+                                Task { await model.markMovieWatched(item) }
+                            }
                             .frame(width: 110)
                         }
                     } else {
@@ -207,15 +231,18 @@ private struct WatchlistBody: View {
                                     Button { detailRef = item.mediaID } label: {
                                         Label("View Show", systemImage: "tv")
                                     }
-                                    if item.progress.nextEpisode != nil {
+                                    Divider()
+                                    if let next = item.progress.nextEpisode {
                                         Button {
                                             Haptics.notification(.success)
                                             Task { await model.markNextEpisodeWatched(for: item) }
                                         } label: {
-                                            Label("Mark as Watched", systemImage: "rectangle.badge.checkmark")
+                                            Label("Mark S\(next.season) E\(next.episode) as Watched", systemImage: "checkmark.circle")
                                         }
                                     }
+                                    Divider()
                                     Button {
+                                        Haptics.notification(.success)
                                         Task { await model.stopWatching(item) }
                                     } label: {
                                         Label("Stop Watching", systemImage: "stop.circle")

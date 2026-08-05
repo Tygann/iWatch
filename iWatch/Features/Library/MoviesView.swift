@@ -251,22 +251,33 @@ private struct MoviesViewBody: View {
             selectedRef: $detailRef,
             extraMenu: {
                 if item.isWatched {
-                    Button("Add Rewatch") {
+                    Button {
                         Haptics.notification(.success)
                         Task { await model.markWatched(item) }
+                    } label: {
+                        Label("Add Rewatch", systemImage: "arrow.clockwise")
                     }
-                    Button("Remove Latest Play") {
+                    Button {
                         Haptics.notification(.success)
                         Task { await model.markUnwatched(item) }
+                    } label: {
+                        Label("Remove Latest Play", systemImage: "arrow.uturn.backward.circle")
                     }
                 } else {
-                    Button("Mark as Watched") {
+                    Button {
                         Haptics.notification(.success)
                         Task { await model.markWatched(item) }
+                    } label: {
+                        Label("Mark as Watched", systemImage: "checkmark.circle")
                     }
                 }
+                Divider()
             }
         )
+        .onTapGesture(count: 2) {
+            Haptics.notification(.success)
+            Task { await model.markWatched(item) }
+        }
         .frame(width: 110)
     }
 }
@@ -290,10 +301,13 @@ private struct MovieCollectionView: View {
                         showTitle: true,
                         selectedRef: $detailRef,
                         extraMenu: {
-                            Button("Mark as Unwatched") {
+                            Button {
                                 Haptics.notification(.success)
                                 Task { await markUnwatched(item) }
+                            } label: {
+                                Label("Remove Latest Play", systemImage: "arrow.uturn.backward.circle")
                             }
+                            Divider()
                         }
                     )
                     .frame(width: 110)
