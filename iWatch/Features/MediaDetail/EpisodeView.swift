@@ -111,13 +111,19 @@ struct EpisodeView: View {
     @Environment(AppSession.self) private var session
 
     let ref: EpisodeRef
+    let onClose: (() -> Void)?
 
     @State private var model: EpisodeScreenModel?
+
+    init(ref: EpisodeRef, onClose: (() -> Void)? = nil) {
+        self.ref = ref
+        self.onClose = onClose
+    }
 
     var body: some View {
         Group {
             if let model {
-                EpisodeViewBody(model: model)
+                EpisodeViewBody(model: model, onClose: onClose)
             } else {
                 ProgressView()
                     .task {
@@ -138,6 +144,7 @@ struct EpisodeView: View {
 
 private struct EpisodeViewBody: View {
     @Bindable var model: EpisodeScreenModel
+    let onClose: (() -> Void)?
     @Environment(AppSession.self) private var session
 
     var body: some View {
@@ -174,11 +181,20 @@ private struct EpisodeViewBody: View {
             await model.refreshLibraryState()
         }
         .toolbar {
-            ToolbarItem(placement: .secondaryAction) {
-                NavigationLink {
-                    MediaDetailView(ref: model.showRef)
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Menu {
+                    NavigationLink {
+                        MediaDetailView(ref: model.showRef, onClose: onClose)
+                    } label: {
+                        Label("View Show", systemImage: "tv")
+                    }
                 } label: {
-                    Label("View Show", systemImage: "tv")
+                    Image(systemName: "ellipsis")
+                }
+                .accessibilityLabel("More")
+
+                if let onClose {
+                    Button(role: .close, action: onClose)
                 }
             }
         }
@@ -295,7 +311,7 @@ private struct EpisodeViewBody: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: 12) {
                         ForEach(credits, id: \.id) { credit in
-                            CastCard(
+                            MediaCreditCard(
                                 name: credit.name,
                                 subtitle: credit.role ?? credit.job,
                                 profilePath: credit.profilePath
@@ -329,30 +345,6 @@ private struct EpisodeViewBody: View {
     }
 }
 
-private struct CastCard: View {
-    let name: String
-    let subtitle: String?
-    let profilePath: String?
-
-    var body: some View {
-        VStack(spacing: 8) {
-            ProfileImage(path: profilePath)
-                .shadow(radius: 4)
-
-            Text(name)
-                .font(.caption.weight(.semibold))
-                .lineLimit(2)
-
-            Text(subtitle ?? "")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-        }
-        .frame(width: 100)
-        .multilineTextAlignment(.center)
-    }
-}
-
 #Preview {
     @Previewable @State var showSheet = true
     let container = AppContainer.preview()
@@ -361,7 +353,10 @@ private struct CastCard: View {
         .background(Color.gray)
         .sheet(isPresented: $showSheet) {
             NavigationStack {
-                EpisodeView(ref: EpisodeRef(showId: 1399, season: 1, episode: 1))
+                EpisodeView(
+                    ref: EpisodeRef(showId: 1399, season: 1, episode: 1),
+                    onClose: { showSheet = false }
+                )
             }
         }
         .environment(container)

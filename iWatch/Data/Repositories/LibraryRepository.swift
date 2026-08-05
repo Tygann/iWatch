@@ -55,6 +55,10 @@ final class LibraryRepository {
         }
     }
 
+    func supplementaryDetails(for id: MediaID, regionCode: String) async throws -> MediaSupplementaryDetails {
+        try await tmdb.supplementaryDetails(for: id, regionCode: regionCode)
+    }
+
     func episodes(for showID: MediaID, seasonNumber: Int, forceRefresh: Bool = false) async throws -> [EpisodeDetails] {
         let context = persistence.makeContext()
         let cached = episodeRecords(forShowID: showID.tmdbID, seasonNumber: seasonNumber, context: context)

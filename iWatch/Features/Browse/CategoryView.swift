@@ -56,12 +56,7 @@ struct BrowseCategoryView: View {
         }
         .sheet(item: $detailRef) { ref in
             NavigationStack {
-                MediaDetailView(ref: ref)
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button(role: .close) { detailRef = nil }
-                        }
-                    }
+                MediaDetailView(ref: ref, onClose: { detailRef = nil })
             }
         }
     }

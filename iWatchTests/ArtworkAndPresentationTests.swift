@@ -119,6 +119,80 @@ struct ArtworkAndPresentationTests {
     }
 
     @Test
+    @MainActor
+    func supplementaryDetailsMapRegionalProvidersCreditsTrailerAndCertification() throws {
+        let json = #"""
+        {
+          "credits": {
+            "cast": [
+              { "id": 1, "name": "Lead", "character": "Hero", "order": 0 },
+              { "id": 2, "name": "Second", "character": "Friend", "order": 1 }
+            ],
+            "crew": [
+              { "id": 3, "name": "Director", "job": "Director" }
+            ]
+          },
+          "videos": { "results": [
+            { "id": "trailer", "name": "Official Trailer", "key": "abc123", "site": "YouTube", "type": "Trailer", "official": true }
+          ] },
+          "watch/providers": { "results": {
+            "US": {
+              "link": "https://www.themoviedb.org/watch",
+              "flatrate": [
+                { "provider_id": 8, "provider_name": "Netflix", "logo_path": "/netflix.jpg", "display_priority": 1 }
+              ],
+              "rent": [
+                { "provider_id": 2, "provider_name": "Apple TV", "logo_path": "/apple.jpg", "display_priority": 2 }
+              ]
+            }
+          } },
+          "release_dates": { "results": [
+            { "iso_3166_1": "US", "release_dates": [
+              { "certification": "PG-13", "type": 3 }
+            ] }
+          ] }
+        }
+        """#
+
+        let dto = try JSONDecoder.tmdb.decode(
+            TMDbMediaSupplementaryDTO.self,
+            from: try #require(json.data(using: .utf8))
+        )
+        let details = TMDbMappers.supplementary(dto, kind: .movie, regionCode: "US")
+
+        #expect(details.credits.map(\.name) == ["Lead", "Second", "Director"])
+        #expect(details.watchAvailability?.stream.map(\.name) == ["Netflix"])
+        #expect(details.watchAvailability?.rent.map(\.name) == ["Apple TV"])
+        #expect(details.certification == "PG-13")
+        #expect(details.trailer?.destinationURL?.absoluteString == "https://www.youtube.com/watch?v=abc123")
+    }
+
+    @Test
+    @MainActor
+    func supplementaryShowDetailsPreferCreatorAndRegionalContentRating() throws {
+        let json = #"""
+        {
+          "created_by": [{ "id": 4, "name": "Creator" }],
+          "credits": { "cast": [], "crew": [] },
+          "content_ratings": { "results": [
+            { "iso_3166_1": "US", "rating": "TV-MA" },
+            { "iso_3166_1": "GB", "rating": "18" }
+          ] }
+        }
+        """#
+
+        let dto = try JSONDecoder.tmdb.decode(
+            TMDbMediaSupplementaryDTO.self,
+            from: try #require(json.data(using: .utf8))
+        )
+        let details = TMDbMappers.supplementary(dto, kind: .show, regionCode: "GB")
+
+        #expect(details.credits.first?.name == "Creator")
+        #expect(details.credits.first?.subtitle == "Creator")
+        #expect(details.certification == "18")
+    }
+
+    @Test
     func artworkKindsUseTMDbSizesAppropriateForTheirContent() throws {
         let path = "/sample.jpg"
         let still = try #require(ImageURLBuilder.make(path, size: .episodeStill))

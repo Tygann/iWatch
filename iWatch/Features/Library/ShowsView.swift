@@ -205,22 +205,12 @@ private struct ShowsViewBody: View {
             }
             .sheet(item: $detailRef) { ref in
                 NavigationStack {
-                    MediaDetailView(ref: ref)
-                        .toolbar {
-                            ToolbarItem(placement: .topBarTrailing) {
-                                Button(role: .close) { detailRef = nil }
-                            }
-                        }
+                    MediaDetailView(ref: ref, onClose: { detailRef = nil })
                 }
             }
             .sheet(item: $episodeRef) { ref in
                 NavigationStack {
-                    EpisodeView(ref: ref)
-                        .toolbar {
-                            ToolbarItem(placement: .topBarLeading) {
-                                Button(role: .close) { episodeRef = nil }
-                            }
-                        }
+                    EpisodeView(ref: ref, onClose: { episodeRef = nil })
                 }
             }
         }

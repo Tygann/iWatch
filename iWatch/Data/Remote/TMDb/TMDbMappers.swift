@@ -1,6 +1,120 @@
 import Foundation
 
 enum TMDbMappers {
+    static func supplementary(
+        _ dto: TMDbMediaSupplementaryDTO,
+        kind: MediaKind,
+        regionCode: String
+    ) -> MediaSupplementaryDetails {
+        let cast = (dto.credits?.cast ?? [])
+            .sorted { ($0.order ?? .max) < ($1.order ?? .max) }
+            .prefix(15)
+            .map {
+                MediaSupplementaryDetails.Credit(
+                    id: $0.id,
+                    name: $0.name,
+                    subtitle: $0.character,
+                    profilePath: $0.profilePath,
+                    order: $0.order
+                )
+            }
+
+        let preferredJobs = kind == .movie
+            ? ["Director", "Screenplay", "Writer"]
+            : ["Executive Producer", "Director", "Writer"]
+        let crew = preferredJobs.flatMap { job in
+            (dto.credits?.crew ?? [])
+                .filter { $0.job?.caseInsensitiveCompare(job) == .orderedSame }
+                .prefix(3)
+                .map {
+                    MediaSupplementaryDetails.Credit(
+                        id: $0.id,
+                        name: $0.name,
+                        subtitle: $0.job,
+                        profilePath: $0.profilePath,
+                        order: nil
+                    )
+                }
+        }
+        let creators = (dto.createdBy ?? []).map {
+            MediaSupplementaryDetails.Credit(
+                id: $0.id,
+                name: $0.name,
+                subtitle: "Creator",
+                profilePath: $0.profilePath,
+                order: nil
+            )
+        }
+
+        var seenCreditIDs = Set<Int>()
+        let credits = (cast + creators + crew).filter { seenCreditIDs.insert($0.id).inserted }
+
+        let region = regionCode.uppercased()
+        let availabilityDTO = dto.watchProviders?.results[region]
+        func providers(_ values: [TMDbMediaSupplementaryDTO.WatchProviders.Provider]?) -> [MediaSupplementaryDetails.WatchProvider] {
+            var seenProviderIDs = Set<Int>()
+            return (values ?? [])
+                .sorted { ($0.displayPriority ?? .max) < ($1.displayPriority ?? .max) }
+                .filter { seenProviderIDs.insert($0.providerId).inserted }
+                .map { .init(id: $0.providerId, name: $0.providerName, logoPath: $0.logoPath) }
+        }
+        let streamDTO = (availabilityDTO?.flatrate ?? []) + (availabilityDTO?.free ?? []) + (availabilityDTO?.ads ?? [])
+        let availability = availabilityDTO.map {
+            MediaSupplementaryDetails.WatchAvailability(
+                link: $0.link,
+                stream: providers(streamDTO),
+                rent: providers($0.rent),
+                buy: providers($0.buy)
+            )
+        }
+
+        let certification: String? = {
+            switch kind {
+            case .movie:
+                let releases = dto.releaseDates?.results.first { $0.iso31661.caseInsensitiveCompare(region) == .orderedSame }?.releaseDates
+                    ?? dto.releaseDates?.results.first { $0.iso31661 == "US" }?.releaseDates
+                    ?? []
+                return releases
+                    .filter { !$0.certification.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                    .sorted { releasePriority($0.type) < releasePriority($1.type) }
+                    .first?.certification
+            case .show:
+                return dto.contentRatings?.results.first { $0.iso31661.caseInsensitiveCompare(region) == .orderedSame }?.rating
+                    ?? dto.contentRatings?.results.first { $0.iso31661 == "US" }?.rating
+            default:
+                return nil
+            }
+        }()
+
+        let videos = (dto.videos?.results ?? []).map {
+            MediaSupplementaryDetails.Video(
+                id: $0.id,
+                name: $0.name,
+                key: $0.key,
+                site: $0.site,
+                type: $0.type,
+                official: $0.official ?? false
+            )
+        }
+
+        return .init(
+            credits: credits,
+            watchAvailability: availability,
+            certification: certification?.isEmpty == false ? certification : nil,
+            videos: videos
+        )
+    }
+
+    private static func releasePriority(_ type: Int) -> Int {
+        switch type {
+        case 3: 0 // Theatrical
+        case 4: 1 // Digital
+        case 5: 2 // Physical
+        case 6: 3 // TV
+        default: 4
+        }
+    }
+
     static func movie(_ dto: TMDbMovieDetailsDTO) -> MovieDetails {
         let common = MediaCommon(
             id: dto.id,

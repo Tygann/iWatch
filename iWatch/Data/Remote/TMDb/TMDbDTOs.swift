@@ -186,3 +186,98 @@ struct TMDbTrendingItemDTO: Decodable {
     let releaseDate: String?
     let firstAirDate: String?
 }
+
+// MARK: - Movie / Show supplementary details
+struct TMDbMediaSupplementaryDTO: Decodable {
+    struct Credit: Decodable {
+        let id: Int
+        let name: String
+        let character: String?
+        let job: String?
+        let profilePath: String?
+        let order: Int?
+    }
+
+    struct Credits: Decodable {
+        let cast: [Credit]?
+        let crew: [Credit]?
+    }
+
+    struct Creator: Decodable {
+        let id: Int
+        let name: String
+        let profilePath: String?
+    }
+
+    struct Videos: Decodable {
+        struct Video: Decodable {
+            let id: String
+            let name: String
+            let key: String
+            let site: String
+            let type: String
+            let official: Bool?
+        }
+
+        let results: [Video]
+    }
+
+    struct WatchProviders: Decodable {
+        struct Provider: Decodable {
+            let providerId: Int
+            let providerName: String
+            let logoPath: String?
+            let displayPriority: Int?
+        }
+
+        struct Availability: Decodable {
+            let link: URL?
+            let flatrate: [Provider]?
+            let free: [Provider]?
+            let ads: [Provider]?
+            let rent: [Provider]?
+            let buy: [Provider]?
+        }
+
+        let results: [String: Availability]
+    }
+
+    struct MovieReleaseDates: Decodable {
+        struct Country: Decodable {
+            struct Release: Decodable {
+                let certification: String
+                let type: Int
+            }
+
+            let iso31661: String
+            let releaseDates: [Release]
+        }
+
+        let results: [Country]
+    }
+
+    struct TVContentRatings: Decodable {
+        struct Rating: Decodable {
+            let iso31661: String
+            let rating: String
+        }
+
+        let results: [Rating]
+    }
+
+    let credits: Credits?
+    let createdBy: [Creator]?
+    let videos: Videos?
+    let watchProviders: WatchProviders?
+    let releaseDates: MovieReleaseDates?
+    let contentRatings: TVContentRatings?
+
+    enum CodingKeys: String, CodingKey {
+        case credits
+        case createdBy
+        case videos
+        case watchProviders = "watch/providers"
+        case releaseDates
+        case contentRatings
+    }
+}

@@ -14,6 +14,56 @@ struct MediaCommon: Equatable, Sendable {
     let releaseDate: Date?
 }
 
+struct MediaSupplementaryDetails: Equatable, Sendable {
+    struct Credit: Equatable, Identifiable, Sendable {
+        let id: Int
+        let name: String
+        let subtitle: String?
+        let profilePath: String?
+        let order: Int?
+    }
+
+    struct WatchProvider: Equatable, Identifiable, Sendable {
+        let id: Int
+        let name: String
+        let logoPath: String?
+    }
+
+    struct WatchAvailability: Equatable, Sendable {
+        let link: URL?
+        let stream: [WatchProvider]
+        let rent: [WatchProvider]
+        let buy: [WatchProvider]
+    }
+
+    struct Video: Equatable, Identifiable, Sendable {
+        let id: String
+        let name: String
+        let key: String
+        let site: String
+        let type: String
+        let official: Bool
+
+        var destinationURL: URL? {
+            guard site.caseInsensitiveCompare("YouTube") == .orderedSame else { return nil }
+            return URL(string: "https://www.youtube.com/watch?v=\(key)")
+        }
+    }
+
+    let credits: [Credit]
+    let watchAvailability: WatchAvailability?
+    let certification: String?
+    let videos: [Video]
+
+    var trailer: Video? {
+        videos.first {
+            $0.type.caseInsensitiveCompare("Trailer") == .orderedSame && $0.official && $0.destinationURL != nil
+        } ?? videos.first {
+            $0.type.caseInsensitiveCompare("Trailer") == .orderedSame && $0.destinationURL != nil
+        }
+    }
+}
+
 struct MovieDetails: Equatable, Sendable {
     let common: MediaCommon
     let runtimeMinutes: Int?

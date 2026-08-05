@@ -27,6 +27,27 @@ final class TMDbService {
         try await api.fetch(route("/tv/\(id)"), as: TMDbShowDetailsDTO.self)
     }
 
+    func supplementaryDetails(for id: MediaID, regionCode: String) async throws -> MediaSupplementaryDetails {
+        let path: String
+        let append: String
+        switch id.kind {
+        case .movie:
+            path = "/movie/\(id.tmdbID)"
+            append = "credits,videos,watch/providers,release_dates"
+        case .show:
+            path = "/tv/\(id.tmdbID)"
+            append = "credits,videos,watch/providers,content_ratings"
+        default:
+            throw AppError.featureNotImplemented("Supplementary details are only available for movies and shows.")
+        }
+
+        let dto = try await api.fetch(
+            route(path, query: [.init(name: "append_to_response", value: append)]),
+            as: TMDbMediaSupplementaryDTO.self
+        )
+        return TMDbMappers.supplementary(dto, kind: id.kind, regionCode: regionCode)
+    }
+
     /// Raw season payload (you can keep this if needed elsewhere)
     func seasonDetails(showId: Int, seasonNumber: Int) async throws -> Data {
         try await api.data(route("/tv/\(showId)/season/\(seasonNumber)"))

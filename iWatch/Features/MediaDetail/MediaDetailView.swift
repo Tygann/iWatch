@@ -30,6 +30,7 @@ private final class MediaDetailScreenModel {
     var nextEpisode: ShowProgress.NextEpisode?
     var episodesBySeason: [Int: [EpisodeDetails]] = [:]
     var loadingSeasons: Set<Int> = []
+    var supplementaryDetails: MediaSupplementaryDetails?
 
     var isMovieWatched: Bool {
         movieWatchEventID != nil
@@ -66,6 +67,8 @@ private final class MediaDetailScreenModel {
             let details = try await contentRepository.details(for: ref, forceRefresh: forceRefresh)
             loadState = .loaded(details)
 
+            Task { await loadSupplementaryDetails() }
+
             await refreshLibraryState()
 
             if expandedSeason == nil,
@@ -91,6 +94,20 @@ private final class MediaDetailScreenModel {
         } catch {
             guard !error.isCancelled else { return }
             loadState = .failed(error.localizedDescription)
+        }
+    }
+
+    private func loadSupplementaryDetails() async {
+        let regionCode = Locale.current.region?.identifier ?? "US"
+        do {
+            supplementaryDetails = try await contentRepository.supplementaryDetails(
+                for: ref,
+                regionCode: regionCode
+            )
+        } catch {
+            // Core details remain useful offline or when optional TMDb blocks fail.
+            guard !error.isCancelled else { return }
+            supplementaryDetails = nil
         }
     }
 
@@ -265,16 +282,22 @@ private final class MediaDetailScreenModel {
 
 struct MediaDetailView: View {
     let ref: MediaRef
+    let onClose: (() -> Void)?
 
     @Environment(AppContainer.self) private var container
     @Environment(AppSession.self) private var session
 
     @State private var model: MediaDetailScreenModel?
 
+    init(ref: MediaRef, onClose: (() -> Void)? = nil) {
+        self.ref = ref
+        self.onClose = onClose
+    }
+
     var body: some View {
         Group {
             if let model {
-                MediaDetailBody(model: model)
+                MediaDetailBody(model: model, onClose: onClose)
             } else {
                 ProgressView()
                     .task {
@@ -284,9 +307,8 @@ struct MediaDetailView: View {
                             libraryRepository: container.libraryRepository,
                             session: session
                         )
-                        await newModel.load()
-                        guard !Task.isCancelled else { return }
                         model = newModel
+                        await newModel.load()
                     }
             }
         }
@@ -295,6 +317,7 @@ struct MediaDetailView: View {
 
 private struct MediaDetailBody: View {
     @Bindable var model: MediaDetailScreenModel
+    let onClose: (() -> Void)?
     @Environment(AppSession.self) private var session
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Namespace private var seasonIndicatorNamespace
@@ -321,7 +344,9 @@ private struct MediaDetailBody: View {
                         introSection(details)
                         detailsSection(details)
                         overviewSection(details)
+                        whereToWatchSection
                         seasonsSection(details)
+                        creditsSection
                     }
                 }
                 .navigationTitle(scrollOffset > 350 ? details.title : "")
@@ -338,6 +363,26 @@ private struct MediaDetailBody: View {
         }
         .task(id: session.libraryRevision) {
             await model.refreshLibraryState()
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if let trailer = model.supplementaryDetails?.trailer,
+                   let destination = trailer.destinationURL {
+                    Menu {
+                        Link(destination: destination) {
+                            Label("Watch Trailer", systemImage: "play.rectangle")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                    }
+                    .accessibilityLabel("More")
+                    .accessibilityHint("Includes \(trailer.name) on YouTube")
+                }
+
+                if let onClose {
+                    Button(role: .close, action: onClose)
+                }
+            }
         }
     }
 
@@ -520,6 +565,7 @@ private struct MediaDetailBody: View {
             || details.releaseDate != nil
             || details.movieRuntimeMinutes != nil
             || details.showStatusDisplayName != nil
+            || model.supplementaryDetails?.certification != nil
             || !details.genres.isEmpty
 
         if hasMetadata {
@@ -539,12 +585,12 @@ private struct MediaDetailBody: View {
                             }
                             .font(.caption.bold())
 
-                            Text(String(format: "%.1f", rating / 2))
+                            Text(String(format: "%.1f", rating))
                                 .font(.title3.bold())
                                 .fontDesign(.rounded)
                                 .monospacedDigit()
 
-                            RatingBadge(rating: rating / 2)
+                            Text("TMDb")
                                 .font(.caption)
                         }
                         .foregroundStyle(.gray)
@@ -552,6 +598,7 @@ private struct MediaDetailBody: View {
                         if details.releaseDate != nil
                             || details.movieRuntimeMinutes != nil
                             || details.showStatusDisplayName != nil
+                            || model.supplementaryDetails?.certification != nil
                             || !details.genres.isEmpty {
                             metricDivider
                         }
@@ -563,6 +610,7 @@ private struct MediaDetailBody: View {
                                caption: releaseDate.formatted(.dateTime.month(.abbreviated).day()))
                         if details.movieRuntimeMinutes != nil
                             || details.showStatusDisplayName != nil
+                            || model.supplementaryDetails?.certification != nil
                             || !details.genres.isEmpty {
                             metricDivider
                         }
@@ -570,13 +618,20 @@ private struct MediaDetailBody: View {
 
                     if let runtime = details.movieRuntimeMinutes {
                         metric(title: "RUNTIME", value: "\(runtime)", caption: "Minutes")
-                        if !details.genres.isEmpty {
+                        if model.supplementaryDetails?.certification != nil || !details.genres.isEmpty {
                             metricDivider
                         }
                     }
 
                     if let status = details.showStatusDisplayName {
                         metric(title: "STATUS", value: status, caption: "Series")
+                        if model.supplementaryDetails?.certification != nil || !details.genres.isEmpty {
+                            metricDivider
+                        }
+                    }
+
+                    if let certification = model.supplementaryDetails?.certification {
+                        metric(title: "RATING", value: certification, caption: "Content")
                         if !details.genres.isEmpty {
                             metricDivider
                         }
@@ -603,6 +658,80 @@ private struct MediaDetailBody: View {
             Divider()
                 .padding(.horizontal, 14)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var whereToWatchSection: some View {
+        if let availability = model.supplementaryDetails?.watchAvailability {
+            let options = availability.stream.map { ($0, "Stream") }
+                + availability.buy.map { ($0, "Buy") }
+
+            if !options.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        if let link = availability.link {
+                            Link(destination: link) {
+                                HStack(spacing: 6) {
+                                    Text("Where to Watch")
+                                        .font(.title3.bold())
+                                    Image(systemName: "chevron.right")
+                                        .font(.subheadline.bold())
+                                }
+                            }
+                            .foregroundStyle(.primary)
+                            .accessibilityLabel("Where to Watch, view all options")
+                        } else {
+                            Text("Where to Watch")
+                                .font(.title3.bold())
+                        }
+
+                        Text("JustWatch")
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Availability provided by JustWatch")
+                    }
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(spacing: 12) {
+                            ForEach(Array(options.enumerated()), id: \.offset) { _, option in
+                                WatchProviderTile(
+                                    provider: option.0,
+                                    availabilityLabel: option.1
+                                )
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                    }
+                    .padding(.horizontal, -20)
+                }
+                .padding(.horizontal, 20)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var creditsSection: some View {
+        if let credits = model.supplementaryDetails?.credits, !credits.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Cast & Crew")
+                    .font(.title3.bold())
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(alignment: .top, spacing: 12) {
+                        ForEach(credits) { credit in
+                            MediaCreditCard(
+                                name: credit.name,
+                                subtitle: credit.subtitle,
+                                profilePath: credit.profilePath
+                            )
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                }
+                .padding(.horizontal, -20)
+            }
+            .padding(.horizontal, 20)
         }
     }
 
@@ -767,7 +896,7 @@ private struct MediaDetailBody: View {
         VStack(spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
                 NavigationLink {
-                    EpisodeView(ref: episode.ref)
+                    EpisodeView(ref: episode.ref, onClose: onClose)
                 } label: {
                     HStack(alignment: .center, spacing: 12) {
                         EpisodeStillImage(path: episode.stillPath)
@@ -904,12 +1033,10 @@ private struct MediaDetailBody: View {
         .background(Color.gray)
         .sheet(isPresented: $showSheet) {
             NavigationStack {
-                MediaDetailView(ref: MediaID(kind: .show, id: 110492))
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button(role: .close) { }
-                        }
-                    }
+                MediaDetailView(
+                    ref: MediaID(kind: .show, id: 110492),
+                    onClose: { showSheet = false }
+                )
             }
         }
         .environment(container)

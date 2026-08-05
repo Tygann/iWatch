@@ -19,4 +19,8 @@ final class ContentRepository {
     func episodeDetails(for ref: EpisodeRef, forceRefresh: Bool = false) async throws -> EpisodeDetails {
         try await library.episodeDetails(for: ref, forceRefresh: forceRefresh)
     }
+
+    func supplementaryDetails(for ref: MediaID, regionCode: String) async throws -> MediaSupplementaryDetails {
+        try await library.supplementaryDetails(for: ref, regionCode: regionCode)
+    }
 }
