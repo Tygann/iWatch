@@ -468,37 +468,50 @@ private struct MediaDetailBody: View {
 
     @ViewBuilder
     private var detailActions: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            lifecycleControl
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 8) {
+                lifecycleControl
 
-            if model.ref.kind == .movie, !model.isMovieWatched {
-                Button {
-                    Haptics.notification(.success)
-                    Task { await model.toggleMovieWatched() }
-                } label: {
-                    Label("Mark as Watched", systemImage: "checkmark.circle")
-                        .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil)
+                if model.ref.kind == .movie, !model.isMovieWatched {
+                    movieWatchedControl
                 }
-                .buttonStyle(.bordered)
-                .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil,
-                       alignment: .leading)
-                .accessibilityLabel("Mark as watched")
+            }
+        } else {
+            HStack(spacing: 8) {
+                lifecycleControl
+
+                if model.ref.kind == .movie, !model.isMovieWatched {
+                    movieWatchedControl
+                }
             }
         }
     }
 
+    private var movieWatchedControl: some View {
+        Button {
+            Haptics.notification(.success)
+            Task { await model.toggleMovieWatched() }
+        } label: {
+            Image(systemName: "checkmark")
+                .font(.body.weight(.semibold))
+                .frame(width: 44, height: 44)
+        }
+        .buttonStyle(.bordered)
+        .glassEffect(.regular, in: .circle)
+        .clipShape(.circle)
+        .tint(.secondary)
+        .accessibilityLabel("Mark as watched")
+        .accessibilityHint("Adds this movie to your watched history")
+    }
+
     private var lifecycleLabel: some View {
-        Label(
-            model.primaryLabel,
-            systemImage: model.hasProgress ? "checkmark.circle.fill" :
-                (model.isInWatchlist ? "checkmark" : "plus")
-        )
-        .bold()
-        .multilineTextAlignment(.center)
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(minWidth: 90, minHeight: 25)
-        .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil)
-        .padding(.horizontal, 6)
+        Text(model.primaryLabel)
+            .bold()
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(minWidth: 90, minHeight: 25)
+            .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil)
+            .padding(.horizontal, 6)
     }
 
     @ViewBuilder
