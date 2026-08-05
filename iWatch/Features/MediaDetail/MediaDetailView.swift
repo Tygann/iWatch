@@ -494,7 +494,7 @@ private struct MediaDetailBody: View {
         } label: {
             Image(systemName: "checkmark")
                 .font(.body.weight(.semibold))
-                .frame(width: 44, height: 44)
+                .frame(width: 25, height: 25)
         }
         .buttonStyle(.bordered)
         .glassEffect(.regular, in: .circle)
