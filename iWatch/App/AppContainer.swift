@@ -18,6 +18,7 @@ final class AppContainer {
     let syncEngine: SyncEngine
     let session: AppSession
     let router: AppRouter
+    private var hasLoadedTMDbSandboxCatalog = false
 
     init(config: AppConfig,
          apiClient: APIClient,
@@ -190,7 +191,7 @@ final class AppContainer {
         )
         let router = AppRouter(defaultTab: 0)
 
-        seedUITestData(into: persistence)
+        seedPreviewCatalog(into: persistence)
 
         return AppContainer(
             config: config,
@@ -209,7 +210,7 @@ final class AppContainer {
         )
     }
 
-    static func preview() -> AppContainer {
+    static func preview(seedCatalog: Bool = true) -> AppContainer {
         let config = AppConfig.load()
         let cacheService = CacheService.default
         let apiClient = APIClient.makeDefault(cacheService: cacheService)
@@ -241,7 +242,7 @@ final class AppContainer {
         )
         let router = AppRouter(defaultTab: 0)
 
-        return AppContainer(
+        let container = AppContainer(
             config: config,
             apiClient: apiClient,
             cacheService: cacheService,
@@ -256,6 +257,48 @@ final class AppContainer {
             session: session,
             router: router
         )
+        if seedCatalog {
+            seedPreviewCatalog(into: persistence)
+        }
+        return container
+    }
+
+    /// A Canvas-only, in-memory library backed by live TMDb discovery results.
+    /// It intentionally has no Trakt credentials, CloudKit database, or durable store.
+    static func tmdbSandboxPreview() -> AppContainer {
+        preview(seedCatalog: false)
+    }
+
+    /// Loads a small, current TMDb catalog into the sandbox's ephemeral library.
+    /// Safe to call from Canvas more than once.
+    func loadTMDbSandboxCatalog() async -> String? {
+        guard !hasLoadedTMDbSandboxCatalog else { return nil }
+        hasLoadedTMDbSandboxCatalog = true
+
+        do {
+            async let movies = libraryRepository.trending(kind: .movie)
+            async let shows = libraryRepository.trending(kind: .show)
+            let items = try await (movies, shows)
+
+            let context = persistence.makeContext()
+            let now = Date()
+            for item in Array(items.0.prefix(6)) + Array(items.1.prefix(6)) {
+                let record = WatchlistRecord(
+                    mediaID: item.mediaID,
+                    isInWatchlist: true,
+                    listedAt: now,
+                    localUpdatedAt: now,
+                    dirty: false
+                )
+                context.insert(record)
+            }
+            try context.save()
+            session.markLibraryUpdated()
+            return nil
+        } catch {
+            hasLoadedTMDbSandboxCatalog = false
+            return error.localizedDescription
+        }
     }
 }
 
@@ -274,7 +317,7 @@ private extension AppContainer {
 }
 
 @MainActor
-private func seedUITestData(into persistence: Persistence) {
+private func seedPreviewCatalog(into persistence: Persistence) {
     let context = persistence.makeContext()
 
     let movie = MediaRecord(

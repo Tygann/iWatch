@@ -62,11 +62,46 @@ struct ContentView: View {
     }
 }
 
-#Preview {
+#Preview("Catalog") {
     let container = AppContainer.preview()
     ContentView()
         .environment(container)
         .environment(container.session)
         .environment(container.router)
         .modelContainer(container.persistence.modelContainer)
+}
+
+#Preview("TMDb Sandbox") {
+    TMDbSandboxPreview()
+}
+
+private struct TMDbSandboxPreview: View {
+    @State private var container = AppContainer.tmdbSandboxPreview()
+    @State private var isLoading = true
+    @State private var errorMessage: String?
+
+    var body: some View {
+        ContentView()
+            .environment(container)
+            .environment(container.session)
+            .environment(container.router)
+            .modelContainer(container.persistence.modelContainer)
+            .overlay {
+                if isLoading {
+                    ProgressView("Loading TMDb Sandbox…")
+                        .padding()
+                        .glassEffect(in: .rect(cornerRadius: 16))
+                } else if let errorMessage {
+                    ContentUnavailableView(
+                        "TMDb Sandbox Unavailable",
+                        systemImage: "wifi.exclamationmark",
+                        description: Text(errorMessage)
+                    )
+                }
+            }
+            .task {
+                errorMessage = await container.loadTMDbSandboxCatalog()
+                isLoading = false
+            }
+    }
 }
