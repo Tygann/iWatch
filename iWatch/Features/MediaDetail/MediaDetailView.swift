@@ -326,6 +326,7 @@ private struct MediaDetailBody: View {
     @State private var scrollOffset: CGFloat = 0
     @State private var overviewFullLines = 0
 
+    // MARK: - Body
     var body: some View {
         Group {
             switch model.loadState {
@@ -387,6 +388,7 @@ private struct MediaDetailBody: View {
         }
     }
 
+    // MARK: - Header Section
     @ViewBuilder
     private func headerSection(_ details: MediaDetails) -> some View {
         if let backdropPath = details.backdropPath {
@@ -401,6 +403,7 @@ private struct MediaDetailBody: View {
         }
     }
 
+    // MARK: - Intro Section
     @ViewBuilder
     private func introSection(_ details: MediaDetails) -> some View {
         if dynamicTypeSize.isAccessibilitySize {
@@ -560,6 +563,7 @@ private struct MediaDetailBody: View {
             .padding(.horizontal, 6)
     }
 
+    // MARK: - Details Section
     @ViewBuilder
     private func detailsSection(_ details: MediaDetails) -> some View {
         let hasMetadata = details.rating != nil
@@ -662,80 +666,7 @@ private struct MediaDetailBody: View {
         }
     }
 
-    @ViewBuilder
-    private var whereToWatchSection: some View {
-        if let availability = model.supplementaryDetails?.watchAvailability {
-            let options = availability.stream.map { ($0, "Stream") }
-                + availability.buy.map { ($0, "Buy") }
-
-            if !options.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        if let link = availability.link {
-                            Link(destination: link) {
-                                HStack(spacing: 6) {
-                                    Text("Where to Watch")
-                                        .font(.title3.bold())
-                                    Image(systemName: "chevron.right")
-                                        .font(.subheadline.bold())
-                                }
-                            }
-                            .foregroundStyle(.primary)
-                            .accessibilityLabel("Where to Watch, view all options")
-                        } else {
-                            Text("Where to Watch")
-                                .font(.title3.bold())
-                        }
-
-                        Text("JustWatch")
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(.secondary)
-                            .accessibilityLabel("Availability provided by JustWatch")
-                    }
-
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(spacing: 12) {
-                            ForEach(Array(options.enumerated()), id: \.offset) { _, option in
-                                WatchProviderTile(
-                                    provider: option.0,
-                                    availabilityLabel: option.1
-                                )
-                            }
-                        }
-                        .padding(.horizontal, 20)
-                    }
-                    .padding(.horizontal, -20)
-                }
-                .padding(.horizontal, 20)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var creditsSection: some View {
-        if let credits = model.supplementaryDetails?.credits, !credits.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Cast & Crew")
-                    .font(.title3.bold())
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .top, spacing: 12) {
-                        ForEach(credits) { credit in
-                            MediaCreditCard(
-                                name: credit.name,
-                                subtitle: credit.subtitle,
-                                profilePath: credit.profilePath
-                            )
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                }
-                .padding(.horizontal, -20)
-            }
-            .padding(.horizontal, 20)
-        }
-    }
-
+    // MARK: - Overview Section
     @ViewBuilder
     private func overviewSection(_ details: MediaDetails) -> some View {
         if let overview = details.overview, !overview.isEmpty {
@@ -794,6 +725,57 @@ private struct MediaDetailBody: View {
         }
     }
 
+    // MARK: - Where to Watch Section
+    @ViewBuilder
+    private var whereToWatchSection: some View {
+        if let availability = model.supplementaryDetails?.watchAvailability {
+            let options = availability.stream.map { ($0, "Stream") }
+                + availability.buy.map { ($0, "Buy") }
+
+            if !options.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        if let link = availability.link {
+                            Link(destination: link) {
+                                HStack(spacing: 6) {
+                                    Text("Where to Watch")
+                                        .font(.title3.bold())
+                                    Image(systemName: "chevron.right")
+                                        .font(.subheadline.bold())
+                                }
+                            }
+                            .foregroundStyle(.primary)
+                            .accessibilityLabel("Where to Watch, view all options")
+                        } else {
+                            Text("Where to Watch")
+                                .font(.title3.bold())
+                        }
+
+                        Text("JustWatch")
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Availability provided by JustWatch")
+                    }
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(spacing: 12) {
+                            ForEach(Array(options.enumerated()), id: \.offset) { _, option in
+                                WatchProviderTile(
+                                    provider: option.0,
+                                    availabilityLabel: option.1
+                                )
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                    }
+                    .padding(.horizontal, -20)
+                }
+                .padding(.horizontal, 20)
+            }
+        }
+    }
+
+    // MARK: - Seasons Section
     @ViewBuilder
     private func seasonsSection(_ details: MediaDetails) -> some View {
         if case let .show(show) = details {
@@ -951,6 +933,33 @@ private struct MediaDetailBody: View {
         }
     }
 
+    // MARK: - Credits Section
+    @ViewBuilder
+    private var creditsSection: some View {
+        if let credits = model.supplementaryDetails?.credits, !credits.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Cast & Crew")
+                    .font(.title3.bold())
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(alignment: .top, spacing: 12) {
+                        ForEach(credits) { credit in
+                            MediaCreditCard(
+                                name: credit.name,
+                                subtitle: credit.subtitle,
+                                profilePath: credit.profilePath
+                            )
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                }
+                .padding(.horizontal, -20)
+            }
+            .padding(.horizontal, 20)
+        }
+    }
+
+    // MARK: - Helpers
     @ViewBuilder
     private func releaseCountdown(for date: Date) -> some View {
         let now = Date()
@@ -1028,7 +1037,22 @@ private struct MediaDetailBody: View {
     }
 }
 
-#Preview {
+// MARK: - Preview
+#Preview("Standard") {
+    let container = AppContainer.preview()
+
+    NavigationStack {
+        MediaDetailView(
+            ref: MediaID(kind: .show, id: 110492)
+        )
+    }
+    .environment(container)
+    .environment(container.session)
+    .environment(container.router)
+    .modelContainer(container.persistence.modelContainer)
+}
+
+#Preview("Sheet") {
     @Previewable @State var showSheet = true
     let container = AppContainer.preview()
 

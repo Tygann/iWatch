@@ -159,6 +159,7 @@ private struct EpisodeViewBody: View {
         )
     }
 
+    // MARK: - Body
     var body: some View {
         Group {
             switch model.loadState {
@@ -223,6 +224,7 @@ private struct EpisodeViewBody: View {
         }
     }
 
+    // MARK: - Hero Section
     @ViewBuilder
     private func hero(_ details: EpisodeDetails) -> some View {
         if let stillPath = details.stillPath {
@@ -243,6 +245,7 @@ private struct EpisodeViewBody: View {
         }
     }
 
+    // MARK: - Details Section
     private func detailsSection(_ details: EpisodeDetails) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             let episodeName = details.name.isEmpty ? "" : details.name
@@ -271,6 +274,7 @@ private struct EpisodeViewBody: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    // MARK: - Actions Section
     private func actionsSection(_ details: EpisodeDetails) -> some View {
         HStack(spacing: 12) {
             Button {
@@ -305,6 +309,7 @@ private struct EpisodeViewBody: View {
         }
     }
 
+    // MARK: - Overview Section
     @ViewBuilder
     private func overviewSection(_ details: EpisodeDetails) -> some View {
         if let overview = details.overview, !overview.isEmpty {
@@ -329,6 +334,7 @@ private struct EpisodeViewBody: View {
         }
     }
 
+    // MARK: - Credits Section
     @ViewBuilder
     private func creditsSection(_ details: EpisodeDetails) -> some View {
         let credits = mergedCredits(from: details.extras)
@@ -354,6 +360,7 @@ private struct EpisodeViewBody: View {
         }
     }
 
+    // MARK: - Helpers
     private func mergedCredits(from extras: EpisodeDetails.Extras?) -> [EpisodeDetails.Extras.Credit] {
         guard let extras else { return [] }
 
@@ -374,7 +381,22 @@ private struct EpisodeViewBody: View {
     }
 }
 
-#Preview {
+// MARK: - Preview
+#Preview("Standard") {
+    let container = AppContainer.preview()
+
+    NavigationStack {
+        EpisodeView(
+            ref: EpisodeRef(showId: 1399, season: 1, episode: 1)
+        )
+    }
+    .environment(container)
+    .environment(container.session)
+    .environment(container.router)
+    .modelContainer(container.persistence.modelContainer)
+}
+
+#Preview("Sheet") {
     @Previewable @State var showSheet = true
     let container = AppContainer.preview()
 
