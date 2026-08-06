@@ -175,9 +175,9 @@ private struct EpisodeViewBody: View {
             case .loaded(let details):
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        hero(details)
+                        bannerSection(details)
                         VStack(alignment: .leading, spacing: 16) {
-                            detailsSection(details)
+                            metadataSection(details)
                             actionsSection(details)
                             overviewSection(details)
                             creditsSection(details)
@@ -224,9 +224,9 @@ private struct EpisodeViewBody: View {
         }
     }
 
-    // MARK: - Hero Section
+    // MARK: - Banner Section
     @ViewBuilder
-    private func hero(_ details: EpisodeDetails) -> some View {
+    private func bannerSection(_ details: EpisodeDetails) -> some View {
         if let stillPath = details.stillPath {
             BackdropImage(path: stillPath)
                 .frame(height: 220)
@@ -245,8 +245,8 @@ private struct EpisodeViewBody: View {
         }
     }
 
-    // MARK: - Details Section
-    private func detailsSection(_ details: EpisodeDetails) -> some View {
+    // MARK: - Metadata Section
+    private func metadataSection(_ details: EpisodeDetails) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             let episodeName = details.name.isEmpty ? "" : details.name
             let separator = episodeName.isEmpty ? "" : " • "
@@ -381,7 +381,7 @@ private struct EpisodeViewBody: View {
     }
 }
 
-// MARK: - Preview
+// MARK: - Previews
 #Preview("Standard") {
     let container = AppContainer.preview()
 

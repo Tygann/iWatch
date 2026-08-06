@@ -343,9 +343,9 @@ private struct MediaDetailBody: View {
             case .loaded(let details):
                 ScrollView {
                     VStack(spacing: 16) {
-                        headerSection(details)
+                        bannerSection(details)
                         introSection(details)
-                        detailsSection(details)
+                        metadataSection(details)
                         overviewSection(details)
                         whereToWatchSection
                         seasonsSection(details)
@@ -389,9 +389,9 @@ private struct MediaDetailBody: View {
         }
     }
 
-    // MARK: - Header Section
+    // MARK: - Banner Section
     @ViewBuilder
-    private func headerSection(_ details: MediaDetails) -> some View {
+    private func bannerSection(_ details: MediaDetails) -> some View {
         if let backdropPath = details.backdropPath {
             BackdropImage(path: backdropPath)
                 .backgroundExtensionEffect()
@@ -415,7 +415,7 @@ private struct MediaDetailBody: View {
                 detailActions
                     .frame(maxWidth: .infinity)
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 14)
         } else {
             HStack(alignment: .top, spacing: 16) {
                 poster(for: details)
@@ -427,7 +427,7 @@ private struct MediaDetailBody: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 9)
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 14)
         }
     }
 
@@ -527,10 +527,11 @@ private struct MediaDetailBody: View {
                 }
             }
         } else {
-            HStack(spacing: 8) {
+            HStack {
                 lifecycleControl
 
                 if model.ref.kind == .movie, !model.isMovieWatched {
+                    Spacer()
                     movieWatchedControl
                 }
             }
@@ -564,9 +565,9 @@ private struct MediaDetailBody: View {
             .padding(.horizontal, 6)
     }
 
-    // MARK: - Details Section
+    // MARK: - Metadata Section
     @ViewBuilder
-    private func detailsSection(_ details: MediaDetails) -> some View {
+    private func metadataSection(_ details: MediaDetails) -> some View {
         let hasMetadata = details.rating != nil
             || details.releaseDate != nil
             || details.movieRuntimeMinutes != nil
@@ -722,7 +723,7 @@ private struct MediaDetailBody: View {
                     .font(.caption.bold())
                 }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 14)
         }
     }
 
@@ -760,11 +761,11 @@ private struct MediaDetailBody: View {
                                 )
                             }
                         }
-                        .padding(.horizontal, 20)
+                        .padding(.horizontal, 14)
                     }
-                    .padding(.horizontal, -20)
+                    .padding(.horizontal, -14)
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 14)
             }
         }
     }
@@ -781,7 +782,7 @@ private struct MediaDetailBody: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Seasons")
                         .font(.title3.bold())
-                        .padding(.horizontal, 20)
+                        .padding(.horizontal, 14)
 
                     ScrollViewReader { proxy in
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -841,7 +842,7 @@ private struct MediaDetailBody: View {
                     if let seasonNumber = model.expandedSeason,
                        seasons.contains(where: { $0.seasonNumber == seasonNumber }) {
                         Divider()
-                            .padding(.horizontal, 20)
+                            .padding(.horizontal, 14)
 
                         VStack(alignment: .leading, spacing: 8) {
                             if let episodes = model.episodesBySeason[seasonNumber], !episodes.isEmpty {
@@ -860,7 +861,7 @@ private struct MediaDetailBody: View {
                                 }
                             }
                         }
-                        .padding(.horizontal, 20)
+                        .padding(.horizontal, 14)
                         .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }
@@ -945,11 +946,11 @@ private struct MediaDetailBody: View {
                             )
                         }
                     }
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, 14)
                 }
-                .padding(.horizontal, -20)
+                .padding(.horizontal, -14)
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 14)
         }
     }
 
@@ -1031,13 +1032,27 @@ private struct MediaDetailBody: View {
     }
 }
 
-// MARK: - Preview
-#Preview("Standard") {
+// MARK: - Previews
+#Preview("Show") {
     let container = AppContainer.tmdbSandboxPreview()
 
     NavigationStack {
         MediaDetailView(
             ref: MediaID(kind: .show, id: 110492)
+        )
+    }
+    .environment(container)
+    .environment(container.session)
+    .environment(container.router)
+    .modelContainer(container.persistence.modelContainer)
+}
+
+#Preview("Movie") {
+    let container = AppContainer.tmdbSandboxPreview()
+
+    NavigationStack {
+        MediaDetailView(
+            ref: MediaID(kind: .movie, id: 1726)
         )
     }
     .environment(container)
