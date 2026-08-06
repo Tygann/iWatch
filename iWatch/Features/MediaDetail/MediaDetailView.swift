@@ -317,6 +317,10 @@ struct MediaDetailView: View {
 }
 
 private struct MediaDetailBody: View {
+    private enum Layout {
+        static let horizontalInset: CGFloat = 14
+    }
+
     @Bindable var model: MediaDetailScreenModel
     let onClose: (() -> Void)?
     @Environment(AppSession.self) private var session
@@ -344,12 +348,16 @@ private struct MediaDetailBody: View {
                 ScrollView {
                     VStack(spacing: 16) {
                         bannerSection(details)
-                        introSection(details)
-                        metadataSection(details)
-                        overviewSection(details)
-                        whereToWatchSection
-                        seasonsSection(details)
-                        creditsSection
+
+                        VStack(alignment: .leading, spacing: 16) {
+                            introSection(details)
+                            metadataSection(details)
+                            overviewSection(details)
+                            whereToWatchSection
+                            seasonsSection(details)
+                            creditsSection
+                        }
+                        .padding(.horizontal, Layout.horizontalInset)
                     }
                 }
                 .navigationTitle(scrollOffset > 250 ? details.title : "")
@@ -415,7 +423,6 @@ private struct MediaDetailBody: View {
                 detailActions
                     .frame(maxWidth: .infinity)
             }
-            .padding(.horizontal, 14)
         } else {
             HStack(alignment: .top, spacing: 16) {
                 poster(for: details)
@@ -427,7 +434,6 @@ private struct MediaDetailBody: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 9)
             }
-            .padding(.horizontal, 14)
         }
     }
 
@@ -577,93 +583,92 @@ private struct MediaDetailBody: View {
 
         if hasMetadata {
             VStack(spacing: 0) {
-            Divider()
-                .padding(.horizontal, 14)
+                Divider()
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 0) {
-                    if let rating = details.rating {
-                        VStack(spacing: 4) {
-                            HStack(spacing: 3) {
-                                if let ratingCount = details.ratingCount {
-                                    Text(ratingCount, format: .number.notation(.compactName))
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 0) {
+                        if let rating = details.rating {
+                            VStack(spacing: 4) {
+                                HStack(spacing: 3) {
+                                    if let ratingCount = details.ratingCount {
+                                        Text(ratingCount, format: .number.notation(.compactName))
+                                    }
+                                    Text("RATINGS")
                                 }
-                                Text("RATINGS")
+                                .font(.caption.bold())
+
+                                Text(String(format: "%.1f", rating))
+                                    .font(.title3.bold())
+                                    .fontDesign(.rounded)
+                                    .monospacedDigit()
+
+                                Text("TMDb")
+                                    .font(.caption)
                             }
-                            .font(.caption.bold())
+                            .foregroundStyle(.gray)
 
-                            Text(String(format: "%.1f", rating))
-                                .font(.title3.bold())
-                                .fontDesign(.rounded)
-                                .monospacedDigit()
-
-                            Text("TMDb")
-                                .font(.caption)
+                            if details.releaseDate != nil
+                                || details.movieRuntimeMinutes != nil
+                                || details.showStatusDisplayName != nil
+                                || model.supplementaryDetails?.certification != nil
+                                || !details.genres.isEmpty {
+                                metricDivider
+                            }
                         }
-                        .foregroundStyle(.gray)
 
-                        if details.releaseDate != nil
-                            || details.movieRuntimeMinutes != nil
-                            || details.showStatusDisplayName != nil
-                            || model.supplementaryDetails?.certification != nil
-                            || !details.genres.isEmpty {
-                            metricDivider
+                        if let releaseDate = details.releaseDate {
+                            metric(title: "RELEASE",
+                                   value: releaseDate.formatted(.dateTime.year()),
+                                   caption: releaseDate.formatted(.dateTime.month(.abbreviated).day()))
+                            if details.movieRuntimeMinutes != nil
+                                || details.showStatusDisplayName != nil
+                                || model.supplementaryDetails?.certification != nil
+                                || !details.genres.isEmpty {
+                                metricDivider
+                            }
                         }
-                    }
 
-                    if let releaseDate = details.releaseDate {
-                        metric(title: "RELEASE",
-                               value: releaseDate.formatted(.dateTime.year()),
-                               caption: releaseDate.formatted(.dateTime.month(.abbreviated).day()))
-                        if details.movieRuntimeMinutes != nil
-                            || details.showStatusDisplayName != nil
-                            || model.supplementaryDetails?.certification != nil
-                            || !details.genres.isEmpty {
-                            metricDivider
+                        if let runtime = details.movieRuntimeMinutes {
+                            metric(title: "RUNTIME", value: "\(runtime)", caption: "Minutes")
+                            if model.supplementaryDetails?.certification != nil || !details.genres.isEmpty {
+                                metricDivider
+                            }
                         }
-                    }
 
-                    if let runtime = details.movieRuntimeMinutes {
-                        metric(title: "RUNTIME", value: "\(runtime)", caption: "Minutes")
-                        if model.supplementaryDetails?.certification != nil || !details.genres.isEmpty {
-                            metricDivider
+                        if let status = details.showStatusDisplayName {
+                            metric(title: "STATUS", value: status, caption: "Series")
+                            if model.supplementaryDetails?.certification != nil || !details.genres.isEmpty {
+                                metricDivider
+                            }
                         }
-                    }
 
-                    if let status = details.showStatusDisplayName {
-                        metric(title: "STATUS", value: status, caption: "Series")
-                        if model.supplementaryDetails?.certification != nil || !details.genres.isEmpty {
-                            metricDivider
+                        if let certification = model.supplementaryDetails?.certification {
+                            metric(title: "RATING", value: certification, caption: "Content")
+                            if !details.genres.isEmpty {
+                                metricDivider
+                            }
                         }
-                    }
 
-                    if let certification = model.supplementaryDetails?.certification {
-                        metric(title: "RATING", value: certification, caption: "Content")
                         if !details.genres.isEmpty {
-                            metricDivider
+                            let genres = details.genres
+                            let primary = genres.first ?? ""
+                            let secondary = genres.dropFirst().first ?? ""
+                            let remaining = max(0, genres.count - 2)
+                            metric(
+                                title: "GENRE",
+                                value: primary,
+                                caption: secondary.isEmpty
+                                    ? "—"
+                                    : remaining > 0 ? "\(secondary) + \(remaining) more" : secondary
+                            )
                         }
                     }
-
-                    if !details.genres.isEmpty {
-                        let genres = details.genres
-                        let primary = genres.first ?? ""
-                        let secondary = genres.dropFirst().first ?? ""
-                        let remaining = max(0, genres.count - 2)
-                        metric(
-                            title: "GENRE",
-                            value: primary,
-                            caption: secondary.isEmpty
-                                ? "—"
-                                : remaining > 0 ? "\(secondary) + \(remaining) more" : secondary
-                        )
-                    }
+                    .padding(.vertical, 12)
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-            }
+                .contentMargins(.horizontal, Layout.horizontalInset, for: .scrollContent)
+                .padding(.horizontal, -Layout.horizontalInset)
 
-            Divider()
-                .padding(.horizontal, 14)
+                Divider()
             }
         }
     }
@@ -723,7 +728,6 @@ private struct MediaDetailBody: View {
                     .font(.caption.bold())
                 }
             }
-            .padding(.horizontal, 14)
         }
     }
 
@@ -761,11 +765,10 @@ private struct MediaDetailBody: View {
                                 )
                             }
                         }
-                        .padding(.horizontal, 14)
                     }
-                    .padding(.horizontal, -14)
+                    .contentMargins(.horizontal, Layout.horizontalInset, for: .scrollContent)
+                    .padding(.horizontal, -Layout.horizontalInset)
                 }
-                .padding(.horizontal, 14)
             }
         }
     }
@@ -782,7 +785,6 @@ private struct MediaDetailBody: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Seasons")
                         .font(.title3.bold())
-                        .padding(.horizontal, 14)
 
                     ScrollViewReader { proxy in
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -827,8 +829,9 @@ private struct MediaDetailBody: View {
                                 }
                             }
                             .scrollTargetLayout()
-                            .padding(.horizontal)
                         }
+                        .contentMargins(.horizontal, Layout.horizontalInset, for: .scrollContent)
+                        .padding(.horizontal, -Layout.horizontalInset)
                         .scrollTargetBehavior(.viewAligned)
                         .onChange(of: model.expandedSeason) { _, seasonNumber in
                             if let seasonNumber {
@@ -842,7 +845,6 @@ private struct MediaDetailBody: View {
                     if let seasonNumber = model.expandedSeason,
                        seasons.contains(where: { $0.seasonNumber == seasonNumber }) {
                         Divider()
-                            .padding(.horizontal, 14)
 
                         VStack(alignment: .leading, spacing: 8) {
                             if let episodes = model.episodesBySeason[seasonNumber], !episodes.isEmpty {
@@ -861,7 +863,6 @@ private struct MediaDetailBody: View {
                                 }
                             }
                         }
-                        .padding(.horizontal, 14)
                         .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }
@@ -946,11 +947,10 @@ private struct MediaDetailBody: View {
                             )
                         }
                     }
-                    .padding(.horizontal, 14)
                 }
-                .padding(.horizontal, -14)
+                .contentMargins(.horizontal, Layout.horizontalInset, for: .scrollContent)
+                .padding(.horizontal, -Layout.horizontalInset)
             }
-            .padding(.horizontal, 14)
         }
     }
 
