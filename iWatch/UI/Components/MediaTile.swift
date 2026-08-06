@@ -1,41 +1,44 @@
 import SwiftUI
 
-struct MediaTile<ExtraMenu: View>: View {
+enum MediaTileTransitionID: Hashable {
+    case media(MediaRef)
+    case episode(EpisodeRef)
+}
+
+struct MediaTile<Destination: View, ExtraMenu: View>: View {
     let ref: MediaRef
     let title: String
     let posterPath: String?
     var showTitle: Bool = false
-    @Binding var selectedRef: MediaRef?
-    var onSelect: (() -> Void)?
+    let transitionID: MediaTileTransitionID
 
-    // extra context‑menu items (optional)
+    @ViewBuilder var destination: () -> Destination
     @ViewBuilder var extraMenu: () -> ExtraMenu
+
+    @Namespace private var navigation
 
     init(
         ref: MediaRef,
         title: String,
         posterPath: String?,
         showTitle: Bool = false,
-        selectedRef: Binding<MediaRef?>,
-        onSelect: (() -> Void)? = nil,
-        @ViewBuilder extraMenu: @escaping () -> ExtraMenu = { EmptyView() }
+        transitionID: MediaTileTransitionID,
+        @ViewBuilder destination: @escaping () -> Destination,
+        @ViewBuilder extraMenu: @escaping () -> ExtraMenu
     ) {
         self.ref = ref
         self.title = title
         self.posterPath = posterPath
         self.showTitle = showTitle
-        self._selectedRef = selectedRef
-        self.onSelect = onSelect
+        self.transitionID = transitionID
+        self.destination = destination
         self.extraMenu = extraMenu
     }
 
     var body: some View {
-        Button {
-            if let onSelect {
-                onSelect()
-            } else {
-                selectedRef = ref
-            }
+        NavigationLink {
+            destination()
+                .navigationTransition(.zoom(sourceID: transitionID, in: navigation))
         } label: {
             VStack(spacing: 6) {
                 PosterImage(path: posterPath)
@@ -47,6 +50,7 @@ struct MediaTile<ExtraMenu: View>: View {
                         .frame(maxWidth: .infinity, alignment: .top)
                 }
             }
+            .matchedTransitionSource(id: transitionID, in: navigation)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
@@ -54,5 +58,42 @@ struct MediaTile<ExtraMenu: View>: View {
             extraMenu()
             WatchlistMenu(ref: ref, title: title, posterPath: posterPath)
         }
+    }
+}
+
+extension MediaTile where Destination == MediaDetailView {
+    init(
+        ref: MediaRef,
+        title: String,
+        posterPath: String?,
+        showTitle: Bool = false,
+        @ViewBuilder extraMenu: @escaping () -> ExtraMenu
+    ) {
+        self.init(
+            ref: ref,
+            title: title,
+            posterPath: posterPath,
+            showTitle: showTitle,
+            transitionID: .media(ref),
+            destination: { MediaDetailView(ref: ref) },
+            extraMenu: extraMenu
+        )
+    }
+}
+
+extension MediaTile where Destination == MediaDetailView, ExtraMenu == EmptyView {
+    init(
+        ref: MediaRef,
+        title: String,
+        posterPath: String?,
+        showTitle: Bool = false
+    ) {
+        self.init(
+            ref: ref,
+            title: title,
+            posterPath: posterPath,
+            showTitle: showTitle,
+            extraMenu: { EmptyView() }
+        )
     }
 }

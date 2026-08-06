@@ -94,8 +94,6 @@ struct WatchlistView: View {
     @Environment(AppSession.self) private var session
 
     @State private var model: WatchlistScreenModel?
-    @State private var detailRef: MediaID?
-    @State private var episodeRef: EpisodeRef?
 
     init(
         kind: MediaKind,
@@ -110,7 +108,7 @@ struct WatchlistView: View {
     var body: some View {
         Group {
             if let model {
-                WatchlistBody(model: model, detailRef: $detailRef, episodeRef: $episodeRef)
+                WatchlistBody(model: model)
             } else {
                 ProgressView()
                     .task {
@@ -125,23 +123,11 @@ struct WatchlistView: View {
                     }
             }
         }
-        .sheet(item: $detailRef) { ref in
-            NavigationStack {
-                MediaDetailView(ref: ref, onClose: { detailRef = nil })
-            }
-        }
-        .sheet(item: $episodeRef) { ref in
-            NavigationStack {
-                EpisodeView(ref: ref, onClose: { episodeRef = nil })
-            }
-        }
     }
 }
 
 private struct WatchlistBody: View {
     @Bindable var model: WatchlistScreenModel
-    @Binding var detailRef: MediaID?
-    @Binding var episodeRef: EpisodeRef?
     @Environment(AppSession.self) private var session
 
     private let cols = [GridItem(.adaptive(minimum: 110), spacing: 12)]
@@ -179,7 +165,6 @@ private struct WatchlistBody: View {
                                 title: item.title,
                                 posterPath: item.posterPath,
                                 showTitle: true,
-                                selectedRef: $detailRef,
                                 extraMenu: {
                                     Button {
                                         Haptics.notification(.success)
@@ -198,49 +183,9 @@ private struct WatchlistBody: View {
                         }
                     } else {
                         ForEach(model.showItems) { item in
-                            let next = item.progress.nextEpisode
-                            MediaTile(
-                                ref: item.mediaID,
-                                title: item.title,
-                                posterPath: item.posterPath,
-                                showTitle: true,
-                                selectedRef: $detailRef,
-                                onSelect: {
-                                    episodeRef = next.map {
-                                        EpisodeRef(
-                                            showId: item.mediaID.tmdbID,
-                                            showTraktID: item.mediaID.traktID,
-                                            season: $0.season,
-                                            episode: $0.episode,
-                                            tmdbID: $0.tmdbID,
-                                            traktID: $0.traktID
-                                        )
-                                    }
-                                },
-                                extraMenu: {
-                                    Button { detailRef = item.mediaID } label: {
-                                        Label("View Show", systemImage: "tv")
-                                    }
-                                    Divider()
-                                    if let next = item.progress.nextEpisode {
-                                        Button {
-                                            Haptics.notification(.success)
-                                            Task { await model.markNextEpisodeWatched(for: item) }
-                                        } label: {
-                                            Label("Mark S\(next.season) E\(next.episode) as Watched", systemImage: "checkmark.circle")
-                                        }
-                                    }
-                                    Divider()
-                                    Button {
-                                        Haptics.notification(.success)
-                                        Task { await model.stopWatching(item) }
-                                    } label: {
-                                        Label("Stop Watching", systemImage: "stop.circle")
-                                    }
-                                }
-                            )
+                            continueWatchingTile(item)
                             .accessibilityLabel(
-                                next.map { "\(item.title), Season \($0.season) Episode \($0.episode), Continue Watching" }
+                                item.progress.nextEpisode.map { "\(item.title), Season \($0.season) Episode \($0.episode), Continue Watching" }
                                     ?? item.title
                             )
                             .onTapGesture(count: 2) {
@@ -274,6 +219,63 @@ private struct WatchlistBody: View {
         .navigationBarTitleDisplayMode(.inline)
         .task(id: session.libraryRevision) {
             await model.load(revision: session.libraryRevision)
+        }
+    }
+
+    @ViewBuilder
+    private func continueWatchingTile(_ item: LibraryShowItem) -> some View {
+        if let next = item.progress.nextEpisode {
+            let episodeRef = EpisodeRef(
+                showId: item.mediaID.tmdbID,
+                showTraktID: item.mediaID.traktID,
+                season: next.season,
+                episode: next.episode,
+                tmdbID: next.tmdbID,
+                traktID: next.traktID
+            )
+
+            MediaTile(
+                ref: item.mediaID,
+                title: item.title,
+                posterPath: item.posterPath,
+                showTitle: true,
+                transitionID: .episode(episodeRef),
+                destination: { EpisodeView(ref: episodeRef) },
+                extraMenu: { continueWatchingMenu(for: item) }
+            )
+        } else {
+            MediaTile(
+                ref: item.mediaID,
+                title: item.title,
+                posterPath: item.posterPath,
+                showTitle: true,
+                extraMenu: { continueWatchingMenu(for: item) }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func continueWatchingMenu(for item: LibraryShowItem) -> some View {
+        NavigationLink {
+            MediaDetailView(ref: item.mediaID)
+        } label: {
+            Label("View Show", systemImage: "tv")
+        }
+        Divider()
+        if let next = item.progress.nextEpisode {
+            Button {
+                Haptics.notification(.success)
+                Task { await model.markNextEpisodeWatched(for: item) }
+            } label: {
+                Label("Mark S\(next.season) E\(next.episode) as Watched", systemImage: "checkmark.circle")
+            }
+        }
+        Divider()
+        Button {
+            Haptics.notification(.success)
+            Task { await model.stopWatching(item) }
+        } label: {
+            Label("Stop Watching", systemImage: "stop.circle")
         }
     }
 }

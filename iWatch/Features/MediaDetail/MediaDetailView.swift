@@ -321,6 +321,7 @@ private struct MediaDetailBody: View {
     @Environment(AppSession.self) private var session
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Namespace private var seasonIndicatorNamespace
+    @Namespace private var episodeNavigation
 
     @State private var scrollOffset: CGFloat = 0
     @State private var overviewFullLines = 0
@@ -897,9 +898,11 @@ private struct MediaDetailBody: View {
             HStack(alignment: .center, spacing: 12) {
                 NavigationLink {
                     EpisodeView(ref: episode.ref, onClose: onClose)
+                        .navigationTransition(.zoom(sourceID: episode.ref, in: episodeNavigation))
                 } label: {
                     HStack(alignment: .center, spacing: 12) {
                         EpisodeStillImage(path: episode.stillPath)
+                            .matchedTransitionSource(id: episode.ref, in: episodeNavigation)
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text("E\(episode.episodeNumber) • \(episode.name)")

@@ -36,14 +36,13 @@ struct BrowseCategoryView: View {
 
     @Environment(AppContainer.self) private var container
     @State private var model: BrowseCategoryModel?
-    @State private var detailRef: MediaID?
 
     private var title: String { kind == .movie ? "Movies" : "Shows" }
 
     var body: some View {
         Group {
             if let model {
-                BrowseCategoryBody(model: model, title: title, detailRef: $detailRef)
+                BrowseCategoryBody(model: model, title: title)
             } else {
                 ProgressView()
                     .task {
@@ -54,18 +53,12 @@ struct BrowseCategoryView: View {
                     }
             }
         }
-        .sheet(item: $detailRef) { ref in
-            NavigationStack {
-                MediaDetailView(ref: ref, onClose: { detailRef = nil })
-            }
-        }
     }
 }
 
 private struct BrowseCategoryBody: View {
     @Bindable var model: BrowseCategoryModel
     let title: String
-    @Binding var detailRef: MediaID?
 
     var body: some View {
         ScrollView {
@@ -82,8 +75,7 @@ private struct BrowseCategoryBody: View {
                                     ref: item.mediaID,
                                     title: item.title,
                                     posterPath: item.posterPath,
-                                    showTitle: true,
-                                    selectedRef: $detailRef
+                                    showTitle: true
                                 )
                                 .frame(width: 110)
                             }

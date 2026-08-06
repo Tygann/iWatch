@@ -119,16 +119,12 @@ struct ShowsView: View {
 
     @State private var model: ShowsScreenModel?
     @State private var showSettings = false
-    @State private var detailRef: MediaID?
-    @State private var episodeRef: EpisodeRef?
 
     var body: some View {
         Group {
             if let model {
                 ShowsViewBody(
                     model: model,
-                    detailRef: $detailRef,
-                    episodeRef: $episodeRef,
                     showSettings: $showSettings
                 )
             } else {
@@ -144,8 +140,6 @@ struct ShowsView: View {
 
 private struct ShowsViewBody: View {
     @Bindable var model: ShowsScreenModel
-    @Binding var detailRef: MediaID?
-    @Binding var episodeRef: EpisodeRef?
     @Binding var showSettings: Bool
     @Environment(AppSession.self) private var session
 
@@ -203,16 +197,6 @@ private struct ShowsViewBody: View {
                         }
                 }
             }
-            .sheet(item: $detailRef) { ref in
-                NavigationStack {
-                    MediaDetailView(ref: ref, onClose: { detailRef = nil })
-                }
-            }
-            .sheet(item: $episodeRef) { ref in
-                NavigationStack {
-                    EpisodeView(ref: ref, onClose: { episodeRef = nil })
-                }
-            }
         }
     }
 
@@ -227,49 +211,9 @@ private struct ShowsViewBody: View {
                 )
             } content: {
                 ForEach(model.snapshot.continueWatching) { item in
-                    let next = item.progress.nextEpisode
-                    MediaTile(
-                        ref: item.mediaID,
-                        title: item.title,
-                        posterPath: item.posterPath,
-                        showTitle: false,
-                        selectedRef: $detailRef,
-                        onSelect: {
-                            episodeRef = next.map {
-                                EpisodeRef(
-                                    showId: item.mediaID.tmdbID,
-                                    showTraktID: item.mediaID.traktID,
-                                    season: $0.season,
-                                    episode: $0.episode,
-                                    tmdbID: $0.tmdbID,
-                                    traktID: $0.traktID
-                                )
-                            }
-                        },
-                        extraMenu: {
-                            Button { detailRef = item.mediaID } label: {
-                                Label("View Show", systemImage: "tv")
-                            }
-                            Divider()
-                            if let next = item.progress.nextEpisode {
-                                Button {
-                                    Haptics.notification(.success)
-                                    Task { await model.markNextEpisodeWatched(for: item) }
-                                } label: {
-                                    Label("Mark S\(next.season) E\(next.episode) as Watched", systemImage: "checkmark.circle")
-                                }
-                            }
-                            Divider()
-                            Button {
-                                Haptics.notification(.success)
-                                Task { await model.stopWatching(item) }
-                            } label: {
-                                Label("Stop Watching", systemImage: "stop.circle")
-                            }
-                        }
-                    )
+                    continueWatchingTile(item)
                     .accessibilityLabel(
-                        next.map { "\(item.title), Season \($0.season) Episode \($0.episode), Continue Watching" }
+                        item.progress.nextEpisode.map { "\(item.title), Season \($0.season) Episode \($0.episode), Continue Watching" }
                             ?? item.title
                     )
                     .onTapGesture(count: 2) {
@@ -306,7 +250,6 @@ private struct ShowsViewBody: View {
                 ShowCollectionView(
                     title: "Coming Up",
                     items: model.snapshot.comingUp,
-                    detailRef: $detailRef,
                     secondaryText: model.nextAirLabel
                 )
             } content: {
@@ -316,8 +259,7 @@ private struct ShowsViewBody: View {
                             ref: item.mediaID,
                             title: item.title,
                             posterPath: item.posterPath,
-                            showTitle: false,
-                            selectedRef: $detailRef
+                            showTitle: false
                         )
 
 //                        if let label = model.nextAirLabel(for: item) {
@@ -349,15 +291,14 @@ private struct ShowsViewBody: View {
     private func librarySection(title: String, items: [LibraryShowItem]) -> some View {
         if !items.isEmpty {
             MediaCollectionRow(title: title) {
-                ShowCollectionView(title: title, items: items, detailRef: $detailRef)
+                ShowCollectionView(title: title, items: items)
             } content: {
                 ForEach(items) { item in
                     MediaTile(
                         ref: item.mediaID,
                         title: item.title,
                         posterPath: item.posterPath,
-                        showTitle: false,
-                        selectedRef: $detailRef
+                        showTitle: false
                     )
                     .frame(width: 110)
                 }
@@ -371,8 +312,7 @@ private struct ShowsViewBody: View {
             MediaCollectionRow(title: "Completed") {
                 ShowCollectionView(
                     title: "Completed",
-                    items: model.snapshot.completed,
-                    detailRef: $detailRef
+                    items: model.snapshot.completed
                 )
             } content: {
                 ForEach(model.snapshot.completed) { item in
@@ -380,8 +320,7 @@ private struct ShowsViewBody: View {
                         ref: item.mediaID,
                         title: item.title,
                         posterPath: item.posterPath,
-                        showTitle: false,
-                        selectedRef: $detailRef
+                        showTitle: false
                     )
                     .frame(width: 110)
                 }
@@ -389,12 +328,68 @@ private struct ShowsViewBody: View {
             .padding(.bottom, 12)
         }
     }
+
+    @ViewBuilder
+    private func continueWatchingTile(_ item: LibraryShowItem) -> some View {
+        if let next = item.progress.nextEpisode {
+            let episodeRef = EpisodeRef(
+                showId: item.mediaID.tmdbID,
+                showTraktID: item.mediaID.traktID,
+                season: next.season,
+                episode: next.episode,
+                tmdbID: next.tmdbID,
+                traktID: next.traktID
+            )
+
+            MediaTile(
+                ref: item.mediaID,
+                title: item.title,
+                posterPath: item.posterPath,
+                showTitle: false,
+                transitionID: .episode(episodeRef),
+                destination: { EpisodeView(ref: episodeRef) },
+                extraMenu: { continueWatchingMenu(for: item) }
+            )
+        } else {
+            MediaTile(
+                ref: item.mediaID,
+                title: item.title,
+                posterPath: item.posterPath,
+                showTitle: false,
+                extraMenu: { continueWatchingMenu(for: item) }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func continueWatchingMenu(for item: LibraryShowItem) -> some View {
+        NavigationLink {
+            MediaDetailView(ref: item.mediaID)
+        } label: {
+            Label("View Show", systemImage: "tv")
+        }
+        Divider()
+        if let next = item.progress.nextEpisode {
+            Button {
+                Haptics.notification(.success)
+                Task { await model.markNextEpisodeWatched(for: item) }
+            } label: {
+                Label("Mark S\(next.season) E\(next.episode) as Watched", systemImage: "checkmark.circle")
+            }
+        }
+        Divider()
+        Button {
+            Haptics.notification(.success)
+            Task { await model.stopWatching(item) }
+        } label: {
+            Label("Stop Watching", systemImage: "stop.circle")
+        }
+    }
 }
 
 private struct ShowCollectionView: View {
     let title: String
     let items: [LibraryShowItem]
-    @Binding var detailRef: MediaID?
     let secondaryText: (LibraryShowItem) -> String?
 
     private let cols = [GridItem(.adaptive(minimum: 110), spacing: 12)]
@@ -402,12 +397,10 @@ private struct ShowCollectionView: View {
     init(
         title: String,
         items: [LibraryShowItem],
-        detailRef: Binding<MediaID?>,
         secondaryText: @escaping (LibraryShowItem) -> String? = { _ in nil }
     ) {
         self.title = title
         self.items = items
-        self._detailRef = detailRef
         self.secondaryText = secondaryText
     }
 
@@ -420,8 +413,7 @@ private struct ShowCollectionView: View {
                             ref: item.mediaID,
                             title: item.title,
                             posterPath: item.posterPath,
-                            showTitle: true,
-                            selectedRef: $detailRef
+                            showTitle: true
                         )
 
 //                        if let text = secondaryText(item) {

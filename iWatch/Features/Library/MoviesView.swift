@@ -104,14 +104,12 @@ struct MoviesView: View {
 
     @State private var model: MoviesScreenModel?
     @State private var showSettings = false
-    @State private var detailRef: MediaID?
 
     var body: some View {
         Group {
             if let model {
                 MoviesViewBody(
                     model: model,
-                    detailRef: $detailRef,
                     showSettings: $showSettings
                 )
             } else {
@@ -127,7 +125,6 @@ struct MoviesView: View {
 
 private struct MoviesViewBody: View {
     @Bindable var model: MoviesScreenModel
-    @Binding var detailRef: MediaID?
     @Binding var showSettings: Bool
     @Environment(AppSession.self) private var session
 
@@ -184,11 +181,6 @@ private struct MoviesViewBody: View {
                         }
                 }
             }
-            .sheet(item: $detailRef) { ref in
-                NavigationStack {
-                    MediaDetailView(ref: ref, onClose: { detailRef = nil })
-                }
-            }
         }
     }
 
@@ -225,7 +217,6 @@ private struct MoviesViewBody: View {
                 MovieCollectionView(
                     title: "Watched",
                     items: model.watchedItems,
-                    detailRef: $detailRef,
                     markUnwatched: model.markUnwatched
                 )
             } content: {
@@ -243,7 +234,6 @@ private struct MoviesViewBody: View {
             title: item.title,
             posterPath: item.posterPath,
             showTitle: showTitle,
-            selectedRef: $detailRef,
             extraMenu: {
                 if item.isWatched {
                     Button {
@@ -280,7 +270,6 @@ private struct MoviesViewBody: View {
 private struct MovieCollectionView: View {
     let title: String
     let items: [LibraryMovieItem]
-    @Binding var detailRef: MediaID?
     let markUnwatched: (LibraryMovieItem) async -> Void
 
     private let cols = [GridItem(.adaptive(minimum: 110), spacing: 12)]
@@ -294,7 +283,6 @@ private struct MovieCollectionView: View {
                         title: item.title,
                         posterPath: item.posterPath,
                         showTitle: true,
-                        selectedRef: $detailRef,
                         extraMenu: {
                             Button {
                                 Haptics.notification(.success)

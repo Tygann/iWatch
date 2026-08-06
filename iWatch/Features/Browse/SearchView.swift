@@ -92,7 +92,6 @@ struct SearchView: View {
     @Environment(AppContainer.self) private var container
 
     @State private var model: SearchScreenModel?
-    @State private var detailRef: MediaID?
     @State private var showSettings = false
 
     var body: some View {
@@ -100,7 +99,6 @@ struct SearchView: View {
             if let model {
                 SearchViewBody(
                     model: model,
-                    detailRef: $detailRef,
                     showSettings: $showSettings
                 )
             } else {
@@ -118,7 +116,6 @@ struct SearchView: View {
 
 private struct SearchViewBody: View {
     @Bindable var model: SearchScreenModel
-    @Binding var detailRef: MediaID?
     @Binding var showSettings: Bool
 
     var body: some View {
@@ -178,26 +175,20 @@ private struct SearchViewBody: View {
                     }
             }
         }
-        .sheet(item: $detailRef) { ref in
-            NavigationStack {
-                MediaDetailView(ref: ref, onClose: { detailRef = nil })
-            }
-        }
     }
 
     @ViewBuilder
     private func trendingSection(title: String, items: [SearchItem]) -> some View {
         if !items.isEmpty {
             MediaCollectionRow(title: title) {
-                SearchCollectionView(title: title, items: items, detailRef: $detailRef)
+                SearchCollectionView(title: title, items: items)
             } content: {
                 ForEach(items) { item in
                     MediaTile(
                         ref: item.mediaID,
                         title: item.title,
                         posterPath: item.posterPath,
-                        showTitle: false,
-                        selectedRef: $detailRef
+                        showTitle: false
                     )
                     .frame(width: 110)
                 }
@@ -236,8 +227,7 @@ private struct SearchViewBody: View {
                                     ref: item.mediaID,
                                     title: item.title,
                                     posterPath: item.posterPath,
-                                    showTitle: true,
-                                    selectedRef: $detailRef
+                                    showTitle: true
                                 )
 
 //                                HStack {
@@ -296,7 +286,6 @@ private struct SearchViewBody: View {
 private struct SearchCollectionView: View {
     let title: String
     let items: [SearchItem]
-    @Binding var detailRef: MediaID?
 
     private let cols = [GridItem(.adaptive(minimum: 110), spacing: 12)]
 
@@ -308,8 +297,7 @@ private struct SearchCollectionView: View {
                         ref: item.mediaID,
                         title: item.title,
                         posterPath: item.posterPath,
-                        showTitle: true,
-                        selectedRef: $detailRef
+                        showTitle: true
                     )
                     .frame(width: 110)
                 }
