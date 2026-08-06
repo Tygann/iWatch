@@ -307,8 +307,9 @@ struct MediaDetailView: View {
                             libraryRepository: container.libraryRepository,
                             session: session
                         )
-                        model = newModel
                         await newModel.load()
+                        guard !Task.isCancelled else { return }
+                        model = newModel
                     }
             }
         }
@@ -1043,7 +1044,7 @@ private struct MediaDetailBody: View {
 
     NavigationStack {
         MediaDetailView(
-            ref: MediaID(kind: .show, id: 110492)
+            ref: MediaID(kind: .show, id: 202, traktID: 2002)
         )
     }
     .environment(container)
@@ -1061,7 +1062,7 @@ private struct MediaDetailBody: View {
         .sheet(isPresented: $showSheet) {
             NavigationStack {
                 MediaDetailView(
-                    ref: MediaID(kind: .show, id: 110492),
+                    ref: MediaID(kind: .show, id: 202, traktID: 2002),
                     onClose: { showSheet = false }
                 )
             }
