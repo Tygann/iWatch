@@ -352,7 +352,7 @@ private struct MediaDetailBody: View {
                         creditsSection
                     }
                 }
-                .navigationTitle(scrollOffset > 350 ? details.title : "")
+                .navigationTitle(scrollOffset > 250 ? details.title : "")
                 .navigationBarTitleDisplayMode(.inline)
                 .ignoresSafeArea(edges: .top)
                 .scrollIndicators(.hidden)
