@@ -439,7 +439,7 @@ private struct MediaDetailBody: View {
 
     private func poster(for details: MediaDetails) -> some View {
         PosterImage(path: details.posterPath)
-            .frame(width: 120, height: 180, alignment: .leading)
+            .frame(height: 180)
             .shadow(radius: 6)
     }
 
