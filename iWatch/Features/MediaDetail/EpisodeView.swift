@@ -115,6 +115,10 @@ struct EpisodeView: View {
 
     @State private var model: EpisodeScreenModel?
 
+    private var showRef: MediaID {
+        MediaID(kind: .show, id: ref.showId, traktID: ref.showTraktID)
+    }
+
     init(ref: EpisodeRef, onClose: (() -> Void)? = nil) {
         self.ref = ref
         self.onClose = onClose
@@ -123,20 +127,39 @@ struct EpisodeView: View {
     var body: some View {
         Group {
             if let model {
-                EpisodeViewBody(model: model, onClose: onClose)
+                EpisodeViewBody(model: model)
             } else {
                 ProgressView()
-                    .task {
-                        let newModel = EpisodeScreenModel(
-                            ref: ref,
-                            contentRepository: container.contentRepository,
-                            libraryRepository: container.libraryRepository,
-                            session: session
-                        )
-                        await newModel.load()
-                        guard !Task.isCancelled else { return }
-                        model = newModel
+            }
+        }
+        .task {
+            guard model == nil else { return }
+
+            let newModel = EpisodeScreenModel(
+                ref: ref,
+                contentRepository: container.contentRepository,
+                libraryRepository: container.libraryRepository,
+                session: session
+            )
+            model = newModel
+            await newModel.load()
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Menu {
+                    NavigationLink {
+                        MediaDetailView(ref: showRef, onClose: onClose)
+                    } label: {
+                        Label("View Show", systemImage: "tv")
                     }
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+                .accessibilityLabel("More")
+
+                if let onClose {
+                    Button(role: .close, action: onClose)
+                }
             }
         }
     }
@@ -144,7 +167,6 @@ struct EpisodeView: View {
 
 private struct EpisodeViewBody: View {
     @Bindable var model: EpisodeScreenModel
-    let onClose: (() -> Void)?
     @Environment(AppSession.self) private var session
 
     @State private var showsNavigationTitle = false
@@ -196,24 +218,6 @@ private struct EpisodeViewBody: View {
         }
         .task(id: session.libraryRevision) {
             await model.refreshLibraryState()
-        }
-        .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Menu {
-                    NavigationLink {
-                        MediaDetailView(ref: model.showRef, onClose: onClose)
-                    } label: {
-                        Label("View Show", systemImage: "tv")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                }
-                .accessibilityLabel("More")
-
-                if let onClose {
-                    Button(role: .close, action: onClose)
-                }
-            }
         }
     }
 

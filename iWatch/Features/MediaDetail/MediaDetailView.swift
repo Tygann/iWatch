@@ -286,8 +286,14 @@ struct MediaDetailView: View {
 
     @Environment(AppContainer.self) private var container
     @Environment(AppSession.self) private var session
+    @Environment(\.openURL) private var openURL
 
     @State private var model: MediaDetailScreenModel?
+
+    private var shareURL: URL {
+        let mediaPath = ref.kind == .movie ? "movie" : "tv"
+        return URL(string: "https://www.themoviedb.org/\(mediaPath)/\(ref.tmdbID)")!
+    }
 
     init(ref: MediaRef, onClose: (() -> Void)? = nil) {
         self.ref = ref
@@ -300,17 +306,48 @@ struct MediaDetailView: View {
                 MediaDetailBody(model: model, onClose: onClose)
             } else {
                 ProgressView()
-                    .task {
-                        let newModel = MediaDetailScreenModel(
-                            ref: ref,
-                            contentRepository: container.contentRepository,
-                            libraryRepository: container.libraryRepository,
-                            session: session
-                        )
-                        await newModel.load()
-                        guard !Task.isCancelled else { return }
-                        model = newModel
+            }
+        }
+        .task {
+            guard model == nil else { return }
+
+            let newModel = MediaDetailScreenModel(
+                ref: ref,
+                contentRepository: container.contentRepository,
+                libraryRepository: container.libraryRepository,
+                session: session
+            )
+            model = newModel
+            await newModel.load()
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Menu {
+                    ShareLink(item: shareURL) {
+                        Label("Share", systemImage: "square.and.arrow.up")
                     }
+
+                    Divider()
+                    Button {
+                        if let destination = model?.supplementaryDetails?.trailer?.destinationURL {
+                            openURL(destination)
+                        }
+                    } label: {
+                        Label("Watch Trailer", systemImage: "play.rectangle")
+                    }
+                    .disabled(model?.supplementaryDetails?.trailer?.destinationURL == nil)
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+                .accessibilityLabel("More")
+                .accessibilityHint(
+                    model?.supplementaryDetails?.trailer.map { "Includes \($0.name) on YouTube" }
+                        ?? "Share and additional options"
+                )
+
+                if let onClose {
+                    Button(role: .close, action: onClose)
+                }
             }
         }
     }
@@ -370,26 +407,6 @@ private struct MediaDetailBody: View {
         }
         .task(id: session.libraryRevision) {
             await model.refreshLibraryState()
-        }
-        .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                if let trailer = model.supplementaryDetails?.trailer,
-                   let destination = trailer.destinationURL {
-                    Menu {
-                        Link(destination: destination) {
-                            Label("Watch Trailer", systemImage: "play.rectangle")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                    }
-                    .accessibilityLabel("More")
-                    .accessibilityHint("Includes \(trailer.name) on YouTube")
-                }
-
-                if let onClose {
-                    Button(role: .close, action: onClose)
-                }
-            }
         }
     }
 
