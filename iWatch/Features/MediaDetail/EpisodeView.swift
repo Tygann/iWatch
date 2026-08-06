@@ -41,12 +41,12 @@ private final class EpisodeScreenModel {
         return nil
     }
 
-    var title: String {
-        showTitle.isEmpty ? "Episode" : showTitle
+    var episodeTitle: String {
+        guard let name = details?.name, !name.isEmpty else { return "Episode" }
+        return name
     }
 
     var shareText: String {
-        let episodeTitle = details?.name ?? "Episode"
         return "\(showTitle) • S\(ref.season)E\(ref.episode) • \(episodeTitle)"
     }
 
@@ -143,11 +143,19 @@ struct EpisodeView: View {
 }
 
 private struct EpisodeViewBody: View {
+    private enum Layout {
+        static let navigationTitleOffset: CGFloat = 180
+    }
+
     @Bindable var model: EpisodeScreenModel
     let onClose: (() -> Void)?
     @Environment(AppSession.self) private var session
 
-    @State private var showsTopEdgeEffect = false
+    @State private var scrollOffset: CGFloat = 0
+
+    private var showsNavigationTitle: Bool {
+        scrollOffset > Layout.navigationTitleOffset
+    }
 
     private var bannerShape: UnevenRoundedRectangle {
         UnevenRoundedRectangle(
@@ -186,19 +194,17 @@ private struct EpisodeViewBody: View {
                     }
                     .padding(.bottom, 28)
                 }
-//                .navigationTitle(model.title)
-//                .navigationTitle(showsTopEdgeEffect ? model.title : "")
-//                .navigationBarTitleDisplayMode(.inline)
+                .navigationTitle(showsNavigationTitle ? model.episodeTitle : "")
+                .navigationBarTitleDisplayMode(.inline)
                 .ignoresSafeArea(edges: details.stillPath == nil ? [] : .top)
                 .scrollIndicators(.hidden)
                 .scrollContentBackground(.hidden)
-//                .scrollEdgeEffectStyle(.soft, for: .top)
-//                .scrollEdgeEffectHidden(!showsTopEdgeEffect, for: .top)
-//                .onScrollGeometryChange(for: Bool.self) { geometry in
-//                    geometry.contentOffset.y + geometry.contentInsets.top > 50
-//                } action: { _, shouldShowEffect in
-//                    showsTopEdgeEffect = shouldShowEffect
-//                }
+                .scrollEdgeEffectHidden(!showsNavigationTitle, for: .top)
+                .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                    geometry.contentOffset.y + geometry.contentInsets.top
+                } action: { _, offset in
+                    scrollOffset = offset
+                }
             }
         }
         .task(id: session.libraryRevision) {
@@ -248,6 +254,12 @@ private struct EpisodeViewBody: View {
     // MARK: - Metadata Section
     private func metadataSection(_ details: EpisodeDetails) -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            if !model.showTitle.isEmpty {
+                Text(model.showTitle)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+
             let episodeName = details.name.isEmpty ? "" : details.name
             let separator = episodeName.isEmpty ? "" : " • "
 
