@@ -186,19 +186,19 @@ private struct EpisodeViewBody: View {
                     }
                     .padding(.bottom, 28)
                 }
-                .navigationTitle(model.title)
+//                .navigationTitle(model.title)
 //                .navigationTitle(showsTopEdgeEffect ? model.title : "")
-                .navigationBarTitleDisplayMode(.inline)
+//                .navigationBarTitleDisplayMode(.inline)
                 .ignoresSafeArea(edges: details.stillPath == nil ? [] : .top)
                 .scrollIndicators(.hidden)
                 .scrollContentBackground(.hidden)
-                .scrollEdgeEffectStyle(.soft, for: .top)
-                .scrollEdgeEffectHidden(!showsTopEdgeEffect, for: .top)
-                .onScrollGeometryChange(for: Bool.self) { geometry in
-                    geometry.contentOffset.y + geometry.contentInsets.top > 50
-                } action: { _, shouldShowEffect in
-                    showsTopEdgeEffect = shouldShowEffect
-                }
+//                .scrollEdgeEffectStyle(.soft, for: .top)
+//                .scrollEdgeEffectHidden(!showsTopEdgeEffect, for: .top)
+//                .onScrollGeometryChange(for: Bool.self) { geometry in
+//                    geometry.contentOffset.y + geometry.contentInsets.top > 50
+//                } action: { _, shouldShowEffect in
+//                    showsTopEdgeEffect = shouldShowEffect
+//                }
             }
         }
         .task(id: session.libraryRevision) {
