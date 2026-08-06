@@ -26,6 +26,16 @@
 - Review the final diff for sync regressions, actor isolation, accidental secrets, and UI-state correctness.
 - When a self-contained task passes its required checks, commit only its files with a concise imperative message. Do not commit if unrelated changes obscure ownership; report that blocker instead.
 
+## TestFlight and App Store release notes
+
+- Treat `Docs/releases/ReleaseHistory.md` as the canonical record of uploaded builds and the source of truth for the newest published-build boundary.
+- When asked for notes for an uploaded build, first identify the newest logged release and review only meaningful product changes after its recorded source commit. Ignore release-history-only commits and do not repeat work already described by the previous build.
+- For the first logged build, summarize the current tester-visible product and record the uploaded source commit as the initial boundary.
+- Write concise, user-facing notes rather than commit summaries. For TestFlight, describe the important new behavior and improvements, then include two to four focused requests under `Please test`. For App Store releases, omit tester instructions and debugging or implementation language.
+- Return the exact pasteable App Store Connect copy in a fenced plain-text code block.
+- Prepend the finalized entry to `Docs/releases/ReleaseHistory.md`. Record the version, build, upload date, channel, and full uploaded source commit so the next release can compare against it.
+- Release-history-only edits require `git diff --check` and a final diff review, not an app build. Preserve unrelated work, stage only the release-history and directly related instruction files, and commit the self-contained documentation change.
+
 ## Key commands
 
 - Use the Build iOS Apps plugin and its XcodeBuildMCP tools for every iOS build, test, run, simulator, or UI-debugging pass; do not substitute raw `xcodebuild` when those tools are available.
