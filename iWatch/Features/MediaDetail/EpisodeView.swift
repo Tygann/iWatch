@@ -143,19 +143,11 @@ struct EpisodeView: View {
 }
 
 private struct EpisodeViewBody: View {
-    private enum Layout {
-        static let navigationTitleOffset: CGFloat = 180
-    }
-
     @Bindable var model: EpisodeScreenModel
     let onClose: (() -> Void)?
     @Environment(AppSession.self) private var session
 
-    @State private var scrollOffset: CGFloat = 0
-
-    private var showsNavigationTitle: Bool {
-        scrollOffset > Layout.navigationTitleOffset
-    }
+    @State private var showsNavigationTitle = false
 
     private var bannerShape: UnevenRoundedRectangle {
         UnevenRoundedRectangle(
@@ -200,11 +192,6 @@ private struct EpisodeViewBody: View {
                 .scrollIndicators(.hidden)
                 .scrollContentBackground(.hidden)
                 .scrollEdgeEffectHidden(!showsNavigationTitle, for: .top)
-                .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                    geometry.contentOffset.y + geometry.contentInsets.top
-                } action: { _, offset in
-                    scrollOffset = offset
-                }
             }
         }
         .task(id: session.libraryRevision) {
@@ -268,6 +255,11 @@ private struct EpisodeViewBody: View {
                 .fontDesign(.rounded)
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
+                .onGeometryChange(for: Bool.self) { geometry in
+                    geometry.frame(in: .scrollView(axis: .vertical)).minY <= 0
+                } action: { _, hasReachedToolbar in
+                    showsNavigationTitle = hasReachedToolbar
+                }
 
             HStack(spacing: 14) {
                 if let airDate = details.airDate {

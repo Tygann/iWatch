@@ -319,7 +319,6 @@ struct MediaDetailView: View {
 private struct MediaDetailBody: View {
     private enum Layout {
         static let horizontalInset: CGFloat = 14
-        static let navigationTitleOffset: CGFloat = 250
     }
 
     @Bindable var model: MediaDetailScreenModel
@@ -329,12 +328,8 @@ private struct MediaDetailBody: View {
     @Namespace private var seasonIndicatorNamespace
     @Namespace private var episodeNavigation
 
-    @State private var scrollOffset: CGFloat = 0
+    @State private var showsNavigationTitle = false
     @State private var overviewFullLines = 0
-
-    private var showsNavigationTitle: Bool {
-        scrollOffset > Layout.navigationTitleOffset
-    }
 
     // MARK: - Body
     var body: some View {
@@ -371,11 +366,6 @@ private struct MediaDetailBody: View {
                 .scrollIndicators(.hidden)
                 .scrollContentBackground(.hidden)
                 .scrollEdgeEffectHidden(!showsNavigationTitle, for: .top)
-                .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                    geometry.contentOffset.y + geometry.contentInsets.top
-                } action: { _, offset in
-                    scrollOffset = offset
-                }
             }
         }
         .task(id: session.libraryRevision) {
@@ -455,6 +445,11 @@ private struct MediaDetailBody: View {
                 .font(.title2.bold())
                 .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                 .minimumScaleFactor(0.85)
+                .onGeometryChange(for: Bool.self) { geometry in
+                    geometry.frame(in: .scrollView(axis: .vertical)).minY <= 0
+                } action: { _, hasReachedToolbar in
+                    showsNavigationTitle = hasReachedToolbar
+                }
 
             if let tagline = details.tagline, !tagline.isEmpty {
                 Text(tagline)
