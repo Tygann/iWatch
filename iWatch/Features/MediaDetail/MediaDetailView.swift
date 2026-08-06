@@ -736,26 +736,19 @@ private struct MediaDetailBody: View {
             if !options.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
-                        if let link = availability.link {
-                            Link(destination: link) {
-                                HStack(spacing: 6) {
-                                    Text("Where to Watch")
-                                        .font(.title3.bold())
-                                    Image(systemName: "chevron.right")
-                                        .font(.subheadline.bold())
-                                }
-                            }
-                            .foregroundStyle(.primary)
-                            .accessibilityLabel("Where to Watch, view all options")
-                        } else {
-                            Text("Where to Watch")
-                                .font(.title3.bold())
-                        }
+                        Text("Where to Watch")
+                            .font(.title3.bold())
 
-                        Text("JustWatch")
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(.secondary)
-                            .accessibilityLabel("Availability provided by JustWatch")
+                        if let link = availability.link {
+                            Link("JustWatch", destination: link)
+                                .font(.caption2.weight(.medium))
+                                .accessibilityLabel("Availability provided by JustWatch, view all options")
+                        } else {
+                            Text("JustWatch")
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .accessibilityLabel("Availability provided by JustWatch")
+                        }
                     }
 
                     ScrollView(.horizontal, showsIndicators: false) {
