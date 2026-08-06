@@ -147,6 +147,18 @@ private struct EpisodeViewBody: View {
     let onClose: (() -> Void)?
     @Environment(AppSession.self) private var session
 
+    @State private var showsTopEdgeEffect = false
+
+    private var bannerShape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            topLeadingRadius: 0,
+            bottomLeadingRadius: 26,
+            bottomTrailingRadius: 26,
+            topTrailingRadius: 0,
+            style: .continuous
+        )
+    }
+
     var body: some View {
         Group {
             switch model.loadState {
@@ -163,18 +175,29 @@ private struct EpisodeViewBody: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         hero(details)
-                        detailsSection(details)
-                        actionsSection(details)
-                        overviewSection(details)
-                        creditsSection(details)
+                        VStack(alignment: .leading, spacing: 16) {
+                            detailsSection(details)
+                            actionsSection(details)
+                            overviewSection(details)
+                            creditsSection(details)
+                        }
+                        .padding(.horizontal, 20)
                     }
                     .padding(.bottom, 28)
                 }
-                .contentMargins(.horizontal, 20)
                 .navigationTitle(model.title)
+//                .navigationTitle(showsTopEdgeEffect ? model.title : "")
                 .navigationBarTitleDisplayMode(.inline)
+                .ignoresSafeArea(edges: details.stillPath == nil ? [] : .top)
                 .scrollIndicators(.hidden)
                 .scrollContentBackground(.hidden)
+                .scrollEdgeEffectStyle(.soft, for: .top)
+                .scrollEdgeEffectHidden(!showsTopEdgeEffect, for: .top)
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    geometry.contentOffset.y + geometry.contentInsets.top > 50
+                } action: { _, shouldShowEffect in
+                    showsTopEdgeEffect = shouldShowEffect
+                }
             }
         }
         .task(id: session.libraryRevision) {
@@ -205,9 +228,15 @@ private struct EpisodeViewBody: View {
         if let stillPath = details.stillPath {
             BackdropImage(path: stillPath)
                 .frame(height: 220)
-                .clipShape(RoundedRectangle(cornerRadius: 26))
-                .glassEffect(.regular, in: .rect(cornerRadius: 26))
-                .padding(.horizontal, -15)
+                .clipShape(bannerShape)
+                .backgroundExtensionEffect()
+                .safeAreaInset(edge: .top) {
+                    EmptyView()
+                        .padding(25)
+                }
+                .clipped()
+                .glassEffect(.regular, in: bannerShape)
+                .stretchy()
         } else {
             Color.clear
                 .frame(height: 220)
