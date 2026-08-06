@@ -1040,11 +1040,11 @@ private struct MediaDetailBody: View {
 
 // MARK: - Preview
 #Preview("Standard") {
-    let container = AppContainer.preview()
+    let container = AppContainer.tmdbSandboxPreview()
 
     NavigationStack {
         MediaDetailView(
-            ref: MediaID(kind: .show, id: 202, traktID: 2002)
+            ref: MediaID(kind: .show, id: 110492)
         )
     }
     .environment(container)
@@ -1055,14 +1055,14 @@ private struct MediaDetailBody: View {
 
 #Preview("Sheet") {
     @Previewable @State var showSheet = true
-    let container = AppContainer.preview()
+    let container = AppContainer.tmdbSandboxPreview()
 
     Color.clear
         .background(Color.gray)
         .sheet(isPresented: $showSheet) {
             NavigationStack {
                 MediaDetailView(
-                    ref: MediaID(kind: .show, id: 202, traktID: 2002),
+                    ref: MediaID(kind: .show, id: 110492),
                     onClose: { showSheet = false }
                 )
             }
