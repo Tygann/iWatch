@@ -319,6 +319,7 @@ struct MediaDetailView: View {
 private struct MediaDetailBody: View {
     private enum Layout {
         static let horizontalInset: CGFloat = 14
+        static let navigationTitleOffset: CGFloat = 250
     }
 
     @Bindable var model: MediaDetailScreenModel
@@ -330,6 +331,10 @@ private struct MediaDetailBody: View {
 
     @State private var scrollOffset: CGFloat = 0
     @State private var overviewFullLines = 0
+
+    private var showsNavigationTitle: Bool {
+        scrollOffset > Layout.navigationTitleOffset
+    }
 
     // MARK: - Body
     var body: some View {
@@ -360,11 +365,12 @@ private struct MediaDetailBody: View {
                         .padding(.horizontal, Layout.horizontalInset)
                     }
                 }
-                .navigationTitle(scrollOffset > 250 ? details.title : "")
+                .navigationTitle(showsNavigationTitle ? details.title : "")
                 .navigationBarTitleDisplayMode(.inline)
                 .ignoresSafeArea(edges: .top)
                 .scrollIndicators(.hidden)
                 .scrollContentBackground(.hidden)
+                .scrollEdgeEffectHidden(!showsNavigationTitle, for: .top)
                 .onScrollGeometryChange(for: CGFloat.self) { geometry in
                     geometry.contentOffset.y + geometry.contentInsets.top
                 } action: { _, offset in
