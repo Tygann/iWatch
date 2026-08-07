@@ -80,7 +80,7 @@ private struct ProviderBrowseBody: View {
                     LazyVGrid(columns: columns, spacing: 20) {
                         ForEach(model.providers) { provider in
                             NavigationLink {
-                                ProviderResultsView(provider: provider, initialKind: .movie, regionCode: model.regionCode)
+                                ProviderResultsView(provider: provider, regionCode: model.regionCode)
                             } label: {
                                 ProviderLogo(provider: provider, size: providerSize)
                             }
@@ -123,41 +123,94 @@ private final class ProviderResultsModel {
     private let providerID: Int
     private let regionCode: String
 
-    var kind: MediaKind
+    var mediaScope: ProviderMediaScope = .all
     var offerType: ProviderOfferType = .stream
     var items: [SearchItem] = []
     var isLoading = true
     var errorText: String?
 
-    init(kind: MediaKind, providerID: Int, regionCode: String, repository: LibraryRepository) {
-        self.kind = kind
+    init(providerID: Int, regionCode: String, repository: LibraryRepository) {
         self.providerID = providerID
         self.regionCode = regionCode
         self.repository = repository
     }
 
     func load() async {
+        let requestedScope = mediaScope
+        let requestedOfferType = offerType
         isLoading = true
-        defer { isLoading = false }
+        errorText = nil
+
         do {
-            items = try await repository.discover(
-                kind: kind,
-                providerID: providerID,
-                offerType: offerType,
-                regionCode: regionCode
-            )
-            errorText = nil
+            let loadedItems: [SearchItem]
+            switch requestedScope {
+            case .all:
+                async let movies = repository.discover(
+                    kind: .movie,
+                    providerID: providerID,
+                    offerType: requestedOfferType,
+                    regionCode: regionCode
+                )
+                async let shows = repository.discover(
+                    kind: .show,
+                    providerID: providerID,
+                    offerType: requestedOfferType,
+                    regionCode: regionCode
+                )
+                loadedItems = try await interleaved(movies, shows)
+            case .movies:
+                loadedItems = try await repository.discover(
+                    kind: .movie,
+                    providerID: providerID,
+                    offerType: requestedOfferType,
+                    regionCode: regionCode
+                )
+            case .shows:
+                loadedItems = try await repository.discover(
+                    kind: .show,
+                    providerID: providerID,
+                    offerType: requestedOfferType,
+                    regionCode: regionCode
+                )
+            }
+
+            guard !Task.isCancelled, requestedScope == mediaScope, requestedOfferType == offerType else { return }
+            items = loadedItems
         } catch {
             guard !error.isCancelled else { return }
+            guard requestedScope == mediaScope, requestedOfferType == offerType else { return }
             items = []
             errorText = error.localizedDescription
         }
+        guard requestedScope == mediaScope, requestedOfferType == offerType else { return }
+        isLoading = false
     }
+
+    var filterID: String { "\(mediaScope.rawValue)-\(offerType.rawValue)" }
+}
+
+private enum ProviderMediaScope: String, CaseIterable, Identifiable {
+    case all
+    case movies
+    case shows
+
+    var id: String { rawValue }
+    var title: String { rawValue.capitalized }
+}
+
+private func interleaved(_ movies: [SearchItem], _ shows: [SearchItem]) -> [SearchItem] {
+    var items: [SearchItem] = []
+    items.reserveCapacity(movies.count + shows.count)
+
+    for index in 0 ..< max(movies.count, shows.count) {
+        if movies.indices.contains(index) { items.append(movies[index]) }
+        if shows.indices.contains(index) { items.append(shows[index]) }
+    }
+    return items
 }
 
 struct ProviderResultsView: View {
     let provider: DiscoveryProvider
-    let initialKind: MediaKind
     let regionCode: String
 
     @Environment(AppContainer.self) private var container
@@ -168,11 +221,12 @@ struct ProviderResultsView: View {
             if let model {
                 ProviderResultsBody(model: model, regionCode: regionCode)
             } else {
-                ProgressView().task {
-                    let newModel = ProviderResultsModel(kind: initialKind, providerID: provider.id, regionCode: regionCode, repository: container.libraryRepository)
-                    await newModel.load()
-                    guard !Task.isCancelled else { return }
-                    model = newModel
+                ProgressView().onAppear {
+                    model = ProviderResultsModel(
+                        providerID: provider.id,
+                        regionCode: regionCode,
+                        repository: container.libraryRepository
+                    )
                 }
             }
         }
@@ -187,13 +241,7 @@ private struct ProviderResultsBody: View {
     private let columns = [GridItem(.adaptive(minimum: 110), spacing: 12)]
 
     var body: some View {
-        VStack(spacing: 12) {
-            DiscoveryScopePicker("Media Type", selection: $model.kind) {
-                Text("Movies").tag(MediaKind.movie)
-                Text("Shows").tag(MediaKind.show)
-            }
-            .onChange(of: model.kind) { _, _ in Task { await model.load() } }
-
+        Group {
             if model.isLoading {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let errorText = model.errorText {
@@ -203,9 +251,12 @@ private struct ProviderResultsBody: View {
             } else {
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(model.items) { item in
-                            MediaTile(ref: item.mediaID, title: item.title, posterPath: item.posterPath, showTitle: true)
-                                .frame(width: 110)
+                        ForEach(model.items, id: \.mediaID) { item in
+                            DiscoveryPosterTile(
+                                item: item,
+                                showTitle: true,
+                                showKindBadge: model.mediaScope == .all
+                            )
                         }
                     }
                     .padding()
@@ -217,27 +268,30 @@ private struct ProviderResultsBody: View {
                 }
             }
         }
+        .task(id: model.filterID) { await model.load() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
-                    ForEach(ProviderOfferType.allCases) { offerType in
-                        Button {
-                            guard model.offerType != offerType else { return }
-                            model.offerType = offerType
-                            Task { await model.load() }
-                        } label: {
-                            if model.offerType == offerType {
-                                Label(offerType.title, systemImage: "checkmark")
-                            } else {
-                                Text(offerType.title)
+                    Section("Media Type") {
+                        Picker("Media Type", selection: $model.mediaScope) {
+                            ForEach(ProviderMediaScope.allCases) { scope in
+                                Text(scope.title).tag(scope)
+                            }
+                        }
+                    }
+
+                    Section("Availability") {
+                        Picker("Availability", selection: $model.offerType) {
+                            ForEach(ProviderOfferType.allCases) { offerType in
+                                Text(offerType.title).tag(offerType)
                             }
                         }
                     }
                 } label: {
                     Image(systemName: "line.3.horizontal.decrease")
                 }
-                .accessibilityLabel("Availability")
-                .accessibilityValue(model.offerType.title)
+                .accessibilityLabel("Filters")
+                .accessibilityValue("\(model.mediaScope.title), \(model.offerType.title)")
             }
         }
     }
