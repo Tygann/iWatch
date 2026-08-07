@@ -177,6 +177,7 @@ struct TMDbTrendingPageDTO: Decodable {
 }
 
 struct TMDbTrendingItemDTO: Decodable {
+    let mediaType: String?
     let id: Int
     let title: String?
     let name: String?

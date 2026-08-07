@@ -109,6 +109,14 @@ final class TMDbService {
         return pageDTO.results.map { TMDbMappers.trendingItem($0, kind: kind) }
     }
 
+    func mixedTrending(timeWindow: String = "day") async throws -> [SearchItem] {
+        let page = try await api.fetch(
+            route("/trending/all/\(timeWindow)"),
+            as: TMDbTrendingPageDTO.self
+        )
+        return page.results.compactMap(TMDbMappers.mixedTrendingItem(_:))
+    }
+
     func discovery(kind: MediaKind, collection: DiscoveryCollection) async throws -> [SearchItem] {
         if collection == .trending {
             return try await trending(kind: kind)
@@ -146,6 +154,25 @@ final class TMDbService {
                     logoPath: $0.logoPath,
                     displayPriority: $0.displayPriority ?? .max
                 )
+            }
+            .sorted {
+                if $0.displayPriority == $1.displayPriority { return $0.name < $1.name }
+                return $0.displayPriority < $1.displayPriority
+            }
+    }
+
+    func watchProviders(regionCode: String) async throws -> [DiscoveryProvider] {
+        async let movieProviders = watchProviders(kind: .movie, regionCode: regionCode)
+        async let showProviders = watchProviders(kind: .show, regionCode: regionCode)
+
+        let (movies, shows) = try await (movieProviders, showProviders)
+        let combined = movies + shows
+        return Dictionary(grouping: combined, by: \.id)
+            .compactMap { _, providers in
+                providers.min {
+                    if $0.displayPriority == $1.displayPriority { return $0.name < $1.name }
+                    return $0.displayPriority < $1.displayPriority
+                }
             }
             .sorted {
                 if $0.displayPriority == $1.displayPriority { return $0.name < $1.name }

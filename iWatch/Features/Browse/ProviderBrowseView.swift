@@ -108,27 +108,17 @@ private struct ProviderBrowseBody: View {
     }
 }
 
-private struct ProviderLogo: View {
+struct ProviderLogo: View {
     let provider: DiscoveryProvider
 
     var body: some View {
-        VStack(spacing: 8) {
-            CachedArtworkImage(
-                url: ImageURLBuilder.make(provider.logoPath, size: .profile),
-                targetSize: CGSize(width: 72, height: 72)
-            ) { $0.resizable().scaledToFill() } placeholder: {
-                RoundedRectangle(cornerRadius: 16).fill(.quaternary).overlay { Image(systemName: "play.tv") }
-            }
-            .frame(width: 72, height: 72)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-
-            Text(provider.name)
-                .font(.caption)
-                .lineLimit(2, reservesSpace: true)
-                .multilineTextAlignment(.center)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(provider.name)
+        ServiceProviderTile(
+            name: provider.name,
+            logoPath: provider.logoPath,
+            size: 72,
+            caption: provider.name,
+            captionWeight: .regular
+        )
     }
 }
 
@@ -171,7 +161,7 @@ private final class ProviderResultsModel {
     }
 }
 
-private struct ProviderResultsView: View {
+struct ProviderResultsView: View {
     let provider: DiscoveryProvider
     let initialKind: MediaKind
     let regionCode: String

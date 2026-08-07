@@ -31,6 +31,12 @@ final class LibraryRepository {
         return items
     }
 
+    func mixedTrending() async throws -> [SearchItem] {
+        let items = try await tmdb.mixedTrending()
+        try cacheSearchItems(items)
+        return items
+    }
+
     func discovery(kind: MediaKind, collection: DiscoveryCollection) async throws -> [SearchItem] {
         let items = try await tmdb.discovery(kind: kind, collection: collection)
         try cacheSearchItems(items)
@@ -39,6 +45,10 @@ final class LibraryRepository {
 
     func watchProviders(kind: MediaKind, regionCode: String) async throws -> [DiscoveryProvider] {
         try await tmdb.watchProviders(kind: kind, regionCode: regionCode)
+    }
+
+    func watchProviders(regionCode: String) async throws -> [DiscoveryProvider] {
+        try await tmdb.watchProviders(regionCode: regionCode)
     }
 
     func discover(

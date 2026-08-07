@@ -91,12 +91,8 @@ private struct BrowseCategoryBody: View {
                 ForEach(model.sections) { section in
                     DiscoverySectionView(section: section, kind: kind)
                 }
-
-                BrowseByServiceLink(kind: kind)
-                    .padding(.horizontal)
-                    .padding(.top, 8)
-                    .padding(.bottom, 24)
             }
+            .padding(.bottom, 24)
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.large)
@@ -133,39 +129,5 @@ private struct DiscoverySectionView: View {
                 .padding(.horizontal)
                 .padding(.vertical, 12)
         }
-    }
-}
-
-struct BrowseByServiceLink: View {
-    let kind: MediaKind?
-
-    var body: some View {
-        NavigationLink {
-            ProviderBrowseView(initialKind: kind ?? .movie)
-        } label: {
-            HStack(spacing: 14) {
-                Image(systemName: "play.tv.fill")
-                    .font(.title2)
-                    .foregroundStyle(.white)
-                    .frame(width: 46, height: 46)
-                    .background(.blue.gradient, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Browse by Service")
-                        .font(.headline)
-                    Text("Find titles available to stream")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.callout.bold())
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(14)
-            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        }
-        .buttonStyle(.plain)
     }
 }

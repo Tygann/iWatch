@@ -12,6 +12,47 @@ struct DiscoveryTests {
 
     @Test
     @MainActor
+    func mixedTrendingPreservesCombinedOrderAndExcludesPeople() async throws {
+        MockDiscoveryURLProtocol.handler = { request in
+            #expect(request.url?.path == "/3/trending/all/day")
+            let data = #"{"results":[{"media_type":"tv","id":1,"name":"First Show","first_air_date":"2025-01-01"},{"media_type":"person","id":2,"name":"A Person"},{"media_type":"movie","id":3,"title":"Second Movie","release_date":"2026-02-01"}]}"#.data(using: .utf8)!
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        defer { MockDiscoveryURLProtocol.handler = nil }
+
+        let items = try await makeDiscoveryService().mixedTrending()
+
+        #expect(items.map(\.title) == ["First Show", "Second Movie"])
+        #expect(items.map(\.kind) == [.show, .movie])
+    }
+
+    @Test
+    @MainActor
+    func combinedProviderCatalogDeduplicatesMovieAndShowProviders() async throws {
+        MockDiscoveryURLProtocol.handler = { request in
+            let results: String
+            switch request.url?.path {
+            case "/3/watch/providers/movie":
+                results = #"[{"provider_id":8,"provider_name":"Shared","display_priority":3},{"provider_id":2,"provider_name":"Movies Only","display_priority":2}]"#
+            case "/3/watch/providers/tv":
+                results = #"[{"provider_id":8,"provider_name":"Shared","display_priority":1},{"provider_id":4,"provider_name":"Shows Only","display_priority":4}]"#
+            default:
+                Issue.record("Unexpected provider path: \(request.url?.path ?? "nil")")
+                results = "[]"
+            }
+            let data = "{\"results\":\(results)}".data(using: .utf8)!
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        defer { MockDiscoveryURLProtocol.handler = nil }
+
+        let providers = try await makeDiscoveryService().watchProviders(regionCode: "US")
+
+        #expect(providers.map(\.id) == [8, 2, 4])
+        #expect(providers.first?.displayPriority == 1)
+    }
+
+    @Test
+    @MainActor
     func providerCatalogUsesRegionAndSortsByDisplayPriority() async throws {
         MockDiscoveryURLProtocol.handler = { request in
             #expect(request.url?.path == "/3/watch/providers/movie")

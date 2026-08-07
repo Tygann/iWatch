@@ -271,6 +271,16 @@ enum TMDbMappers {
         let posterPath = dto.posterPath ?? dto.backdropPath ?? dto.profilePath
         return SearchItem(id: dto.id, kind: kind, title: title, posterPath: posterPath, year: year)
     }
+
+    static func mixedTrendingItem(_ dto: TMDbTrendingItemDTO) -> SearchItem? {
+        let kind: MediaKind
+        switch dto.mediaType {
+        case "movie": kind = .movie
+        case "tv": kind = .show
+        default: return nil
+        }
+        return trendingItem(dto, kind: kind)
+    }
 }
 
 func parseISODate(_ s: String?) -> Date? {

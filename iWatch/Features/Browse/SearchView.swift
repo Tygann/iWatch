@@ -1,35 +1,49 @@
 import SwiftUI
 import Observation
 
+private enum SearchMediaScope: String, CaseIterable, Identifiable {
+    case all = "All"
+    case movies = "Movies"
+    case shows = "Shows"
+
+    var id: String { rawValue }
+
+    func filter(_ items: [SearchItem]) -> [SearchItem] {
+        switch self {
+        case .all: items
+        case .movies: items.filter { $0.kind == .movie }
+        case .shows: items.filter { $0.kind == .show }
+        }
+    }
+}
+
 @MainActor
 @Observable
 private final class SearchScreenModel {
-    enum Filter: String, CaseIterable, Identifiable {
-        case top = "All"
-        case movies = "Movies"
-        case shows = "Shows"
-
-        var id: String { rawValue }
-    }
-
     private let repository: LibraryRepository
     private var searchTask: Task<Void, Never>?
 
     var query = ""
     var isSearching = false
     var results: [SearchItem] = []
-    var movieTrending: [SearchItem] = []
-    var showTrending: [SearchItem] = []
-    var selectedFilter: Filter = .top
+    var trending: [SearchItem] = []
+    var providers: [DiscoveryProvider] = []
+    var selectedFilter: SearchMediaScope = .all
     var errorText: String?
 
-    init(repository: LibraryRepository) {
+    let regionCode: String
+
+    init(repository: LibraryRepository, regionCode: String) {
         self.repository = repository
+        self.regionCode = regionCode
     }
 
     func bootstrap() async {
-        guard movieTrending.isEmpty && showTrending.isEmpty else { return }
-        await loadTrending()
+        guard trending.isEmpty && providers.isEmpty else { return }
+        async let loadedTrending = try? repository.mixedTrending()
+        async let loadedProviders = try? repository.watchProviders(regionCode: regionCode)
+        trending = await loadedTrending ?? []
+        providers = await loadedProviders ?? []
     }
 
     func updateQuery(_ newValue: String) {
@@ -63,28 +77,8 @@ private final class SearchScreenModel {
         }
     }
 
-    func loadTrending() async {
-        do {
-            async let movies = repository.trending(kind: .movie)
-            async let shows = repository.trending(kind: .show)
-            movieTrending = try await movies
-            showTrending = try await shows
-            errorText = nil
-        } catch {
-            guard !error.isCancelled else { return }
-            errorText = error.localizedDescription
-        }
-    }
-
     var filteredResults: [SearchItem] {
-        switch selectedFilter {
-        case .top:
-            return results
-        case .movies:
-            return results.filter { $0.kind == .movie }
-        case .shows:
-            return results.filter { $0.kind == .show }
-        }
+        selectedFilter.filter(results)
     }
 }
 
@@ -104,7 +98,10 @@ struct SearchView: View {
             } else {
                 ProgressView()
                     .task {
-                        let newModel = SearchScreenModel(repository: container.libraryRepository)
+                        let newModel = SearchScreenModel(
+                            repository: container.libraryRepository,
+                            regionCode: Locale.current.region?.identifier ?? "US"
+                        )
                         await newModel.bootstrap()
                         guard !Task.isCancelled else { return }
                         model = newModel
@@ -117,7 +114,21 @@ struct SearchView: View {
 private struct SearchViewBody: View {
     @Bindable var model: SearchScreenModel
     @Binding var showSettings: Bool
-    @State private var trendingKind = MediaKind.movie
+
+    private let featuredStreamingProviderIDs: [Int] = [
+        8,    // Netflix
+        350,  // Apple TV+
+        337,  // Disney+
+        9,    // Amazon Prime Video
+        15,   // Hulu
+        1899, // Max
+        386,  // Peacock
+        531,  // Paramount+
+        73,   // Tubi
+        300,  // Pluto TV
+        207,  // The Roku Channel
+        283   // Crunchyroll
+    ]
 
     var body: some View {
         NavigationStack {
@@ -136,14 +147,8 @@ private struct SearchViewBody: View {
                                     .padding(.horizontal)
                             }
 
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("Streaming Services")
-                                    .font(.title2.bold())
-
-                                BrowseByServiceLink(kind: nil)
-                            }
-                            .padding(.horizontal)
-                            .padding(.bottom, 16)
+                            providerSection
+                                .padding(.bottom, 16)
                         }
                         .padding(.top, 8)
                     }
@@ -186,30 +191,15 @@ private struct SearchViewBody: View {
     }
 
     @ViewBuilder private var trendingSection: some View {
-        let items = trendingKind == .movie ? model.movieTrending : model.showTrending
-        if !items.isEmpty {
+        if !model.trending.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
-                ViewThatFits(in: .horizontal) {
-                    HStack {
-                        trendingLink(items: items)
-
-                        Spacer()
-
-                        trendingPicker
-                    }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        trendingLink(items: items)
-                        trendingPicker
-                    }
-                }
+                trendingLink(items: model.trending)
                 .padding(.horizontal)
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 12) {
-                        ForEach(items) { item in
-                            MediaTile(ref: item.mediaID, title: item.title, posterPath: item.posterPath, showTitle: false)
-                                .frame(width: 110)
+                        ForEach(model.trending) { item in
+                            DiscoveryPosterTile(item: item, showTitle: false, showKindBadge: true)
                         }
                     }
                     .padding(.horizontal)
@@ -222,7 +212,7 @@ private struct SearchViewBody: View {
 
     private func trendingLink(items: [SearchItem]) -> some View {
         NavigationLink {
-            SearchCollectionView(title: "Trending", items: items)
+            ScopedDiscoveryGrid(title: "Trending", items: items)
         } label: {
             HStack(spacing: 6) {
                 Text("Trending")
@@ -236,20 +226,58 @@ private struct SearchViewBody: View {
         .buttonStyle(.plain)
     }
 
-    private var trendingPicker: some View {
-        Picker("Trending Media Type", selection: $trendingKind) {
-            Image(systemName: "film").tag(MediaKind.movie)
-            Image(systemName: "tv").tag(MediaKind.show)
+    @ViewBuilder private var providerSection: some View {
+        if !model.providers.isEmpty {
+            let providersByID = Dictionary(uniqueKeysWithValues: model.providers.map { ($0.id, $0) })
+            let featuredProviders = featuredStreamingProviderIDs.compactMap { providersByID[$0] }
+            let previewProviders = featuredProviders.isEmpty
+                ? Array(model.providers.prefix(10))
+                : featuredProviders
+
+            VStack(alignment: .leading, spacing: 4) {
+                NavigationLink {
+                    ProviderBrowseView(initialKind: .movie)
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("Streaming Services")
+                            .font(.title3.bold())
+                            .lineLimit(1)
+                        Image(systemName: "chevron.right")
+                            .font(.callout.bold())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 10) {
+                        ForEach(previewProviders) { provider in
+                            NavigationLink {
+                                ProviderResultsView(
+                                    provider: provider,
+                                    initialKind: .movie,
+                                    regionCode: model.regionCode
+                                )
+                            } label: {
+                                CompactProviderLogo(provider: provider)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                }
+            }
+            .padding(.top, 12)
         }
-        .pickerStyle(.segmented)
-        .frame(width: 104)
     }
 
     @ViewBuilder
     private var resultsSection: some View {
         VStack(spacing: 16) {
             Picker("Filter", selection: $model.selectedFilter) {
-                ForEach(SearchScreenModel.Filter.allCases) { filter in
+                ForEach(SearchMediaScope.allCases) { filter in
                     Text(filter.rawValue).tag(filter)
                 }
             }
@@ -269,63 +297,116 @@ private struct SearchViewBody: View {
                                        description: Text("Try a different title or keyword."))
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 0) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 12)], spacing: 12) {
                         ForEach(model.filteredResults) { item in
-                            SearchResultRow(item: item)
-
-                            Divider()
-                                .padding(.leading, 92)
+                            DiscoveryPosterTile(
+                                item: item,
+                                showTitle: true,
+                                showKindBadge: model.selectedFilter == .all
+                            )
                         }
                     }
-                    .padding(.horizontal)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 12)
                 }
             }
         }
     }
 }
 
-private struct SearchResultRow: View {
+private struct DiscoveryPosterTile: View {
     let item: SearchItem
+    let showTitle: Bool
+    let showKindBadge: Bool
 
     var body: some View {
-        NavigationLink {
-            MediaDetailView(ref: item.mediaID)
-        } label: {
-            HStack(spacing: 14) {
-                PosterImage(path: item.posterPath, width: 64, cornerRadius: 8)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(item.title)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                        .multilineTextAlignment(.leading)
-
-                    HStack(spacing: 8) {
-                        Label(item.kind == .movie ? "Movie" : "Show", systemImage: item.kind == .movie ? "film" : "tv")
-                            .foregroundStyle(item.kind == .movie ? .purple : .blue)
-
-                        if let year = item.year {
-                            Text(year)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .font(.subheadline)
-                }
-
-                Spacer(minLength: 0)
-
-                Image(systemName: "chevron.right")
-                    .font(.caption.bold())
-                    .foregroundStyle(.tertiary)
+        MediaTile(
+            ref: item.mediaID,
+            title: item.title,
+            posterPath: item.posterPath,
+            showTitle: showTitle
+        )
+        .accessibilityLabel(accessibilityLabel)
+        .overlay(alignment: .topLeading) {
+            if showKindBadge {
+                Image(systemName: item.kind == .movie ? "film.fill" : "tv.fill")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(item.kind == .movie ? .purple : .blue)
+                    .frame(width: 22, height: 22)
+                    .glassEffect(.regular, in: .circle)
+                    .padding(3)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             }
-            .padding(.vertical, 10)
-            .contentShape(.rect)
         }
-        .buttonStyle(.plain)
-        .contextMenu {
-            WatchlistMenu(ref: item.mediaID, title: item.title, posterPath: item.posterPath)
+        .overlay(alignment: .topTrailing) {
+            if let year = item.year {
+                Text(year)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .padding(3)
+                    .glassEffect()
+                    .padding(3)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
         }
-        .accessibilityElement(children: .combine)
+        .frame(width: 110)
+    }
+
+    private var accessibilityLabel: String {
+        [item.title, item.kind == .movie ? "Movie" : "Show", item.year]
+            .compactMap { $0 }
+            .joined(separator: ", ")
+    }
+}
+
+private struct CompactProviderLogo: View {
+    let provider: DiscoveryProvider
+
+    var body: some View {
+        ServiceProviderTile(
+            name: provider.name,
+            logoPath: provider.logoPath,
+            size: 64,
+            caption: nil
+        )
+    }
+}
+
+private struct ScopedDiscoveryGrid: View {
+    let title: String
+    let items: [SearchItem]
+
+    @State private var scope: SearchMediaScope = .all
+    private let columns = [GridItem(.adaptive(minimum: 110), spacing: 12)]
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Picker("Filter", selection: $scope) {
+                ForEach(SearchMediaScope.allCases) { scope in
+                    Text(scope.rawValue).tag(scope)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 12) {
+                    ForEach(scope.filter(items)) { item in
+                        DiscoveryPosterTile(
+                            item: item,
+                            showTitle: true,
+                            showKindBadge: scope == .all
+                        )
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 4)
+            }
+        }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
