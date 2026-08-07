@@ -18,6 +18,7 @@ struct DiscoveryPosterTile: View {
                 Image(systemName: item.kind == .movie ? "film.fill" : "tv.fill")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(item.kind == .movie ? .purple : .blue)
+                    .offset(x: item.kind == .movie ? -0.5 : 0.5)
                     .frame(width: 12, height: 12)
                     .padding(3)
                     .glassEffect(.regular, in: .circle)
