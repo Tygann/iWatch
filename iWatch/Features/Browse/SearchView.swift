@@ -274,38 +274,46 @@ private struct SearchViewBody: View {
 
     @ViewBuilder
     private var resultsSection: some View {
-        VStack(spacing: 16) {
-            DiscoveryScopePicker("Filter", selection: $model.selectedFilter) {
-                ForEach(SearchMediaScope.allCases) { filter in
-                    Text(filter.rawValue).tag(filter)
-                }
-            }
-
-            if model.isSearching {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let errorText = model.errorText {
-                ContentUnavailableView("Search Error",
-                                       systemImage: "exclamationmark.triangle",
-                                       description: Text(errorText))
-            } else if model.filteredResults.isEmpty {
-                ContentUnavailableView("No Results",
-                                       systemImage: "magnifyingglass",
-                                       description: Text("Try a different title or keyword."))
-            } else {
-                ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 12)], spacing: 12) {
-                        ForEach(model.filteredResults) { item in
-                            DiscoveryPosterTile(
-                                item: item,
-                                showTitle: true,
-                                showKindBadge: model.selectedFilter == .all
-                            )
+        if model.isSearching {
+            ProgressView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let errorText = model.errorText {
+            ContentUnavailableView("Search Error",
+                                   systemImage: "exclamationmark.triangle",
+                                   description: Text(errorText))
+        } else if model.results.isEmpty {
+            ContentUnavailableView("No Results",
+                                   systemImage: "magnifyingglass",
+                                   description: Text("Try a different title or keyword."))
+        } else {
+            ScrollView {
+                VStack(spacing: 16) {
+                    DiscoveryScopePicker("Filter", selection: $model.selectedFilter) {
+                        ForEach(SearchMediaScope.allCases) { filter in
+                            Text(filter.rawValue).tag(filter)
                         }
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 12)
+
+                    if model.filteredResults.isEmpty {
+                        ContentUnavailableView(
+                            "No \(model.selectedFilter.rawValue)",
+                            systemImage: "magnifyingglass",
+                            description: Text("Try another filter or search.")
+                        )
+                    } else {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 12)], spacing: 12) {
+                            ForEach(model.filteredResults) { item in
+                                DiscoveryPosterTile(
+                                    item: item,
+                                    showTitle: true,
+                                    showKindBadge: model.selectedFilter == .all
+                                )
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                    }
                 }
+                .padding(.top, 4)
             }
         }
     }
@@ -332,14 +340,14 @@ private struct ScopedDiscoveryGrid: View {
     private let columns = [GridItem(.adaptive(minimum: 110), spacing: 12)]
 
     var body: some View {
-        VStack(spacing: 12) {
-            DiscoveryScopePicker("Filter", selection: $scope) {
-                ForEach(SearchMediaScope.allCases) { scope in
-                    Text(scope.rawValue).tag(scope)
+        ScrollView {
+            VStack(spacing: 12) {
+                DiscoveryScopePicker("Filter", selection: $scope) {
+                    ForEach(SearchMediaScope.allCases) { scope in
+                        Text(scope.rawValue).tag(scope)
+                    }
                 }
-            }
 
-            ScrollView {
                 LazyVGrid(columns: columns, spacing: 12) {
                     ForEach(scope.filter(items)) { item in
                         DiscoveryPosterTile(
@@ -350,8 +358,8 @@ private struct ScopedDiscoveryGrid: View {
                     }
                 }
                 .padding(.horizontal, 12)
-                .padding(.top, 4)
             }
+            .padding(.top, 4)
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
