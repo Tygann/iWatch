@@ -8,14 +8,15 @@ struct SettingsPresentationTests {
         #expect(SettingsHomeSection.allCases.map(\.rawValue) == [
             "Preferences",
             "Sync",
-            "Support",
             "Advanced"
         ])
     }
 
     @Test
-    func shareIsHiddenUntilPublicStoreURLExists() {
+    func shareCopyRemainsUsefulBeforePublicStoreURLExists() {
         #expect(AppDistributionPresentation.appStoreURL == nil)
+        #expect(AppDistributionPresentation.shareText.contains("iWatch"))
+        #expect(AppDistributionPresentation.shareText.contains("track"))
     }
 
     @Test
@@ -24,6 +25,14 @@ struct SettingsPresentationTests {
             "Storage",
             "Reset"
         ])
+    }
+
+    @Test
+    @MainActor
+    func traktConnectionAccessoryMapsConnectionStates() {
+        #expect(TraktConnectionAccessory.resolve(isConnected: false, isConnecting: false) == .connect)
+        #expect(TraktConnectionAccessory.resolve(isConnected: false, isConnecting: true) == .connecting)
+        #expect(TraktConnectionAccessory.resolve(isConnected: true, isConnecting: false) == .connected)
     }
 
     @Test

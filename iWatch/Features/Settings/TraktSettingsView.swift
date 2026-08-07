@@ -1,5 +1,18 @@
 import SwiftUI
 
+enum TraktConnectionAccessory: Equatable {
+    case connect
+    case connecting
+    case connected
+
+    static func resolve(isConnected: Bool, isConnecting: Bool) -> Self {
+        if isConnecting {
+            return .connecting
+        }
+        return isConnected ? .connected : .connect
+    }
+}
+
 struct TraktSettingsView: View {
     @Environment(AppSession.self) private var session
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -14,8 +27,6 @@ struct TraktSettingsView: View {
             if session.traktConnected {
                 syncSection
                 disconnectSection
-            } else {
-                connectSection
             }
 
             if let error = session.traktLastError {
@@ -66,13 +77,13 @@ struct TraktSettingsView: View {
                 if dynamicTypeSize.isAccessibilitySize {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Status")
-                        statusValue
+                        connectionAccessory
                     }
                 } else {
                     HStack {
                         Text("Status")
                         Spacer()
-                        statusValue
+                        connectionAccessory
                     }
                 }
             }
@@ -87,20 +98,6 @@ struct TraktSettingsView: View {
             Text("Connection")
         } footer: {
             Text("Trakt syncs your Watchlist and watched history. Your iWatch library also remains in iCloud.")
-        }
-    }
-
-    private var connectSection: some View {
-        Section {
-            Button {
-                session.startTraktOAuth()
-            } label: {
-                Label(
-                    session.traktIsConnecting ? "Connecting…" : "Connect Trakt",
-                    systemImage: "link"
-                )
-            }
-            .disabled(session.traktIsConnecting || session.isErasingAllData)
         }
     }
 
@@ -163,25 +160,48 @@ struct TraktSettingsView: View {
         }
     }
 
-    private var statusTitle: String {
-        if session.traktIsConnecting {
-            return "Connecting"
+    @ViewBuilder
+    private var connectionAccessory: some View {
+        switch TraktConnectionAccessory.resolve(
+            isConnected: session.traktConnected,
+            isConnecting: session.traktIsConnecting
+        ) {
+        case .connect:
+            Button("Connect") {
+                session.startTraktOAuth()
+            }
+            .buttonStyle(.borderless)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Color.accentColor)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.accentColor.opacity(0.12), in: Capsule())
+            .fixedSize()
+            .disabled(session.isErasingAllData)
+            .accessibilityLabel("Connect Trakt")
+
+        case .connecting:
+            HStack(spacing: 5) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Connecting")
+                    .font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(.secondary)
+            .fixedSize()
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Trakt connecting")
+
+        case .connected:
+            Text("Connected")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.green)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.green.opacity(0.12), in: Capsule())
+                .fixedSize()
+                .accessibilityLabel("Trakt connected")
         }
-        return session.traktConnected ? "Connected" : "Not Connected"
-    }
-
-    private var statusImage: String {
-        session.traktConnected ? "checkmark.circle.fill" : "circle"
-    }
-
-    private var statusColor: Color {
-        session.traktConnected ? .green : .secondary
-    }
-
-    private var statusValue: some View {
-        Label(statusTitle, systemImage: statusImage)
-            .foregroundStyle(statusColor)
-            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

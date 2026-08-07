@@ -5,7 +5,6 @@ import SwiftUI
 enum SettingsHomeSection: String, CaseIterable {
     case preferences = "Preferences"
     case sync = "Sync"
-    case support = "Support"
     case advanced = "Advanced"
 }
 
@@ -21,7 +20,7 @@ struct SettingsView: View {
         Form {
             preferencesSection
             syncSection
-            supportSection
+            appSection
             advancedSection
         }
         .navigationTitle("Settings")
@@ -44,15 +43,16 @@ struct SettingsView: View {
             .pickerStyle(.menu)
             .tint(.secondary)
 
-            NavigationLink {
-                AppThemeView()
+            Picker(selection: $appTheme) {
+                ForEach(AppTheme.allCases) { theme in
+                    Text(theme.title)
+                        .tag(theme)
+                }
             } label: {
-                SettingsNavigationLabel(
-                    title: "Appearance",
-                    systemImage: "circle.righthalf.filled",
-                    detail: appTheme.title
-                )
+                Label("Appearance", systemImage: "circle.righthalf.filled")
             }
+            .pickerStyle(.menu)
+            .tint(.secondary)
         }
     }
 
@@ -82,22 +82,23 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Support Section
-    private var supportSection: some View {
-        Section(SettingsHomeSection.support.rawValue) {
+    // MARK: - App Section
+    private var appSection: some View {
+        Section {
+            ShareLink(
+                item: AppDistributionPresentation.shareText,
+                preview: SharePreview("iWatch")
+            ) {
+                Label("Share iWatch", systemImage: "square.and.arrow.up")
+            }
+            .buttonStyle(.plain)
+
             Button {
                 requestReview()
             } label: {
                 Label("Rate iWatch", systemImage: "star")
             }
             .buttonStyle(.plain)
-
-            if let appStoreURL = AppDistributionPresentation.appStoreURL {
-                ShareLink(item: appStoreURL, preview: SharePreview("iWatch")) {
-                    Label("Share iWatch", systemImage: "square.and.arrow.up")
-                }
-                .buttonStyle(.plain)
-            }
 
             NavigationLink {
                 AboutView()
