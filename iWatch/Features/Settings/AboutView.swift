@@ -37,11 +37,10 @@ struct AboutView: View {
     private var appIdentity: some View {
         Section {
             VStack(spacing: 12) {
-                Image("AppIcon")
+                Image("iWatchLogo")
                     .resizable()
                     .scaledToFit()
                     .frame(width: 96, height: 96)
-                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                     .accessibilityHidden(true)
 
                 Text("iWatch")
@@ -61,6 +60,7 @@ struct AboutView: View {
         }
         .listRowBackground(Color.clear)
     }
+
 }
 
 #Preview {

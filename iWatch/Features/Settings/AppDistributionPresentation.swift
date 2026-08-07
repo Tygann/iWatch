@@ -1,14 +1,11 @@
 import Foundation
 
 enum AppDistributionPresentation {
-    // Add the public App Store product URL after iWatch is available for download.
-    static let appStoreURL: URL? = nil
+    // Replace the TestFlight URL with the public App Store product URL after release.
+    static let publicInstallURL = URL(string: "https://testflight.apple.com/join/r6MFxreq")!
 
     static var shareText: String {
         let introduction = "iWatch helps you track the movies and shows you care about."
-        guard let appStoreURL else {
-            return introduction
-        }
-        return "\(introduction) \(appStoreURL.absoluteString)"
+        return "\(introduction) \(publicInstallURL.absoluteString)"
     }
 }

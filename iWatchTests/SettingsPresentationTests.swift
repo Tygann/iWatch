@@ -13,10 +13,10 @@ struct SettingsPresentationTests {
     }
 
     @Test
-    func shareCopyRemainsUsefulBeforePublicStoreURLExists() {
-        #expect(AppDistributionPresentation.appStoreURL == nil)
+    func shareCopyIncludesCurrentInstallURL() {
         #expect(AppDistributionPresentation.shareText.contains("iWatch"))
         #expect(AppDistributionPresentation.shareText.contains("track"))
+        #expect(AppDistributionPresentation.shareText.contains("testflight.apple.com/join/r6MFxreq"))
     }
 
     @Test
