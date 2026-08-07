@@ -187,6 +187,17 @@ struct TMDbTrendingItemDTO: Decodable {
     let firstAirDate: String?
 }
 
+struct TMDbWatchProviderPageDTO: Decodable {
+    let results: [TMDbWatchProviderDTO]
+}
+
+struct TMDbWatchProviderDTO: Decodable {
+    let providerId: Int
+    let providerName: String
+    let logoPath: String?
+    let displayPriority: Int?
+}
+
 // MARK: - Movie / Show supplementary details
 struct TMDbMediaSupplementaryDTO: Decodable {
     struct Credit: Decodable {

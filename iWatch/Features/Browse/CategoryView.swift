@@ -1,32 +1,56 @@
-import SwiftUI
 import Observation
+import SwiftUI
 
 @MainActor
 @Observable
 private final class BrowseCategoryModel {
+    struct Section: Identifiable {
+        let collection: DiscoveryCollection
+        var items: [SearchItem] = []
+        var isLoading = true
+        var errorText: String?
+
+        var id: DiscoveryCollection { collection }
+    }
+
     private let repository: LibraryRepository
     private let kind: MediaKind
 
-    var trending: [SearchItem] = []
-    var isLoading = true
-    var errorText: String?
+    var sections: [Section]
 
     init(kind: MediaKind, repository: LibraryRepository) {
         self.kind = kind
         self.repository = repository
+        sections = DiscoveryCollection.collections(for: kind).map {
+            Section(collection: $0, items: [], isLoading: true, errorText: nil)
+        }
     }
 
     func load() async {
-        isLoading = true
-        defer { isLoading = false }
+        await withTaskGroup(of: (DiscoveryCollection, Result<[SearchItem], Error>).self) { group in
+            for collection in sections.map(\.collection) {
+                group.addTask { [repository, kind] in
+                    do {
+                        return (collection, .success(try await repository.discovery(kind: kind, collection: collection)))
+                    } catch {
+                        return (collection, .failure(error))
+                    }
+                }
+            }
 
-        do {
-            trending = try await repository.trending(kind: kind)
-            errorText = nil
-        } catch {
-            guard !error.isCancelled else { return }
-            trending = []
-            errorText = error.localizedDescription
+            for await (collection, result) in group {
+                guard let index = sections.firstIndex(where: { $0.collection == collection }) else { continue }
+                sections[index].isLoading = false
+                switch result {
+                case .success(let items):
+                    sections[index].items = items
+                    sections[index].errorText = nil
+                case .failure(let error):
+                    guard !error.isCancelled else { continue }
+                    sections[index].items = []
+                    sections[index].errorText = error.localizedDescription
+                }
+            }
         }
     }
 }
@@ -42,7 +66,7 @@ struct BrowseCategoryView: View {
     var body: some View {
         Group {
             if let model {
-                BrowseCategoryBody(model: model, title: title)
+                BrowseCategoryBody(model: model, kind: kind, title: title)
             } else {
                 ProgressView()
                     .task {
@@ -58,50 +82,90 @@ struct BrowseCategoryView: View {
 
 private struct BrowseCategoryBody: View {
     @Bindable var model: BrowseCategoryModel
+    let kind: MediaKind
     let title: String
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Trending")
-                        .font(.title2.bold())
-                        .padding(.horizontal)
-
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(spacing: 12) {
-                            ForEach(model.trending) { item in
-                                MediaTile(
-                                    ref: item.mediaID,
-                                    title: item.title,
-                                    posterPath: item.posterPath,
-                                    showTitle: true
-                                )
-                                .frame(width: 110)
-                            }
-                        }
-                        .scrollTargetLayout()
-                        .padding(.horizontal)
-                    }
-                    .scrollTargetBehavior(.viewAligned)
+            LazyVStack(alignment: .leading, spacing: 12) {
+                ForEach(model.sections) { section in
+                    DiscoverySectionView(section: section, kind: kind)
                 }
+
+                BrowseByServiceLink(kind: kind)
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                    .padding(.bottom, 24)
             }
-            .padding(.top, 12)
         }
         .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
-        .overlay {
-            if model.isLoading {
-                ProgressView().scaleEffect(1.2)
-            } else if let errorText = model.errorText {
-                ContentUnavailableView("Error",
-                                       systemImage: "exclamationmark.triangle",
-                                       description: Text(errorText))
-            } else if model.trending.isEmpty {
-                ContentUnavailableView("No \(title)",
-                                       systemImage: title == "Movies" ? "film" : "tv",
-                                       description: Text("Nothing trending right now."))
+        .navigationBarTitleDisplayMode(.large)
+    }
+}
+
+private struct DiscoverySectionView: View {
+    let section: BrowseCategoryModel.Section
+    let kind: MediaKind
+
+    var body: some View {
+        if section.isLoading {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(section.collection.title(for: kind))
+                    .font(.title3.bold())
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 180)
             }
+            .padding(.horizontal)
+        } else if !section.items.isEmpty {
+            MediaCollectionRow(title: section.collection.title(for: kind)) {
+                SearchCollectionView(title: section.collection.title(for: kind), items: section.items)
+            } content: {
+                ForEach(section.items) { item in
+                    MediaTile(ref: item.mediaID, title: item.title, posterPath: item.posterPath, showTitle: true)
+                        .frame(width: 110)
+                }
+            }
+        } else if section.errorText != nil {
+            Label("Unable to load \(section.collection.title(for: kind).lowercased())", systemImage: "exclamationmark.triangle")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal)
+                .padding(.vertical, 12)
         }
+    }
+}
+
+struct BrowseByServiceLink: View {
+    let kind: MediaKind?
+
+    var body: some View {
+        NavigationLink {
+            ProviderBrowseView(initialKind: kind ?? .movie)
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: "play.tv.fill")
+                    .font(.title2)
+                    .foregroundStyle(.white)
+                    .frame(width: 46, height: 46)
+                    .background(.blue.gradient, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Browse by Service")
+                        .font(.headline)
+                    Text("Find titles available to stream")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.callout.bold())
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(14)
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 }

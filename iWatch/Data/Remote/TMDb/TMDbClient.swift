@@ -108,6 +108,70 @@ final class TMDbService {
         }
         return pageDTO.results.map { TMDbMappers.trendingItem($0, kind: kind) }
     }
+
+    func discovery(kind: MediaKind, collection: DiscoveryCollection) async throws -> [SearchItem] {
+        if collection == .trending {
+            return try await trending(kind: kind)
+        }
+
+        let path: String
+        switch (kind, collection) {
+        case (.movie, .popular): path = "/movie/popular"
+        case (.movie, .topRated): path = "/movie/top_rated"
+        case (.movie, .nowPlaying): path = "/movie/now_playing"
+        case (.movie, .upcoming): path = "/movie/upcoming"
+        case (.show, .popular): path = "/tv/popular"
+        case (.show, .topRated): path = "/tv/top_rated"
+        case (.show, .airingThisWeek): path = "/tv/on_the_air"
+        default: return []
+        }
+
+        let page = try await api.fetch(route(path), as: TMDbTrendingPageDTO.self)
+        return page.results.map { TMDbMappers.trendingItem($0, kind: kind) }
+    }
+
+    func watchProviders(kind: MediaKind, regionCode: String) async throws -> [DiscoveryProvider] {
+        let mediaPath = kind == .movie ? "movie" : "tv"
+        let page = try await api.fetch(
+            route("/watch/providers/\(mediaPath)", query: [
+                .init(name: "watch_region", value: regionCode.uppercased())
+            ]),
+            as: TMDbWatchProviderPageDTO.self
+        )
+        return page.results
+            .map {
+                DiscoveryProvider(
+                    id: $0.providerId,
+                    name: $0.providerName,
+                    logoPath: $0.logoPath,
+                    displayPriority: $0.displayPriority ?? .max
+                )
+            }
+            .sorted {
+                if $0.displayPriority == $1.displayPriority { return $0.name < $1.name }
+                return $0.displayPriority < $1.displayPriority
+            }
+    }
+
+    func discover(
+        kind: MediaKind,
+        providerID: Int,
+        offerType: ProviderOfferType,
+        regionCode: String
+    ) async throws -> [SearchItem] {
+        let mediaPath = kind == .movie ? "movie" : "tv"
+        let page = try await api.fetch(
+            route("/discover/\(mediaPath)", query: [
+                .init(name: "include_adult", value: "false"),
+                .init(name: "sort_by", value: "popularity.desc"),
+                .init(name: "watch_region", value: regionCode.uppercased()),
+                .init(name: "with_watch_monetization_types", value: offerType.tmdbValue),
+                .init(name: "with_watch_providers", value: String(providerID))
+            ]),
+            as: TMDbTrendingPageDTO.self
+        )
+        return page.results.map { TMDbMappers.trendingItem($0, kind: kind) }
+    }
 }
 
 typealias TMDbClient = TMDbService

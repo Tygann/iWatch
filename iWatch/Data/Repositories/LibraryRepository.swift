@@ -31,6 +31,32 @@ final class LibraryRepository {
         return items
     }
 
+    func discovery(kind: MediaKind, collection: DiscoveryCollection) async throws -> [SearchItem] {
+        let items = try await tmdb.discovery(kind: kind, collection: collection)
+        try cacheSearchItems(items)
+        return items
+    }
+
+    func watchProviders(kind: MediaKind, regionCode: String) async throws -> [DiscoveryProvider] {
+        try await tmdb.watchProviders(kind: kind, regionCode: regionCode)
+    }
+
+    func discover(
+        kind: MediaKind,
+        providerID: Int,
+        offerType: ProviderOfferType,
+        regionCode: String
+    ) async throws -> [SearchItem] {
+        let items = try await tmdb.discover(
+            kind: kind,
+            providerID: providerID,
+            offerType: offerType,
+            regionCode: regionCode
+        )
+        try cacheSearchItems(items)
+        return items
+    }
+
     func mediaDetails(for id: MediaID, forceRefresh: Bool = false) async throws -> MediaDetails {
         let context = persistence.makeContext()
         if !forceRefresh, let record = mediaRecord(for: id, context: context), isMediaRecordComplete(record) {

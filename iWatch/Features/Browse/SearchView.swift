@@ -5,7 +5,7 @@ import Observation
 @Observable
 private final class SearchScreenModel {
     enum Filter: String, CaseIterable, Identifiable {
-        case top = "Top Results"
+        case top = "All"
         case movies = "Movies"
         case shows = "Shows"
 
@@ -117,6 +117,7 @@ struct SearchView: View {
 private struct SearchViewBody: View {
     @Bindable var model: SearchScreenModel
     @Binding var showSettings: Bool
+    @State private var trendingKind = MediaKind.movie
 
     var body: some View {
         NavigationStack {
@@ -124,8 +125,7 @@ private struct SearchViewBody: View {
                 if model.query.isEmpty {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 24) {
-                            trendingSection(title: "Trending Movies", items: model.movieTrending)
-                            trendingSection(title: "Trending Shows", items: model.showTrending)
+                            trendingSection
 
                             VStack(alignment: .leading, spacing: 12) {
                                 Text("Browse")
@@ -134,8 +134,16 @@ private struct SearchViewBody: View {
 
                                 BrowseGrid()
                                     .padding(.horizontal)
-                                    .padding(.bottom, 8)
                             }
+
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Streaming Services")
+                                    .font(.title2.bold())
+
+                                BrowseByServiceLink(kind: nil)
+                            }
+                            .padding(.horizontal)
+                            .padding(.bottom, 16)
                         }
                         .padding(.top, 8)
                     }
@@ -177,23 +185,64 @@ private struct SearchViewBody: View {
         }
     }
 
-    @ViewBuilder
-    private func trendingSection(title: String, items: [SearchItem]) -> some View {
+    @ViewBuilder private var trendingSection: some View {
+        let items = trendingKind == .movie ? model.movieTrending : model.showTrending
         if !items.isEmpty {
-            MediaCollectionRow(title: title) {
-                SearchCollectionView(title: title, items: items)
-            } content: {
-                ForEach(items) { item in
-                    MediaTile(
-                        ref: item.mediaID,
-                        title: item.title,
-                        posterPath: item.posterPath,
-                        showTitle: false
-                    )
-                    .frame(width: 110)
+            VStack(alignment: .leading, spacing: 4) {
+                ViewThatFits(in: .horizontal) {
+                    HStack {
+                        trendingLink(items: items)
+
+                        Spacer()
+
+                        trendingPicker
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        trendingLink(items: items)
+                        trendingPicker
+                    }
+                }
+                .padding(.horizontal)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 12) {
+                        ForEach(items) { item in
+                            MediaTile(ref: item.mediaID, title: item.title, posterPath: item.posterPath, showTitle: false)
+                                .frame(width: 110)
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.top, 8)
                 }
             }
+            .padding(.top, 12)
         }
+    }
+
+    private func trendingLink(items: [SearchItem]) -> some View {
+        NavigationLink {
+            SearchCollectionView(title: "Trending", items: items)
+        } label: {
+            HStack(spacing: 6) {
+                Text("Trending")
+                    .font(.title3.bold())
+                    .lineLimit(1)
+                Image(systemName: "chevron.right")
+                    .font(.callout.bold())
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var trendingPicker: some View {
+        Picker("Trending Media Type", selection: $trendingKind) {
+            Image(systemName: "film").tag(MediaKind.movie)
+            Image(systemName: "tv").tag(MediaKind.show)
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 104)
     }
 
     @ViewBuilder
@@ -220,70 +269,67 @@ private struct SearchViewBody: View {
                                        description: Text("Try a different title or keyword."))
             } else {
                 ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 12)], spacing: 12) {
+                    LazyVStack(spacing: 0) {
                         ForEach(model.filteredResults) { item in
-//                            VStack(alignment: .leading, spacing: 6) {
-                                MediaTile(
-                                    ref: item.mediaID,
-                                    title: item.title,
-                                    posterPath: item.posterPath,
-                                    showTitle: true
-                                )
+                            SearchResultRow(item: item)
 
-//                                HStack {
-//                                    if let year = item.year {
-//                                        Text(year)
-//                                            .font(.caption)
-//                                            .foregroundStyle(.secondary)
-//                                    }
-//
-//                                    Spacer()
-//
-//                                    if model.selectedFilter == .top {
-//                                        Text(item.kind == .movie ? "Movie" : "TV Show")
-//                                            .font(.caption)
-//                                            .foregroundStyle(item.kind == .movie ? .purple : .blue)
-//                                    }
-//                                }
-//                            }
-                            .overlay(alignment: .topLeading) {
-                                if model.selectedFilter == .top {
-//                                    Text(item.kind == .movie ? "Movie" : "TV Show")
-                                    Image(systemName: item.kind == .movie ? "film.fill" : "tv.fill")
-                                        .font(.caption2.bold())
-//                                        .font(.caption)
-                                        .foregroundStyle(item.kind == .movie ? .purple : .blue)
-                                        .padding(3)
-//                                        .glassEffect()
-                                        .glassEffect(.regular, in: .circle)
-                                        .padding(3)
-                                        .allowsHitTesting(false)
-                                }
-                            }
-                            .overlay(alignment: .topTrailing) {
-                                if let year = item.year {
-                                    Text(year)
-                                        .font(.caption2.bold())
-//                                     .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .padding(3)
-                                        .glassEffect()
-                                        .padding(3)
-                                        .allowsHitTesting(false)
-                                }
-                            }
-                            .frame(width: 110)
+                            Divider()
+                                .padding(.leading, 92)
                         }
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 12)
+                    .padding(.horizontal)
                 }
             }
         }
     }
 }
 
-private struct SearchCollectionView: View {
+private struct SearchResultRow: View {
+    let item: SearchItem
+
+    var body: some View {
+        NavigationLink {
+            MediaDetailView(ref: item.mediaID)
+        } label: {
+            HStack(spacing: 14) {
+                PosterImage(path: item.posterPath, width: 64, cornerRadius: 8)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(item.title)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+
+                    HStack(spacing: 8) {
+                        Label(item.kind == .movie ? "Movie" : "Show", systemImage: item.kind == .movie ? "film" : "tv")
+                            .foregroundStyle(item.kind == .movie ? .purple : .blue)
+
+                        if let year = item.year {
+                            Text(year)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .font(.subheadline)
+                }
+
+                Spacer(minLength: 0)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.bold())
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.vertical, 10)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            WatchlistMenu(ref: item.mediaID, title: item.title, posterPath: item.posterPath)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+struct SearchCollectionView: View {
     let title: String
     let items: [SearchItem]
 
@@ -311,8 +357,15 @@ private struct SearchCollectionView: View {
 }
 
 private struct BrowseGrid: View {
-    private let columns = [GridItem(.flexible(), spacing: 12),
-                           GridItem(.flexible(), spacing: 12)]
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var columns: [GridItem] {
+        if dynamicTypeSize.isAccessibilitySize {
+            [GridItem(.flexible())]
+        } else {
+            [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
+        }
+    }
 
     var body: some View {
         LazyVGrid(columns: columns, spacing: 12) {
