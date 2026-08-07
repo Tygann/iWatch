@@ -29,6 +29,17 @@ struct SettingsView: View {
     // MARK: - Preferences Section
     private var preferencesSection: some View {
         Section(SettingsHomeSection.preferences.rawValue) {
+            Picker(selection: $appTheme) {
+                ForEach(AppTheme.allCases) { theme in
+                    Text(theme.title)
+                        .tag(theme)
+                }
+            } label: {
+                Label("Appearance", systemImage: "circle.righthalf.filled")
+            }
+            .pickerStyle(.menu)
+            .tint(.secondary)
+
             Picker(selection: Binding(
                 get: { router.selectedTab.rawValue },
                 set: { router.updateDefaultTab($0) }
@@ -37,18 +48,7 @@ struct SettingsView: View {
                 Text("Shows").tag(AppRouter.Tab.shows.rawValue)
                 Text("Search").tag(AppRouter.Tab.search.rawValue)
             } label: {
-                Label("Default Tab", systemImage: "platter.filled.bottom.iphone")
-            }
-            .pickerStyle(.menu)
-            .tint(.secondary)
-
-            Picker(selection: $appTheme) {
-                ForEach(AppTheme.allCases) { theme in
-                    Text(theme.title)
-                        .tag(theme)
-                }
-            } label: {
-                Label("Appearance", systemImage: "circle.righthalf.filled")
+                Label("Start Page", systemImage: "platter.filled.bottom.iphone")
             }
             .pickerStyle(.menu)
             .tint(.secondary)
