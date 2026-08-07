@@ -63,8 +63,16 @@ struct ProviderBrowseView: View {
 
 private struct ProviderBrowseBody: View {
     @Bindable var model: ProviderBrowseModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    private let columns = [GridItem(.adaptive(minimum: 96), spacing: 16)]
+    private var columns: [GridItem] {
+        let count = dynamicTypeSize.isAccessibilitySize ? 2 : 4
+        return Array(repeating: GridItem(.flexible(), spacing: 10), count: count)
+    }
+
+    private var providerSize: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 72 : 64
+    }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -88,7 +96,7 @@ private struct ProviderBrowseBody: View {
                                 NavigationLink {
                                     ProviderResultsView(provider: provider, initialKind: model.kind, regionCode: model.regionCode)
                                 } label: {
-                                    ProviderLogo(provider: provider)
+                                    ProviderLogo(provider: provider, size: providerSize)
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -110,12 +118,13 @@ private struct ProviderBrowseBody: View {
 
 struct ProviderLogo: View {
     let provider: DiscoveryProvider
+    let size: CGFloat
 
     var body: some View {
         ServiceProviderTile(
             name: provider.name,
             logoPath: provider.logoPath,
-            size: 72,
+            size: size,
             caption: provider.name,
             captionWeight: .regular
         )

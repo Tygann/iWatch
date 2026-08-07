@@ -138,6 +138,8 @@ private struct SearchViewBody: View {
                         VStack(alignment: .leading, spacing: 24) {
                             trendingSection
 
+                            providerSection
+
                             VStack(alignment: .leading, spacing: 12) {
                                 Text("Browse")
                                     .font(.title2.bold())
@@ -146,9 +148,7 @@ private struct SearchViewBody: View {
                                 BrowseGrid()
                                     .padding(.horizontal)
                             }
-
-                            providerSection
-                                .padding(.bottom, 16)
+                            .padding(.bottom, 16)
                         }
                         .padding(.top, 8)
                     }
@@ -239,7 +239,7 @@ private struct SearchViewBody: View {
                     ProviderBrowseView(initialKind: .movie)
                 } label: {
                     HStack(spacing: 6) {
-                        Text("Streaming Services")
+                        Text("Services")
                             .font(.title3.bold())
                             .lineLimit(1)
                         Image(systemName: "chevron.right")
@@ -332,7 +332,8 @@ private struct DiscoveryPosterTile: View {
                 Image(systemName: item.kind == .movie ? "film.fill" : "tv.fill")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(item.kind == .movie ? .purple : .blue)
-                    .frame(width: 22, height: 22)
+                    .frame(width: 12, height: 12)
+                    .padding(3)
                     .glassEffect(.regular, in: .circle)
                     .padding(3)
                     .allowsHitTesting(false)
