@@ -236,7 +236,7 @@ private struct SearchViewBody: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 NavigationLink {
-                    ProviderBrowseView(initialKind: .movie)
+                    ProviderBrowseView()
                 } label: {
                     HStack(spacing: 6) {
                         Text("Services")
@@ -276,13 +276,11 @@ private struct SearchViewBody: View {
     @ViewBuilder
     private var resultsSection: some View {
         VStack(spacing: 16) {
-            Picker("Filter", selection: $model.selectedFilter) {
+            DiscoveryScopePicker("Filter", selection: $model.selectedFilter) {
                 ForEach(SearchMediaScope.allCases) { filter in
                     Text(filter.rawValue).tag(filter)
                 }
             }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
 
             if model.isSearching {
                 ProgressView()
@@ -384,13 +382,11 @@ private struct ScopedDiscoveryGrid: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            Picker("Filter", selection: $scope) {
+            DiscoveryScopePicker("Filter", selection: $scope) {
                 ForEach(SearchMediaScope.allCases) { scope in
                     Text(scope.rawValue).tag(scope)
                 }
             }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
 
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 12) {

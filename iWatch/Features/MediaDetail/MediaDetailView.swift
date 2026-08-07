@@ -753,6 +753,7 @@ private struct MediaDetailBody: View {
     private var whereToWatchSection: some View {
         if let availability = model.supplementaryDetails?.watchAvailability {
             let options = availability.stream.map { ($0, "Stream") }
+                + availability.rent.map { ($0, "Rent") }
                 + availability.buy.map { ($0, "Buy") }
 
             if !options.isEmpty {

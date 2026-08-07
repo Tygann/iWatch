@@ -7,13 +7,11 @@ private final class ProviderBrowseModel {
     private let repository: LibraryRepository
     let regionCode: String
 
-    var kind: MediaKind
     var providers: [DiscoveryProvider] = []
     var isLoading = true
     var errorText: String?
 
-    init(kind: MediaKind, repository: LibraryRepository, regionCode: String) {
-        self.kind = kind
+    init(repository: LibraryRepository, regionCode: String) {
         self.repository = repository
         self.regionCode = regionCode
     }
@@ -22,7 +20,7 @@ private final class ProviderBrowseModel {
         isLoading = true
         defer { isLoading = false }
         do {
-            providers = try await repository.watchProviders(kind: kind, regionCode: regionCode)
+            providers = try await repository.watchProviders(regionCode: regionCode)
             errorText = nil
         } catch {
             guard !error.isCancelled else { return }
@@ -33,8 +31,6 @@ private final class ProviderBrowseModel {
 }
 
 struct ProviderBrowseView: View {
-    let initialKind: MediaKind
-
     @Environment(AppContainer.self) private var container
     @State private var model: ProviderBrowseModel?
 
@@ -46,7 +42,6 @@ struct ProviderBrowseView: View {
                 ProgressView()
                     .task {
                         let newModel = ProviderBrowseModel(
-                            kind: initialKind,
                             repository: container.libraryRepository,
                             regionCode: Locale.current.region?.identifier ?? "US"
                         )
@@ -57,7 +52,7 @@ struct ProviderBrowseView: View {
             }
         }
         .navigationTitle("Services")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -75,41 +70,31 @@ private struct ProviderBrowseBody: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
-            Picker("Media Type", selection: $model.kind) {
-                Text("Movies").tag(MediaKind.movie)
-                Text("Shows").tag(MediaKind.show)
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .onChange(of: model.kind) { _, _ in Task { await model.load() } }
-
-            Group {
-                if model.isLoading {
-                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let errorText = model.errorText {
-                    ContentUnavailableView("Services Unavailable", systemImage: "wifi.exclamationmark", description: Text(errorText))
-                } else {
-                    ScrollView {
-                        LazyVGrid(columns: columns, spacing: 20) {
-                            ForEach(model.providers) { provider in
-                                NavigationLink {
-                                    ProviderResultsView(provider: provider, initialKind: model.kind, regionCode: model.regionCode)
-                                } label: {
-                                    ProviderLogo(provider: provider, size: providerSize)
-                                }
-                                .buttonStyle(.plain)
+        Group {
+            if model.isLoading {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let errorText = model.errorText {
+                ContentUnavailableView("Services Unavailable", systemImage: "wifi.exclamationmark", description: Text(errorText))
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 20) {
+                        ForEach(model.providers) { provider in
+                            NavigationLink {
+                                ProviderResultsView(provider: provider, initialKind: .movie, regionCode: model.regionCode)
+                            } label: {
+                                ProviderLogo(provider: provider, size: providerSize)
                             }
+                            .buttonStyle(.plain)
                         }
-                        .padding()
-
-                        Text("Availability for \(Locale.current.localizedString(forRegionCode: model.regionCode) ?? model.regionCode). Provider data by JustWatch.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
-                            .padding(.bottom, 24)
                     }
+                    .padding()
+
+                    Text("Availability for \(Locale.current.localizedString(forRegionCode: model.regionCode) ?? model.regionCode). Provider data by JustWatch.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                        .padding(.bottom, 24)
                 }
             }
         }
@@ -203,20 +188,27 @@ private struct ProviderResultsBody: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            Picker("Media Type", selection: $model.kind) {
+            DiscoveryScopePicker("Media Type", selection: $model.kind) {
                 Text("Movies").tag(MediaKind.movie)
                 Text("Shows").tag(MediaKind.show)
             }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
             .onChange(of: model.kind) { _, _ in Task { await model.load() } }
 
-            Picker("Availability", selection: $model.offerType) {
-                ForEach(ProviderOfferType.allCases) { offerType in
-                    Text(offerType.title).tag(offerType)
+            HStack {
+                Menu {
+                    Picker("Availability", selection: $model.offerType) {
+                        ForEach(ProviderOfferType.allCases) { offerType in
+                            Text(offerType.title).tag(offerType)
+                        }
+                    }
+                } label: {
+                    Label(model.offerType.title, systemImage: "line.3.horizontal.decrease")
                 }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+
+                Spacer()
             }
-            .pickerStyle(.segmented)
             .padding(.horizontal)
             .onChange(of: model.offerType) { _, _ in Task { await model.load() } }
 
