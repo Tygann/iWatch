@@ -194,24 +194,6 @@ private struct ProviderResultsBody: View {
             }
             .onChange(of: model.kind) { _, _ in Task { await model.load() } }
 
-            HStack {
-                Menu {
-                    Picker("Availability", selection: $model.offerType) {
-                        ForEach(ProviderOfferType.allCases) { offerType in
-                            Text(offerType.title).tag(offerType)
-                        }
-                    }
-                } label: {
-                    Label(model.offerType.title, systemImage: "line.3.horizontal.decrease")
-                }
-                .buttonStyle(.bordered)
-                .buttonBorderShape(.capsule)
-
-                Spacer()
-            }
-            .padding(.horizontal)
-            .onChange(of: model.offerType) { _, _ in Task { await model.load() } }
-
             if model.isLoading {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let errorText = model.errorText {
@@ -233,6 +215,29 @@ private struct ProviderResultsBody: View {
                         .foregroundStyle(.secondary)
                         .padding(.bottom, 24)
                 }
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    ForEach(ProviderOfferType.allCases) { offerType in
+                        Button {
+                            guard model.offerType != offerType else { return }
+                            model.offerType = offerType
+                            Task { await model.load() }
+                        } label: {
+                            if model.offerType == offerType {
+                                Label(offerType.title, systemImage: "checkmark")
+                            } else {
+                                Text(offerType.title)
+                            }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease")
+                }
+                .accessibilityLabel("Availability")
+                .accessibilityValue(model.offerType.title)
             }
         }
     }
