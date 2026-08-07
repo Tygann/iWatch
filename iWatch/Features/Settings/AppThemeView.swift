@@ -51,19 +51,27 @@ struct AppThemeView: View {
     var body: some View {
         Form {
             Section {
-                Picker("Appearance", selection: $appTheme) {
-                    ForEach(AppTheme.allCases) { theme in
-                        Label(theme.title, systemImage: theme.systemImage)
-                            .tag(theme)
+                ForEach(AppTheme.allCases) { theme in
+                    Button {
+                        appTheme = theme
+                    } label: {
+                        HStack {
+                            Label(theme.title, systemImage: theme.systemImage)
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            if appTheme == theme {
+                                Image(systemName: "checkmark")
+                                    .fontWeight(.semibold)
+                            }
+                        }
                     }
+                    .accessibilityAddTraits(appTheme == theme ? .isSelected : [])
                 }
-                .pickerStyle(.inline)
-                .labelsHidden()
             } footer: {
                 Text("System automatically follows your device’s appearance setting.")
             }
         }
-        .navigationTitle("App Appearance")
+        .navigationTitle("Appearance")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

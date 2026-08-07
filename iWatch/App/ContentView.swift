@@ -7,6 +7,8 @@ struct ContentView: View {
     @Environment(AppRouter.self) private var router
 
     var body: some View {
+        @Bindable var router = router
+
         Group {
             if ProcessInfo.processInfo.arguments.contains("UITEST_MODE") {
                 tabView
@@ -17,6 +19,9 @@ struct ContentView: View {
         }
         .task(id: session.libraryRevision) {
             await prewarmShows()
+        }
+        .sheet(isPresented: $router.isShowingSettings) {
+            SettingsSheet()
         }
     }
 

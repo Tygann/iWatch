@@ -8,8 +8,8 @@ struct SyncDiagnosticsView: View {
     var body: some View {
         Form {
             statusSection
-            importedLibrarySection
-            outboundQueueSection
+            librarySection
+            uploadQueueSection
             maintenanceSection
             resetSection
 
@@ -26,7 +26,7 @@ struct SyncDiagnosticsView: View {
                 }
             }
         }
-        .navigationTitle("Sync Diagnostics")
+        .navigationTitle("Trakt Diagnostics")
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog(
             "Reset local Trakt sync data?",
@@ -69,7 +69,7 @@ struct SyncDiagnosticsView: View {
                 .foregroundStyle(.secondary)
             }
 
-            LabeledContent("Initial Import") {
+            LabeledContent("Library Import") {
                 Text(session.syncDiagnostics.initialBaselineComplete ? "Complete" : "Pending")
                     .foregroundStyle(.secondary)
             }
@@ -81,11 +81,11 @@ struct SyncDiagnosticsView: View {
                 }
             }
         } header: {
-            Text("Current Status")
+            Text("Status")
         }
     }
 
-    private var importedLibrarySection: some View {
+    private var librarySection: some View {
         Section {
             LabeledContent("Watchlist Movies") {
                 Text("\(session.syncDiagnostics.importedMovieCount)")
@@ -102,13 +102,13 @@ struct SyncDiagnosticsView: View {
                     .foregroundStyle(.secondary)
             }
         } header: {
-            Text("Imported Library")
+            Text("Trakt Library")
         } footer: {
             Text("Watchlist includes Trakt Watchlist items and active show progress retained by iWatch.")
         }
     }
 
-    private var outboundQueueSection: some View {
+    private var uploadQueueSection: some View {
         Section {
             LabeledContent("Pending Changes") {
                 Text("\(session.syncDiagnostics.pendingOperationCount)")
@@ -131,14 +131,14 @@ struct SyncDiagnosticsView: View {
             }
 
         } header: {
-            Text("Changes to Upload")
+            Text("Pending Uploads")
         } footer: {
             Text("Zero means iWatch has no local changes waiting to be sent to Trakt.")
         }
     }
 
     private var maintenanceSection: some View {
-        Section("Maintenance") {
+        Section("Repair") {
             if session.syncDiagnostics.deadletterOperationCount > 0 {
                 Button {
                     Task { await session.retryFailedSyncOperations() }
@@ -151,7 +151,7 @@ struct SyncDiagnosticsView: View {
             Button {
                 Task { await session.repairLocalSyncData() }
             } label: {
-                Label("Check and Repair Local Data", systemImage: "cross.case")
+                Label("Check and Repair Sync Data", systemImage: "cross.case")
             }
             .disabled(session.isSyncing || session.isErasingAllData)
         }

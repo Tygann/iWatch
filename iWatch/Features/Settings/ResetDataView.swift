@@ -27,7 +27,7 @@ struct ResetDataView: View {
 
             resetStatusSection
         }
-        .navigationTitle("Reset iWatch")
+        .navigationTitle("Erase All App Data")
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog(
             "Erase all iWatch data?",

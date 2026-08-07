@@ -1,9 +1,6 @@
-import StoreKit
 import SwiftUI
 
 struct AboutView: View {
-    @Environment(\.requestReview) private var requestReview
-
     private var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
     }
@@ -15,17 +12,6 @@ struct AboutView: View {
     var body: some View {
         List {
             appIdentity
-
-            Section("App") {
-                LabeledContent("Version", value: version)
-                LabeledContent("Build", value: build)
-
-                Button {
-                    requestReview()
-                } label: {
-                    Label("Rate iWatch", systemImage: "star")
-                }
-            }
 
             Section {
                 Link(destination: URL(string: "https://www.themoviedb.org/")!) {
@@ -44,16 +30,18 @@ struct AboutView: View {
             }
             .listRowBackground(Color.clear)
         }
-        .navigationTitle("About iWatch")
+        .navigationTitle("About")
         .navigationBarTitleDisplayMode(.inline)
     }
 
     private var appIdentity: some View {
         Section {
             VStack(spacing: 12) {
-                Image(systemName: "sparkles.tv.fill")
-                    .font(.system(size: 72))
-                    .foregroundStyle(.blue.gradient)
+                Image("AppIcon")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 96, height: 96)
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                     .accessibilityHidden(true)
 
                 Text("iWatch")
@@ -62,9 +50,14 @@ struct AboutView: View {
                 Text("Track the movies and shows you care about.")
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
+
+                Text("Version \(version) (\(build))")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
+            .accessibilityElement(children: .combine)
         }
         .listRowBackground(Color.clear)
     }

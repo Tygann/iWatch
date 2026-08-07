@@ -86,15 +86,11 @@ struct SearchView: View {
     @Environment(AppContainer.self) private var container
 
     @State private var model: SearchScreenModel?
-    @State private var showSettings = false
 
     var body: some View {
         Group {
             if let model {
-                SearchViewBody(
-                    model: model,
-                    showSettings: $showSettings
-                )
+                SearchViewBody(model: model)
             } else {
                 ProgressView()
                     .task {
@@ -113,7 +109,7 @@ struct SearchView: View {
 
 private struct SearchViewBody: View {
     @Bindable var model: SearchScreenModel
-    @Binding var showSettings: Bool
+    @Environment(AppRouter.self) private var router
 
     private let featuredStreamingProviderIDs: [Int] = [
         8,    // Netflix
@@ -160,7 +156,7 @@ private struct SearchViewBody: View {
             .toolbarTitleDisplayMode(.inlineLarge)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    Button { showSettings = true } label: {
+                    Button { router.isShowingSettings = true } label: {
                         Image(systemName: "person.crop.circle.fill")
                             .symbolRenderingMode(.palette)
                             .foregroundStyle(.primary, .clear)
@@ -178,16 +174,6 @@ private struct SearchViewBody: View {
             placement: .navigationBarDrawer(displayMode: .automatic),
             prompt: "Movies and TV Shows"
         )
-        .sheet(isPresented: $showSettings) {
-            NavigationStack {
-                SettingsView()
-                    .toolbar {
-                        ToolbarItem(placement: .primaryAction) {
-                            Button(role: .close) { showSettings = false }
-                        }
-                    }
-            }
-        }
     }
 
     @ViewBuilder private var trendingSection: some View {

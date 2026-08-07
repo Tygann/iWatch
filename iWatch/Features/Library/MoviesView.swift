@@ -103,15 +103,11 @@ struct MoviesView: View {
     @Environment(AppSession.self) private var session
 
     @State private var model: MoviesScreenModel?
-    @State private var showSettings = false
 
     var body: some View {
         Group {
             if let model {
-                MoviesViewBody(
-                    model: model,
-                    showSettings: $showSettings
-                )
+                MoviesViewBody(model: model)
             } else {
                 ProgressView()
                     .task {
@@ -125,8 +121,8 @@ struct MoviesView: View {
 
 private struct MoviesViewBody: View {
     @Bindable var model: MoviesScreenModel
-    @Binding var showSettings: Bool
     @Environment(AppSession.self) private var session
+    @Environment(AppRouter.self) private var router
 
     private let cols = [GridItem(.adaptive(minimum: 110), spacing: 12)]
 
@@ -158,7 +154,7 @@ private struct MoviesViewBody: View {
             .toolbarTitleDisplayMode(.inlineLarge)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    Button { showSettings = true } label: {
+                    Button { router.isShowingSettings = true } label: {
                         Image(systemName: "person.crop.circle.fill")
                             .symbolRenderingMode(.palette)
                             .foregroundStyle(.primary, .clear)
@@ -170,16 +166,6 @@ private struct MoviesViewBody: View {
             .task(id: session.libraryRevision) {
                 await model.load(revision: session.libraryRevision)
                 await model.enrichMissingMetadata()
-            }
-            .sheet(isPresented: $showSettings) {
-                NavigationStack {
-                    SettingsView()
-                        .toolbar {
-                            ToolbarItem(placement: .primaryAction) {
-                                Button(role: .close) { showSettings = false }
-                            }
-                        }
-                }
             }
         }
     }

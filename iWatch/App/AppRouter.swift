@@ -11,6 +11,7 @@ final class AppRouter {
     }
 
     var selectedTab: Tab
+    var isShowingSettings = false
 
     init(defaultTab: Int = UserDefaults.standard.integer(forKey: "defaultTab")) {
         self.selectedTab = Tab(rawValue: defaultTab) ?? .movies

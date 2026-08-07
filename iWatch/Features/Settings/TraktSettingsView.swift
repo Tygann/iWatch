@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TraktSettingsView: View {
     @Environment(AppSession.self) private var session
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var showDisconnectConfirmation = false
     @State private var showLinkDecision = false
@@ -61,13 +62,20 @@ struct TraktSettingsView: View {
 
     private var statusSection: some View {
         Section {
-            HStack {
-                Text("Status")
-                Spacer()
-                Image(systemName: statusImage)
-                Text(statusTitle)
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Status")
+                        statusValue
+                    }
+                } else {
+                    HStack {
+                        Text("Status")
+                        Spacer()
+                        statusValue
+                    }
+                }
             }
-            .foregroundStyle(.secondary)
 
             if let lastSyncAt = session.lastSyncAt {
                 LabeledContent("Last Synced") {
@@ -76,9 +84,9 @@ struct TraktSettingsView: View {
                 }
             }
         } header: {
-            Text("Account")
+            Text("Connection")
         } footer: {
-            Text("Watchlist changes sync to Trakt Watchlist and watched activity syncs to Trakt history. iWatch keeps Watchlist items after playback.")
+            Text("Trakt syncs your Watchlist and watched history. Your iWatch library also remains in iCloud.")
         }
     }
 
@@ -112,13 +120,13 @@ struct TraktSettingsView: View {
                 SyncDiagnosticsView()
             } label: {
                 SettingsNavigationLabel(
-                    title: "Sync Diagnostics",
+                    title: "Troubleshooting",
                     systemImage: "stethoscope",
                     detail: session.syncDiagnostics.deadletterOperationCount > 0 ? "Needs Attention" : nil
                 )
             }
         } header: {
-            Text("Sync")
+            Text("Actions")
         } footer: {
             if session.isSyncing {
                 Text("Syncing your latest Trakt changes…")
@@ -164,6 +172,16 @@ struct TraktSettingsView: View {
 
     private var statusImage: String {
         session.traktConnected ? "checkmark.circle.fill" : "circle"
+    }
+
+    private var statusColor: Color {
+        session.traktConnected ? .green : .secondary
+    }
+
+    private var statusValue: some View {
+        Label(statusTitle, systemImage: statusImage)
+            .foregroundStyle(statusColor)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

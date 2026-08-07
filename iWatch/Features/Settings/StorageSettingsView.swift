@@ -12,10 +12,14 @@ struct StorageSettingsView: View {
                         Haptics.notification(.success)
                     }
                 } label: {
-                    Label(
-                        session.isClearingCache ? "Clearing…" : "Clear Temporary Files",
-                        systemImage: "trash"
-                    )
+                    HStack {
+                        Label("Clear Temporary Files", systemImage: "trash")
+                        Spacer()
+                        if session.isClearingCache {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                    }
                 }
                 .disabled(session.isClearingCache || session.isErasingAllData)
             } footer: {
@@ -28,7 +32,7 @@ struct StorageSettingsView: View {
                 }
             }
         }
-        .navigationTitle("Temporary Files")
+        .navigationTitle("Storage")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

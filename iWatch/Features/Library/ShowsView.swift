@@ -118,15 +118,11 @@ struct ShowsView: View {
     @Environment(AppSession.self) private var session
 
     @State private var model: ShowsScreenModel?
-    @State private var showSettings = false
 
     var body: some View {
         Group {
             if let model {
-                ShowsViewBody(
-                    model: model,
-                    showSettings: $showSettings
-                )
+                ShowsViewBody(model: model)
             } else {
                 ProgressView()
                     .task {
@@ -140,8 +136,8 @@ struct ShowsView: View {
 
 private struct ShowsViewBody: View {
     @Bindable var model: ShowsScreenModel
-    @Binding var showSettings: Bool
     @Environment(AppSession.self) private var session
+    @Environment(AppRouter.self) private var router
 
     var body: some View {
         NavigationStack {
@@ -174,7 +170,7 @@ private struct ShowsViewBody: View {
             .toolbarTitleDisplayMode(.inlineLarge)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    Button { showSettings = true } label: {
+                    Button { router.isShowingSettings = true } label: {
                         Image(systemName: "person.crop.circle.fill")
                             .symbolRenderingMode(.palette)
                             .foregroundStyle(.primary, .clear)
@@ -186,16 +182,6 @@ private struct ShowsViewBody: View {
             .task(id: session.libraryRevision) {
                 await model.load(revision: session.libraryRevision)
                 await model.enrichLibrary()
-            }
-            .sheet(isPresented: $showSettings) {
-                NavigationStack {
-                    SettingsView()
-                        .toolbar {
-                            ToolbarItem(placement: .primaryAction) {
-                                Button(role: .close) { showSettings = false }
-                            }
-                        }
-                }
             }
         }
     }
