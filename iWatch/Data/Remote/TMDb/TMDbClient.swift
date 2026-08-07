@@ -80,7 +80,7 @@ final class TMDbService {
 
     // MARK: - Person (with combined credits)
     func personDetails(id: Int) async throws -> TMDbPersonDetailsDTO {
-        let append = URLQueryItem(name: "append_to_response", value: "combined_credits")
+        let append = URLQueryItem(name: "append_to_response", value: "combined_credits,external_ids")
         return try await api.fetch(route("/person/\(id)", query: [append]), as: TMDbPersonDetailsDTO.self)
     }
 

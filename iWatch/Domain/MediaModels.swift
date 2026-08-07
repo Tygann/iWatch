@@ -159,11 +159,36 @@ struct EpisodeDetails: Equatable, Identifiable, Sendable {
 }
 
 struct PersonDetails: Equatable, Sendable {
+    struct Credit: Equatable, Identifiable, Sendable {
+        let media: SearchItem
+        let role: String?
+        let departments: [String]
+        let popularity: Double
+
+        var id: MediaID { media.mediaID }
+    }
+
+    struct ExternalIDs: Equatable, Sendable {
+        let imdb: String?
+        let facebook: String?
+        let instagram: String?
+        let tiktok: String?
+        let twitter: String?
+        let youtube: String?
+    }
+
     let id: Int
     let name: String
     let biography: String?
     let profilePath: String?
-    let knownFor: [SearchItem]
+    let knownForDepartment: String?
+    let birthday: Date?
+    let deathday: Date?
+    let placeOfBirth: String?
+    let homepage: URL?
+    let externalIDs: ExternalIDs
+    let knownFor: [Credit]
+    let credits: [Credit]
 }
 
 struct ShowStatusSnapshot: Equatable, Sendable {

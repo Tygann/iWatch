@@ -137,11 +137,26 @@ struct TMDbEpisodeDTO: Decodable {
 
 // MARK: - Other
 struct TMDbPersonDetailsDTO: Decodable {
+    struct ExternalIDs: Decodable {
+        let imdbId: String?
+        let facebookId: String?
+        let instagramId: String?
+        let tiktokId: String?
+        let twitterId: String?
+        let youtubeId: String?
+    }
+
     let id: Int
     let name: String
     let biography: String?
     let profilePath: String?
+    let knownForDepartment: String?
+    let birthday: String?
+    let deathday: String?
+    let placeOfBirth: String?
+    let homepage: String?
     let combinedCredits: TMDbCombinedCreditsDTO?
+    let externalIds: ExternalIDs?
 }
 
 struct TMDbGenreDTO: Decodable {
@@ -150,7 +165,8 @@ struct TMDbGenreDTO: Decodable {
 }
 
 struct TMDbCombinedCreditsDTO: Decodable {
-    let cast: [TMDbCreditDTO]
+    let cast: [TMDbCreditDTO]?
+    let crew: [TMDbCreditDTO]?
 }
 
 struct TMDbCreditDTO: Decodable {
@@ -162,6 +178,9 @@ struct TMDbCreditDTO: Decodable {
     let releaseDate: String?
     let firstAirDate: String?
     let popularity: Double?
+    let character: String?
+    let job: String?
+    let department: String?
 }
 
 struct TMDbMultiSearchPageDTO: Decodable {

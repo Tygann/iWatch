@@ -237,43 +237,101 @@ enum TMDbMappers {
     }
 
     static func person(_ d: TMDbPersonDetailsDTO) -> PersonDetails {
-        let sortedCredits = (d.combinedCredits?.cast ?? []).sorted {
-            ($0.popularity ?? 0) > ($1.popularity ?? 0)
-        }
-        var seenMedia = Set<MediaID>()
-        let knownFor = sortedCredits.compactMap { credit -> SearchItem? in
-            guard let id = credit.id else { return nil }
-
+        let rawCredits = (d.combinedCredits?.cast ?? []) + (d.combinedCredits?.crew ?? [])
+        var creditsByMedia: [MediaID: [TMDbCreditDTO]] = [:]
+        for credit in rawCredits {
+            guard let id = credit.id else { continue }
             let kind: MediaKind
             switch credit.mediaType {
             case "movie": kind = .movie
             case "tv": kind = .show
-            default: return nil
+            default: continue
+            }
+            creditsByMedia[MediaID(kind: kind, id: id), default: []].append(credit)
+        }
+
+        let credits = creditsByMedia.compactMap { mediaID, entries -> PersonDetails.Credit? in
+            let rankedEntries = entries.sorted {
+                ($0.popularity ?? 0) > ($1.popularity ?? 0)
             }
 
-            let mediaID = MediaID(kind: kind, id: id)
-            guard seenMedia.insert(mediaID).inserted else { return nil }
-
-            let title = credit.title ?? credit.name
+            let title = rankedEntries.compactMap { $0.title ?? $0.name }.first
             guard let title, !title.isEmpty else { return nil }
-            let year = credit.releaseDate.flatMap { String($0.prefix(4)) }
-                ?? credit.firstAirDate.flatMap { String($0.prefix(4)) }
+            let year = rankedEntries.compactMap { entry in
+                entry.releaseDate.flatMap { String($0.prefix(4)) }
+                    ?? entry.firstAirDate.flatMap { String($0.prefix(4)) }
+            }.first
+            let posterPath = rankedEntries.compactMap(\.posterPath).first
 
-            return SearchItem(
-                id: id,
-                kind: kind,
-                title: title,
-                posterPath: credit.posterPath,
-                year: year
+            var seenRoles = Set<String>()
+            let roles = entries.compactMap { entry -> String? in
+                let role = entry.character ?? entry.job
+                guard let role = role?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !role.isEmpty,
+                      seenRoles.insert(role).inserted else { return nil }
+                return role
+            }
+
+            var seenDepartments = Set<String>()
+            let departments = entries.compactMap { entry -> String? in
+                let department = entry.department ?? (entry.character == nil ? nil : "Acting")
+                guard let department = department?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !department.isEmpty,
+                      seenDepartments.insert(department).inserted else { return nil }
+                return department
+            }
+
+            return PersonDetails.Credit(
+                media: SearchItem(
+                    id: mediaID.id,
+                    kind: mediaID.kind,
+                    title: title,
+                    posterPath: posterPath,
+                    year: year
+                ),
+                role: roles.isEmpty ? nil : roles.joined(separator: " • "),
+                departments: departments,
+                popularity: entries.map { $0.popularity ?? 0 }.max() ?? 0
             )
         }
+
+        let filmography = credits.sorted {
+            if $0.media.year != $1.media.year {
+                return ($0.media.year ?? "") > ($1.media.year ?? "")
+            }
+            if $0.popularity != $1.popularity {
+                return $0.popularity > $1.popularity
+            }
+            return $0.media.title.localizedCaseInsensitiveCompare($1.media.title) == .orderedAscending
+        }
+        let knownFor = credits.sorted {
+            if $0.popularity != $1.popularity {
+                return $0.popularity > $1.popularity
+            }
+            return $0.media.title.localizedCaseInsensitiveCompare($1.media.title) == .orderedAscending
+        }
+        let external = d.externalIds
 
         return PersonDetails(
             id: d.id,
             name: d.name,
             biography: d.biography,
             profilePath: d.profilePath,
-            knownFor: Array(knownFor.prefix(12))
+            knownForDepartment: d.knownForDepartment,
+            birthday: d.birthday.flatMap(DateFormatters.tmdbYMD.date(from:)),
+            deathday: d.deathday.flatMap(DateFormatters.tmdbYMD.date(from:)),
+            placeOfBirth: d.placeOfBirth,
+            homepage: d.homepage.flatMap(URL.init(string:)),
+            externalIDs: PersonDetails.ExternalIDs(
+                imdb: external?.imdbId,
+                facebook: external?.facebookId,
+                instagram: external?.instagramId,
+                tiktok: external?.tiktokId,
+                twitter: external?.twitterId,
+                youtube: external?.youtubeId
+            ),
+            knownFor: Array(knownFor.prefix(12)),
+            credits: filmography
         )
     }
 

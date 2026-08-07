@@ -201,12 +201,23 @@ struct ArtworkAndPresentationTests {
           "name": "Example Person",
           "biography": "A biography.",
           "profile_path": "/person.jpg",
+          "known_for_department": "Acting",
+          "birthday": "1980-03-04",
+          "place_of_birth": "Chicago, Illinois",
+          "homepage": "https://example.com",
           "combined_credits": { "cast": [
-            { "media_type": "movie", "id": 1, "title": "Lower Movie", "poster_path": "/lower.jpg", "release_date": "2022-04-01", "popularity": 2 },
-            { "media_type": "tv", "id": 2, "name": "Popular Show", "poster_path": "/show.jpg", "first_air_date": "2024-09-10", "popularity": 10 },
-            { "media_type": "tv", "id": 2, "name": "Popular Show", "popularity": 8 },
+            { "media_type": "movie", "id": 1, "title": "Lower Movie", "poster_path": "/lower.jpg", "release_date": "2022-04-01", "popularity": 2, "character": "Lead" },
+            { "media_type": "tv", "id": 2, "name": "Popular Show", "poster_path": "/show.jpg", "first_air_date": "2024-09-10", "popularity": 10, "character": "Hero" },
+            { "media_type": "tv", "id": 2, "name": "Popular Show", "popularity": 8, "character": "Hero" },
             { "media_type": "person", "id": 3, "name": "Ignored", "popularity": 20 }
-          ] }
+          ], "crew": [
+            { "media_type": "movie", "id": 1, "title": "Lower Movie", "release_date": "2022-04-01", "popularity": 2, "job": "Producer", "department": "Production" },
+            { "media_type": "movie", "id": 4, "title": "Directed Movie", "release_date": "2025-01-01", "popularity": 5, "job": "Director", "department": "Directing" }
+          ] },
+          "external_ids": {
+            "imdb_id": "nm123",
+            "instagram_id": "example"
+          }
         }
         """#
 
@@ -217,10 +228,18 @@ struct ArtworkAndPresentationTests {
         let details = TMDbMappers.person(dto)
 
         #expect(details.name == "Example Person")
-        #expect(details.knownFor.map(\.title) == ["Popular Show", "Lower Movie"])
-        #expect(details.knownFor.map(\.kind) == [.show, .movie])
-        #expect(details.knownFor.map(\.year) == ["2024", "2022"])
-        #expect(details.knownFor.map(\.posterPath) == ["/show.jpg", "/lower.jpg"])
+        #expect(details.knownFor.map(\.media.title) == ["Popular Show", "Directed Movie", "Lower Movie"])
+        #expect(details.knownFor.map(\.media.kind) == [.show, .movie, .movie])
+        #expect(details.credits.map(\.media.year) == ["2025", "2024", "2022"])
+        #expect(details.credits.last?.role == "Lead • Producer")
+        #expect(details.credits.last?.departments == ["Acting", "Production"])
+        #expect(details.credits.last?.media.posterPath == "/lower.jpg")
+        #expect(details.knownForDepartment == "Acting")
+        #expect(details.birthday == DateFormatters.tmdbYMD.date(from: "1980-03-04"))
+        #expect(details.placeOfBirth == "Chicago, Illinois")
+        #expect(details.homepage?.absoluteString == "https://example.com")
+        #expect(details.externalIDs.imdb == "nm123")
+        #expect(details.externalIDs.instagram == "example")
     }
 
     @Test
