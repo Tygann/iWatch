@@ -193,6 +193,37 @@ struct ArtworkAndPresentationTests {
     }
 
     @Test
+    @MainActor
+    func personDetailsMapRankedDeduplicatedKnownForTitles() throws {
+        let json = #"""
+        {
+          "id": 31,
+          "name": "Example Person",
+          "biography": "A biography.",
+          "profile_path": "/person.jpg",
+          "combined_credits": { "cast": [
+            { "media_type": "movie", "id": 1, "title": "Lower Movie", "poster_path": "/lower.jpg", "release_date": "2022-04-01", "popularity": 2 },
+            { "media_type": "tv", "id": 2, "name": "Popular Show", "poster_path": "/show.jpg", "first_air_date": "2024-09-10", "popularity": 10 },
+            { "media_type": "tv", "id": 2, "name": "Popular Show", "popularity": 8 },
+            { "media_type": "person", "id": 3, "name": "Ignored", "popularity": 20 }
+          ] }
+        }
+        """#
+
+        let dto = try JSONDecoder.tmdb.decode(
+            TMDbPersonDetailsDTO.self,
+            from: try #require(json.data(using: .utf8))
+        )
+        let details = TMDbMappers.person(dto)
+
+        #expect(details.name == "Example Person")
+        #expect(details.knownFor.map(\.title) == ["Popular Show", "Lower Movie"])
+        #expect(details.knownFor.map(\.kind) == [.show, .movie])
+        #expect(details.knownFor.map(\.year) == ["2024", "2022"])
+        #expect(details.knownFor.map(\.posterPath) == ["/show.jpg", "/lower.jpg"])
+    }
+
+    @Test
     func artworkKindsUseTMDbSizesAppropriateForTheirContent() throws {
         let path = "/sample.jpg"
         let still = try #require(ImageURLBuilder.make(path, size: .episodeStill))

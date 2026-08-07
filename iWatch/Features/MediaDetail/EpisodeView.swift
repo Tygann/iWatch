@@ -354,11 +354,17 @@ private struct EpisodeViewBody: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: 12) {
                         ForEach(credits, id: \.id) { credit in
-                            MediaCreditCard(
-                                name: credit.name,
-                                subtitle: credit.role ?? credit.job,
-                                profilePath: credit.profilePath
-                            )
+                            NavigationLink {
+                                PersonDetailView(personID: credit.id, name: credit.name)
+                            } label: {
+                                MediaCreditCard(
+                                    name: credit.name,
+                                    subtitle: credit.role ?? credit.job,
+                                    profilePath: credit.profilePath
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Shows details about \(credit.name)")
                         }
                     }
                     .padding(.horizontal)

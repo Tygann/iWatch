@@ -237,13 +237,44 @@ enum TMDbMappers {
     }
 
     static func person(_ d: TMDbPersonDetailsDTO) -> PersonDetails {
-        let refs: [MediaRef] = (d.combinedCredits?.cast ?? []).compactMap { c in
-            guard let id = c.id else { return nil }
-            if c.mediaType == "movie" { return MediaRef(kind: .movie, id: id) }
-            if c.mediaType == "tv" { return MediaRef(kind: .show, id: id) }
-            return nil
+        let sortedCredits = (d.combinedCredits?.cast ?? []).sorted {
+            ($0.popularity ?? 0) > ($1.popularity ?? 0)
         }
-        return PersonDetails(id: d.id, name: d.name, biography: d.biography, profilePath: d.profilePath, knownFor: Array(refs.prefix(12)))
+        var seenMedia = Set<MediaID>()
+        let knownFor = sortedCredits.compactMap { credit -> SearchItem? in
+            guard let id = credit.id else { return nil }
+
+            let kind: MediaKind
+            switch credit.mediaType {
+            case "movie": kind = .movie
+            case "tv": kind = .show
+            default: return nil
+            }
+
+            let mediaID = MediaID(kind: kind, id: id)
+            guard seenMedia.insert(mediaID).inserted else { return nil }
+
+            let title = credit.title ?? credit.name
+            guard let title, !title.isEmpty else { return nil }
+            let year = credit.releaseDate.flatMap { String($0.prefix(4)) }
+                ?? credit.firstAirDate.flatMap { String($0.prefix(4)) }
+
+            return SearchItem(
+                id: id,
+                kind: kind,
+                title: title,
+                posterPath: credit.posterPath,
+                year: year
+            )
+        }
+
+        return PersonDetails(
+            id: d.id,
+            name: d.name,
+            biography: d.biography,
+            profilePath: d.profilePath,
+            knownFor: Array(knownFor.prefix(12))
+        )
     }
 
     static func searchItem(_ dto: TMDbMultiSearchItemDTO) -> SearchItem? {

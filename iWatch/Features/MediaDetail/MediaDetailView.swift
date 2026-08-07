@@ -958,11 +958,17 @@ private struct MediaDetailBody: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: 12) {
                         ForEach(credits) { credit in
-                            MediaCreditCard(
-                                name: credit.name,
-                                subtitle: credit.subtitle,
-                                profilePath: credit.profilePath
-                            )
+                            NavigationLink {
+                                PersonDetailView(personID: credit.id, name: credit.name)
+                            } label: {
+                                MediaCreditCard(
+                                    name: credit.name,
+                                    subtitle: credit.subtitle,
+                                    profilePath: credit.profilePath
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Shows details about \(credit.name)")
                         }
                     }
                 }

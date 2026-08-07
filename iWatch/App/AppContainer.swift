@@ -15,6 +15,7 @@ final class AppContainer {
     let deviceIdentityStore: DeviceIdentityStore
     let libraryRepository: LibraryRepository
     let contentRepository: ContentRepository
+    let peopleRepository: PeopleRepository
     let syncEngine: SyncEngine
     let session: AppSession
     let router: AppRouter
@@ -30,6 +31,7 @@ final class AppContainer {
          deviceIdentityStore: DeviceIdentityStore,
          libraryRepository: LibraryRepository,
          contentRepository: ContentRepository,
+         peopleRepository: PeopleRepository,
          syncEngine: SyncEngine,
          session: AppSession,
          router: AppRouter) {
@@ -43,6 +45,7 @@ final class AppContainer {
         self.deviceIdentityStore = deviceIdentityStore
         self.libraryRepository = libraryRepository
         self.contentRepository = contentRepository
+        self.peopleRepository = peopleRepository
         self.syncEngine = syncEngine
         self.session = session
         self.router = router
@@ -82,6 +85,7 @@ final class AppContainer {
         let resetGate = AppDataResetGate()
         let libraryRepository = LibraryRepository(persistence: persistence, tmdb: tmdb, resetGate: resetGate)
         let contentRepository = ContentRepository(library: libraryRepository)
+        let peopleRepository = PeopleRepository(tmdb: tmdb)
         let syncEngine = SyncEngine(persistence: persistence, trakt: trakt, deviceIdentityStore: deviceIdentityStore, resetGate: resetGate)
         let cloudExportMonitor = CloudKitExportMonitor(containerIdentifier: "iCloud.com.tyler.iWatch")
         let session = AppSession(
@@ -104,6 +108,7 @@ final class AppContainer {
             deviceIdentityStore: deviceIdentityStore,
             libraryRepository: libraryRepository,
             contentRepository: contentRepository,
+            peopleRepository: peopleRepository,
             syncEngine: syncEngine,
             session: session,
             router: router
@@ -131,6 +136,7 @@ final class AppContainer {
         let resetGate = AppDataResetGate()
         let libraryRepository = LibraryRepository(persistence: persistence, tmdb: tmdb, resetGate: resetGate)
         let contentRepository = ContentRepository(library: libraryRepository)
+        let peopleRepository = PeopleRepository(tmdb: tmdb)
         let syncEngine = SyncEngine(persistence: persistence, trakt: trakt, deviceIdentityStore: deviceIdentityStore, resetGate: resetGate)
         let cloudExportMonitor = ImmediateCloudExportMonitor()
         let session = AppSession(
@@ -153,6 +159,7 @@ final class AppContainer {
             deviceIdentityStore: deviceIdentityStore,
             libraryRepository: libraryRepository,
             contentRepository: contentRepository,
+            peopleRepository: peopleRepository,
             syncEngine: syncEngine,
             session: session,
             router: router
@@ -180,6 +187,7 @@ final class AppContainer {
         let resetGate = AppDataResetGate()
         let libraryRepository = LibraryRepository(persistence: persistence, tmdb: tmdb, resetGate: resetGate)
         let contentRepository = ContentRepository(library: libraryRepository)
+        let peopleRepository = PeopleRepository(tmdb: tmdb)
         let syncEngine = SyncEngine(persistence: persistence, trakt: trakt, deviceIdentityStore: deviceIdentityStore, resetGate: resetGate)
         let cloudExportMonitor = ImmediateCloudExportMonitor()
         let session = AppSession(
@@ -204,6 +212,7 @@ final class AppContainer {
             deviceIdentityStore: deviceIdentityStore,
             libraryRepository: libraryRepository,
             contentRepository: contentRepository,
+            peopleRepository: peopleRepository,
             syncEngine: syncEngine,
             session: session,
             router: router
@@ -231,6 +240,7 @@ final class AppContainer {
         let resetGate = AppDataResetGate()
         let libraryRepository = LibraryRepository(persistence: persistence, tmdb: tmdb, resetGate: resetGate)
         let contentRepository = ContentRepository(library: libraryRepository)
+        let peopleRepository = PeopleRepository(tmdb: tmdb)
         let syncEngine = SyncEngine(persistence: persistence, trakt: trakt, deviceIdentityStore: deviceIdentityStore, resetGate: resetGate)
         let cloudExportMonitor = ImmediateCloudExportMonitor()
         let session = AppSession(
@@ -253,6 +263,7 @@ final class AppContainer {
             deviceIdentityStore: deviceIdentityStore,
             libraryRepository: libraryRepository,
             contentRepository: contentRepository,
+            peopleRepository: peopleRepository,
             syncEngine: syncEngine,
             session: session,
             router: router

@@ -156,6 +156,12 @@ struct TMDbCombinedCreditsDTO: Decodable {
 struct TMDbCreditDTO: Decodable {
     let mediaType: String? // "movie" | "tv"
     let id: Int?
+    let title: String?
+    let name: String?
+    let posterPath: String?
+    let releaseDate: String?
+    let firstAirDate: String?
+    let popularity: Double?
 }
 
 struct TMDbMultiSearchPageDTO: Decodable {

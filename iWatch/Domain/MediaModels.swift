@@ -163,7 +163,7 @@ struct PersonDetails: Equatable, Sendable {
     let name: String
     let biography: String?
     let profilePath: String?
-    let knownFor: [MediaRef]
+    let knownFor: [SearchItem]
 }
 
 struct ShowStatusSnapshot: Equatable, Sendable {
