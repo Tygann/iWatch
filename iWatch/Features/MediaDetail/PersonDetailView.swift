@@ -274,7 +274,7 @@ private struct PersonFilmographyView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var filter: Filter = .all
 
-    private let columns = [GridItem(.adaptive(minimum: 100), spacing: 12)]
+    private let columns = [GridItem(.adaptive(minimum: 110), spacing: 12)]
 
     private var filteredCredits: [PersonDetails.Credit] {
         person.credits.filter { credit in
@@ -306,11 +306,7 @@ private struct PersonFilmographyView: View {
                 .pickerStyle(.segmented)
 
                 ForEach(groupedCredits, id: \.year) { group in
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(group.year)
-                            .font(.title3.bold())
-                            .foregroundStyle(.secondary)
-
+                    Section {
                         if dynamicTypeSize.isAccessibilitySize {
                             LazyVStack(spacing: 12) {
                                 ForEach(group.credits) { credit in
@@ -323,16 +319,25 @@ private struct PersonFilmographyView: View {
                                 }
                             }
                         } else {
-                            LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
+                            LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
                                 ForEach(group.credits) { credit in
-                                    PersonCreditPosterTile(credit: credit, width: 100)
+                                    DiscoveryPosterTile(
+                                        item: credit.media,
+                                        showTitle: true,
+                                        showKindBadge: filter == .all,
+                                        subtitle: credit.role ?? credit.departments.first,
+                                        showYearBadge: false
+                                    )
                                 }
                             }
                         }
+                    } header: {
+                        Text(group.year)
+                            .font(.headline.bold())
                     }
                 }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 12)
             .padding(.bottom, 24)
         }
         .navigationTitle("Filmography")
