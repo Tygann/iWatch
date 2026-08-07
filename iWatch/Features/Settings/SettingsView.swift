@@ -5,7 +5,6 @@ import SwiftUI
 enum SettingsHomeSection: String, CaseIterable {
     case preferences = "Preferences"
     case sync = "Sync"
-    case advanced = "Advanced"
 }
 
 struct SettingsView: View {
@@ -21,7 +20,7 @@ struct SettingsView: View {
             preferencesSection
             syncSection
             appSection
-            advancedSection
+            storageAndDataSection
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
@@ -108,13 +107,13 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Advanced Section
-    private var advancedSection: some View {
-        Section(SettingsHomeSection.advanced.rawValue) {
+    // MARK: - Storage & Data Section
+    private var storageAndDataSection: some View {
+        Section {
             NavigationLink {
                 AdvancedSettingsView()
             } label: {
-                Label("Advanced", systemImage: "gearshape.2")
+                Label("Storage & Data", systemImage: "internaldrive")
             }
         }
     }

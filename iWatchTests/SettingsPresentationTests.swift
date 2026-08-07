@@ -7,8 +7,7 @@ struct SettingsPresentationTests {
     func homeSectionsFollowUserFacingHierarchy() {
         #expect(SettingsHomeSection.allCases.map(\.rawValue) == [
             "Preferences",
-            "Sync",
-            "Advanced"
+            "Sync"
         ])
     }
 
