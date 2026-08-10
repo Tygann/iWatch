@@ -1,5 +1,6 @@
 import SwiftUI
 import Observation
+import SwiftData
 
 private enum SearchMediaScope: String, CaseIterable, Identifiable {
     case all = "All"
@@ -469,4 +470,13 @@ private extension LinearGradient {
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
+}
+
+#Preview {
+    let container = AppContainer.preview()
+    SearchView()
+        .environment(container)
+        .environment(container.session)
+        .environment(container.router)
+        .modelContainer(container.persistence.modelContainer)
 }
