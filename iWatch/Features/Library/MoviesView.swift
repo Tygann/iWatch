@@ -284,10 +284,11 @@ private struct MoviesViewBody: View {
             .navigationTitle("Movies")
             .toolbarTitleDisplayMode(.inlineLarge)
             .toolbar {
-                ToolbarItem(placement: .primaryAction) {
+                ToolbarItem(placement: .topBarTrailing) {
                     sortMenu
                 }
-                ToolbarItem(placement: .primaryAction) {
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
+                ToolbarItem(placement: .topBarTrailing) {
                     Button { router.isShowingSettings = true } label: {
                         Image(systemName: "person.crop.circle.fill")
                             .symbolRenderingMode(.palette)
@@ -309,37 +310,36 @@ private struct MoviesViewBody: View {
 
     private var sortMenu: some View {
         Menu {
-            Picker("Sort By", selection: $sortOption) {
-                ForEach(MovieSortOption.allCases) { option in
-                    Text(option.label).tag(option)
+            ForEach(MovieSortOption.allCases) { option in
+                Button {
+                    selectSortOption(option)
+                } label: {
+                    if option == sortOption {
+                        Label {
+                            Text("\(Text(option.label))\n\(Text(sortDirectionLabel).font(.caption).foregroundStyle(.secondary))")
+                        } icon: {
+                            Image(systemName: "checkmark")
+                        }
+                    } else {
+                        Text(option.label)
+                    }
                 }
             }
-
-            Divider()
-
-            Picker("Order", selection: $sortDirection) {
-                Text(ascendingLabel).tag(MovieSortDirection.ascending)
-                Text(descendingLabel).tag(MovieSortDirection.descending)
-            }
         } label: {
-            Image(systemName: "arrow.up.arrow.down")
+            Image(systemName: "line.3.horizontal.decrease")
         }
         .accessibilityLabel("Sort Movies")
     }
 
-    private var ascendingLabel: String {
-        switch sortOption {
-        case .recentActivity: "Oldest First"
-        case .title: "A to Z"
-        case .releaseDate: "Oldest First"
-        }
+    private var sortDirectionLabel: String {
+        sortDirection == .ascending ? "Ascending" : "Descending"
     }
 
-    private var descendingLabel: String {
-        switch sortOption {
-        case .recentActivity: "Newest First"
-        case .title: "Z to A"
-        case .releaseDate: "Newest First"
+    private func selectSortOption(_ option: MovieSortOption) {
+        if option == sortOption {
+            sortDirection = sortDirection == .ascending ? .descending : .ascending
+        } else {
+            sortOption = option
         }
     }
 
