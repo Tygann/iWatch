@@ -2,10 +2,14 @@ import SwiftData
 import StoreKit
 import SwiftUI
 
+// MARK: - Settings State
+
 enum SettingsHomeSection: String, CaseIterable {
     case preferences = "Preferences"
     case sync = "Sync"
 }
+
+// MARK: - Settings Screen
 
 struct SettingsView: View {
     @Environment(AppSession.self) private var session
@@ -147,6 +151,8 @@ struct SettingsView: View {
     }
 }
 
+// MARK: - Settings Components
+
 struct SettingsNavigationLabel: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -180,7 +186,7 @@ struct SettingsNavigationLabel: View {
     }
 }
 
-// MARK: - Preview
+// MARK: - Previews
 #Preview {
     let container = AppContainer.preview()
     NavigationStack {

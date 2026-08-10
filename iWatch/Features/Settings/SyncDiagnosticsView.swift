@@ -1,5 +1,7 @@
 import SwiftUI
 
+// MARK: - Sync Diagnostics Screen
+
 struct SyncDiagnosticsView: View {
     @Environment(AppSession.self) private var session
 
@@ -176,6 +178,8 @@ struct SyncDiagnosticsView: View {
         session.syncDiagnostics.duplicateCandidateCount > 0 ? .orange : .secondary
     }
 }
+
+// MARK: - Previews
 
 #Preview {
     let container = AppContainer.preview()

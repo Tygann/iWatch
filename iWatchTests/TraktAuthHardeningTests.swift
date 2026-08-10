@@ -2,6 +2,8 @@ import Foundation
 import Testing
 @testable import iWatch
 
+// MARK: - Trakt Authentication Tests
+
 @MainActor
 @Suite(.serialized)
 struct TraktAuthHardeningTests {
@@ -109,6 +111,8 @@ struct TraktAuthHardeningTests {
         #expect(stored?.createdAt != nil)
     }
 
+    // MARK: Account Identity
+
     @Test
     func authenticatedAccountUsesUUIDWhenLegacyTraktIDIsNull() async throws {
         let authStore = InMemoryTraktAuthStore()
@@ -158,6 +162,8 @@ struct TraktAuthHardeningTests {
     }
 }
 
+// MARK: - Fixtures
+
 private func validToken() -> TokenResponse {
     TokenResponse(
         accessToken: "valid-access",
@@ -181,6 +187,8 @@ private func makeTraktService(authStore: TraktAuthStore = InMemoryTraktAuthStore
         authStore: authStore
     )
 }
+
+// MARK: - Test Support
 
 private final class MockTraktURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?

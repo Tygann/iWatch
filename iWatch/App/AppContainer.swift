@@ -2,6 +2,8 @@ import Foundation
 import Observation
 import SwiftData
 
+// MARK: - Dependency Container
+
 @MainActor
 @Observable
 final class AppContainer {
@@ -50,6 +52,8 @@ final class AppContainer {
         self.session = session
         self.router = router
     }
+
+    // MARK: Construction
 
     static func bootstrap() -> AppContainer {
         if isRunningTests {
@@ -114,6 +118,8 @@ final class AppContainer {
             router: router
         )
     }
+
+    // MARK: Test and Preview Environments
 
     static func testHost() -> AppContainer {
         let config = AppConfig.load()
@@ -312,6 +318,8 @@ final class AppContainer {
         }
     }
 }
+
+// MARK: - Preview Support
 
 private actor PreviewDeviceIdentityStore: DeviceIdentityStore {
     func currentDeviceID() async -> String { "preview-device" }

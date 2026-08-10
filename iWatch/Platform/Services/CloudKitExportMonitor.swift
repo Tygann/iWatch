@@ -2,12 +2,16 @@ import CloudKit
 import CoreData
 import Foundation
 
+// MARK: - Export State
+
 enum CloudExportConfirmation: Sendable, Equatable {
     case completed(Date)
     case unavailable(String)
     case failed(String)
     case timedOut
 }
+
+// MARK: - CloudKit Export Monitor
 
 @MainActor
 protocol CloudExportMonitoring: AnyObject {
@@ -135,6 +139,8 @@ final class CloudKitExportMonitor: CloudExportMonitoring {
         }
     }
 }
+
+// MARK: - Immediate Export Monitor
 
 @MainActor
 final class ImmediateCloudExportMonitor: CloudExportMonitoring {

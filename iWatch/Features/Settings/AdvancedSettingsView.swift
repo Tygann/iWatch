@@ -1,9 +1,13 @@
 import SwiftUI
 
+// MARK: - Settings State
+
 enum AdvancedSettingsSection: String, CaseIterable {
     case storage = "Storage"
     case reset = "Reset"
 }
+
+// MARK: - Advanced Settings Screen
 
 struct AdvancedSettingsView: View {
     @Environment(AppSession.self) private var session
@@ -143,6 +147,8 @@ struct AdvancedSettingsView: View {
         }
     }
 }
+
+// MARK: - Previews
 
 #Preview {
     let container = AppContainer.preview()

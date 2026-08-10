@@ -1,6 +1,8 @@
 import Observation
 import SwiftUI
 
+// MARK: - Person Detail State
+
 @MainActor
 @Observable
 private final class PersonDetailScreenModel {
@@ -39,6 +41,8 @@ private final class PersonDetailScreenModel {
     }
 }
 
+// MARK: - Person Detail Screen
+
 struct PersonDetailView: View {
     let personID: Int
     let name: String
@@ -76,6 +80,8 @@ struct PersonDetailView: View {
     }
 }
 
+// MARK: - Person Detail Content
+
 private struct PersonDetailBody: View {
     @Bindable var model: PersonDetailScreenModel
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -104,6 +110,8 @@ private struct PersonDetailBody: View {
             }
         }
     }
+
+    // MARK: Person Content
 
     private func personContent(_ person: PersonDetails) -> some View {
         ScrollView {
@@ -226,6 +234,8 @@ private struct PersonDetailBody: View {
     }
 }
 
+// MARK: - Credit Components
+
 private struct PersonCreditPosterTile: View {
     let credit: PersonDetails.Credit
     var width: CGFloat = 110
@@ -260,6 +270,8 @@ private struct PersonCreditPosterTile: View {
             .joined(separator: ", ")
     }
 }
+
+// MARK: - Filmography Screen
 
 private struct PersonFilmographyView: View {
     enum Filter: String, CaseIterable, Identifiable {
@@ -354,6 +366,8 @@ private struct PersonFilmographyView: View {
     }
 }
 
+// MARK: - Filmography Components
+
 private struct PersonFilmographyRow: View {
     let credit: PersonDetails.Credit
 
@@ -378,6 +392,8 @@ private struct PersonFilmographyRow: View {
         .background(.regularMaterial, in: .rect(cornerRadius: 18))
     }
 }
+
+// MARK: - External Links
 
 private struct PersonLinksMenu: View {
     let person: PersonDetails
@@ -441,6 +457,8 @@ private struct PersonLinksMenu: View {
         links.append((label, systemImage, url))
     }
 }
+
+// MARK: - Previews
 
 #Preview {
     let container = AppContainer.preview()

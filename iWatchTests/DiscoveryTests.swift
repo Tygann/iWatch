@@ -2,6 +2,8 @@ import Foundation
 import Testing
 @testable import iWatch
 
+// MARK: - Discovery Tests
+
 @Suite(.serialized)
 struct DiscoveryTests {
     @Test
@@ -97,6 +99,8 @@ struct DiscoveryTests {
         #expect(items.first?.kind == .show)
     }
 }
+
+// MARK: - Test Support
 
 private func makeDiscoveryService() -> TMDbService {
     let configuration = URLSessionConfiguration.ephemeral

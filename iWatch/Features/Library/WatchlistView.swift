@@ -1,6 +1,8 @@
 import SwiftUI
 import Observation
 
+// MARK: - Watchlist State
+
 @MainActor
 @Observable
 private final class WatchlistScreenModel {
@@ -85,6 +87,8 @@ private final class WatchlistScreenModel {
     }
 }
 
+// MARK: - Watchlist Screen
+
 struct WatchlistView: View {
     let kind: MediaKind
     let initialShowItems: [LibraryShowItem]
@@ -125,6 +129,8 @@ struct WatchlistView: View {
         }
     }
 }
+
+// MARK: - Watchlist Content
 
 private struct WatchlistBody: View {
     @Bindable var model: WatchlistScreenModel
@@ -223,6 +229,8 @@ private struct WatchlistBody: View {
     }
 
     @ViewBuilder
+    // MARK: Show Actions
+
     private func continueWatchingTile(_ item: LibraryShowItem) -> some View {
         if let next = item.progress.nextEpisode {
             let episodeRef = EpisodeRef(

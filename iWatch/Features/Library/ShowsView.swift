@@ -2,6 +2,8 @@ import SwiftUI
 import Observation
 import SwiftData
 
+// MARK: - Shows State
+
 @MainActor
 @Observable
 private final class ShowsScreenModel {
@@ -113,6 +115,8 @@ private final class ShowsScreenModel {
     }
 }
 
+// MARK: - Shows Screen
+
 struct ShowsView: View {
     @Environment(AppContainer.self) private var container
     @Environment(AppSession.self) private var session
@@ -133,6 +137,8 @@ struct ShowsView: View {
         }
     }
 }
+
+// MARK: - Shows Content
 
 private struct ShowsViewBody: View {
     @Bindable var model: ShowsScreenModel
@@ -187,6 +193,8 @@ private struct ShowsViewBody: View {
     }
 
     @ViewBuilder
+    // MARK: Library Sections
+
     private var continueWatchingSection: some View {
         if !model.snapshot.continueWatching.isEmpty {
             MediaCollectionRow(title: "Continue Watching") {
@@ -373,6 +381,8 @@ private struct ShowsViewBody: View {
     }
 }
 
+// MARK: - Collection Screen
+
 private struct ShowCollectionView: View {
     let title: String
     let items: [LibraryShowItem]
@@ -431,6 +441,8 @@ private struct ShowCollectionView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 }
+
+// MARK: - Previews
 
 #Preview {
     let container = AppContainer.preview()

@@ -1,12 +1,16 @@
 import Foundation
 import SwiftData
 
+// MARK: - Library Snapshot Reader
+
 actor LibrarySnapshotReader {
     private let persistence: Persistence
 
     init(persistence: Persistence) {
         self.persistence = persistence
     }
+
+    // MARK: Movies
 
     func movieItems() throws -> [LibraryMovieItem] {
         let context = persistence.makeContext()
@@ -69,6 +73,8 @@ actor LibrarySnapshotReader {
             )
         }
     }
+
+    // MARK: Shows
 
     func showItems() throws -> [LibraryShowItem] {
         let context = persistence.makeContext()
@@ -234,6 +240,8 @@ actor LibrarySnapshotReader {
         return ShowStatusSnapshot(bucket: bucket, nextAirDate: nextAirDate)
     }
 }
+
+// MARK: - Progress Enrichment Policy
 
 nonisolated enum LibraryProgressEnrichmentPolicy {
     static func needsEnrichment(

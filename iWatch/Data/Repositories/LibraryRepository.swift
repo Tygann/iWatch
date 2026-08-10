@@ -1,6 +1,8 @@
 import Foundation
 import SwiftData
 
+// MARK: - Library Repository
+
 @MainActor
 final class LibraryRepository {
     private let persistence: Persistence
@@ -18,6 +20,8 @@ final class LibraryRepository {
         self.resetGate = resetGate
         self.snapshotReader = LibrarySnapshotReader(persistence: persistence)
     }
+
+    // MARK: Discovery
 
     func search(query: String) async throws -> [SearchItem] {
         let items = try await tmdb.search(query: query)
@@ -66,6 +70,8 @@ final class LibraryRepository {
         try cacheSearchItems(items)
         return items
     }
+
+    // MARK: Details
 
     func mediaDetails(for id: MediaID, forceRefresh: Bool = false) async throws -> MediaDetails {
         let context = persistence.makeContext()
@@ -159,6 +165,8 @@ final class LibraryRepository {
             || extras.externalIDs.imdb != nil
             || extras.externalIDs.tvdb != nil
     }
+
+    // MARK: Library Mutations
 
     func setWatchlist(_ inWatchlist: Bool, for id: MediaID) async throws {
         guard await resetGate.allowsLibraryWork() else {
@@ -314,6 +322,8 @@ final class LibraryRepository {
         let context = persistence.makeContext()
         return showDispositionRecord(for: showID, context: context)?.disposition ?? .active
     }
+
+    // MARK: Library Queries
 
     func watchEvents(for id: MediaID) async -> [WatchHistoryItem] {
         let context = persistence.makeContext()
@@ -529,6 +539,8 @@ final class LibraryRepository {
         )
     }
 
+    // MARK: Metadata Enrichment
+
     func enrichMetadata(for mediaID: MediaID) async throws {
         _ = try await mediaDetails(for: mediaID)
     }
@@ -557,6 +569,8 @@ final class LibraryRepository {
             _ = try await episodes(for: showID, seasonNumber: season.seasonNumber)
         }
     }
+
+    // MARK: Persistence Mapping
 
     private func cacheSearchItems(_ items: [SearchItem]) throws {
         let context = persistence.makeContext()
@@ -890,6 +904,8 @@ final class LibraryRepository {
         return try? JSONDecoder().decode([StoredShowSeason].self, from: data)
     }
 
+    // MARK: Record Queries
+
     private func mediaRecord(for id: MediaID, context: ModelContext) -> MediaRecord? {
         allMediaRecords(context: context).first { $0.kind == id.kind && $0.tmdbID == id.tmdbID }
     }
@@ -1016,6 +1032,8 @@ final class LibraryRepository {
             .filter { LibraryGenerationPolicy.belongsToCurrentGeneration($0.generationID, current: generationID) }
     }
 }
+
+// MARK: - Cache Policies
 
 nonisolated enum EpisodeSeasonCachePolicy {
     static func shouldRefresh(

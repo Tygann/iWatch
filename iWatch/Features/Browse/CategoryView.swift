@@ -1,6 +1,8 @@
 import Observation
 import SwiftUI
 
+// MARK: - Category State
+
 @MainActor
 @Observable
 private final class BrowseCategoryModel {
@@ -55,6 +57,8 @@ private final class BrowseCategoryModel {
     }
 }
 
+// MARK: - Category Screen
+
 struct BrowseCategoryView: View {
     let kind: MediaKind
 
@@ -80,6 +84,8 @@ struct BrowseCategoryView: View {
     }
 }
 
+// MARK: - Category Content
+
 private struct BrowseCategoryBody: View {
     @Bindable var model: BrowseCategoryModel
     let kind: MediaKind
@@ -98,6 +104,8 @@ private struct BrowseCategoryBody: View {
         .navigationBarTitleDisplayMode(.large)
     }
 }
+
+// MARK: - Discovery Components
 
 private struct DiscoverySectionView: View {
     let section: BrowseCategoryModel.Section

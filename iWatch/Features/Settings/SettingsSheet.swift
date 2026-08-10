@@ -1,6 +1,8 @@
 import SwiftData
 import SwiftUI
 
+// MARK: - Settings Sheet
+
 struct SettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -20,6 +22,8 @@ struct SettingsSheet: View {
         .presentationDragIndicator(.hidden)
     }
 }
+
+// MARK: - Previews
 
 #Preview {
     let container = AppContainer.preview()

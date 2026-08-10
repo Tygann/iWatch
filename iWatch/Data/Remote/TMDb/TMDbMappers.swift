@@ -1,6 +1,10 @@
 import Foundation
 
+// MARK: - TMDb Mapping
+
 enum TMDbMappers {
+    // MARK: Supplementary Details
+
     static func supplementary(
         _ dto: TMDbMediaSupplementaryDTO,
         kind: MediaKind,
@@ -114,6 +118,8 @@ enum TMDbMappers {
         default: 4
         }
     }
+
+    // MARK: Media Details
 
     static func movie(_ dto: TMDbMovieDetailsDTO) -> MovieDetails {
         let common = MediaCommon(
@@ -236,6 +242,8 @@ enum TMDbMappers {
         return details
     }
 
+    // MARK: People
+
     static func person(_ d: TMDbPersonDetailsDTO) -> PersonDetails {
         let rawCredits = (d.combinedCredits?.cast ?? []) + (d.combinedCredits?.crew ?? [])
         var creditsByMedia: [MediaID: [TMDbCreditDTO]] = [:]
@@ -334,6 +342,8 @@ enum TMDbMappers {
             credits: filmography
         )
     }
+
+    // MARK: Discovery Items
 
     static func searchItem(_ dto: TMDbMultiSearchItemDTO) -> SearchItem? {
         let kind: MediaKind

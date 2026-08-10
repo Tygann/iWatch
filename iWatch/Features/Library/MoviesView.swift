@@ -2,6 +2,8 @@ import SwiftUI
 import Observation
 import SwiftData
 
+// MARK: - Movies State
+
 @MainActor
 @Observable
 private final class MoviesScreenModel {
@@ -98,6 +100,8 @@ private final class MoviesScreenModel {
     }
 }
 
+// MARK: - Movies Screen
+
 struct MoviesView: View {
     @Environment(AppContainer.self) private var container
     @Environment(AppSession.self) private var session
@@ -118,6 +122,8 @@ struct MoviesView: View {
         }
     }
 }
+
+// MARK: - Movies Content
 
 private struct MoviesViewBody: View {
     @Bindable var model: MoviesScreenModel
@@ -171,6 +177,8 @@ private struct MoviesViewBody: View {
     }
 
     @ViewBuilder
+    // MARK: Library Sections
+
     private var toWatchSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("To Watch")
@@ -253,6 +261,8 @@ private struct MoviesViewBody: View {
     }
 }
 
+// MARK: - Collection Screen
+
 private struct MovieCollectionView: View {
     let title: String
     let items: [LibraryMovieItem]
@@ -289,6 +299,8 @@ private struct MovieCollectionView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 }
+
+// MARK: - Previews
 
 #Preview {
     let container = AppContainer.preview()

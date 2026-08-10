@@ -9,6 +9,8 @@ import UIKit
 /// Centralized auth storage implementations for Trakt.
 /// TokenResponse and TraktAuthStore are defined elsewhere in the project.
 
+// MARK: - Trakt Credential Store
+
 public actor KeychainTraktAuthStore: TraktAuthStore {
     private let service = "com.trakt.token"
     private let account = "default"
@@ -151,6 +153,8 @@ public actor KeychainTraktAuthStore: TraktAuthStore {
     }
 }
 
+// MARK: - Device Identity Store
+
 public actor KeychainDeviceIdentityStore: DeviceIdentityStore {
     private let service = "com.tyler.iwatch.device"
     private let account = "primary"
@@ -237,6 +241,8 @@ public actor KeychainDeviceIdentityStore: DeviceIdentityStore {
     }
 }
 
+// MARK: - OAuth State
+
 enum OAuthStateGenerator {
     static func make(byteCount: Int = 32) -> String {
         var bytes = [UInt8](repeating: 0, count: byteCount)
@@ -256,6 +262,8 @@ enum OAuthStateGenerator {
 
 // MARK: - Trakt OAuth Presentation Utilities (iOS)
 #if canImport(UIKit)
+
+// MARK: - Web Authentication
 
 @MainActor
 final class TraktWebAuthPresenter: NSObject, ASWebAuthenticationPresentationContextProviding {
@@ -297,6 +305,8 @@ final class TraktWebAuthPresenter: NSObject, ASWebAuthenticationPresentationCont
         preconditionFailure("[OAuth] No UIWindowScene or UIWindow available for presentation anchor")
     }
 }
+
+// MARK: - Authentication Coordinator
 
 @MainActor
 final class TraktAuthCoordinator {

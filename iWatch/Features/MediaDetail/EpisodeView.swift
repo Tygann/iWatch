@@ -2,6 +2,8 @@ import Observation
 import SwiftUI
 import SwiftData
 
+// MARK: - Episode State
+
 @MainActor
 @Observable
 private final class EpisodeScreenModel {
@@ -106,6 +108,8 @@ private final class EpisodeScreenModel {
     }
 }
 
+// MARK: - Episode Screen
+
 struct EpisodeView: View {
     @Environment(AppContainer.self) private var container
     @Environment(AppSession.self) private var session
@@ -164,6 +168,8 @@ struct EpisodeView: View {
         }
     }
 }
+
+// MARK: - Episode Content
 
 private struct EpisodeViewBody: View {
     @Bindable var model: EpisodeScreenModel

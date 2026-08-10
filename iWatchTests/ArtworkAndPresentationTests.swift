@@ -3,8 +3,12 @@ import Testing
 import UIKit
 @testable import iWatch
 
+// MARK: - Artwork and Presentation Tests
+
 @Suite(.serialized)
 struct ArtworkAndPresentationTests {
+    // MARK: Artwork Loading
+
     @Test
     func artworkLoaderDownsamplesAndReusesDecodedImage() async throws {
         let sourceData = try #require(makeTestImage(size: CGSize(width: 600, height: 900)).pngData())
@@ -63,6 +67,8 @@ struct ArtworkAndPresentationTests {
         #expect(MockArtworkURLProtocol.requestCount == 2)
     }
 
+    // MARK: Library Presentation
+
     @Test
     func showSnapshotPrecomputesSectionsAndOrdering() {
         let today = Date(timeIntervalSince1970: 1_000_000)
@@ -117,6 +123,8 @@ struct ArtworkAndPresentationTests {
         #expect(makeShowDetails(status: "Custom Status").showStatusDisplayName == "Custom Status")
         #expect(makeShowDetails(status: "   ").showStatusDisplayName == nil)
     }
+
+    // MARK: Detail Mapping
 
     @Test
     @MainActor
@@ -242,6 +250,8 @@ struct ArtworkAndPresentationTests {
         #expect(details.externalIDs.instagram == "example")
     }
 
+    // MARK: Artwork Configuration
+
     @Test
     func artworkKindsUseTMDbSizesAppropriateForTheirContent() throws {
         let path = "/sample.jpg"
@@ -315,6 +325,8 @@ struct ArtworkAndPresentationTests {
         ))
     }
 }
+
+// MARK: - Test Support
 
 private final class MockArtworkURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var responseData: Data?

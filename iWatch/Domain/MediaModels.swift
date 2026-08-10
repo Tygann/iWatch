@@ -1,5 +1,7 @@
 import Foundation
 
+// MARK: - Core Media Details
+
 struct MediaCommon: Equatable, Sendable {
     let id: Int
     let traktID: Int?
@@ -87,6 +89,8 @@ struct ShowDetails: Equatable, Sendable {
 
 /// Used for both season rows and the full episode page.
 /// Season fetch populates the core only; the details fetch fills `extras`.
+// MARK: - Episode Details
+
 struct EpisodeDetails: Equatable, Identifiable, Sendable {
     let id: Int                 // TMDb episode id
     let traktID: Int?
@@ -158,6 +162,8 @@ struct EpisodeDetails: Equatable, Identifiable, Sendable {
     }
 }
 
+// MARK: - Person Details
+
 struct PersonDetails: Equatable, Sendable {
     struct Credit: Equatable, Identifiable, Sendable {
         let media: SearchItem
@@ -191,6 +197,8 @@ struct PersonDetails: Equatable, Sendable {
     let credits: [Credit]
 }
 
+// MARK: - Show Progress
+
 struct ShowStatusSnapshot: Equatable, Sendable {
     enum Bucket: String, Equatable, Sendable {
         case airing
@@ -222,6 +230,8 @@ struct ShowProgress: Equatable, Sendable {
     }
 }
 
+// MARK: - Library State
+
 enum ShowDisposition: String, Codable, Equatable, Sendable {
     case active
     case stopped
@@ -241,6 +251,8 @@ enum ShowLifecycle: Equatable, Sendable {
     case completed
     case stopped
 }
+
+// MARK: - Library Items
 
 struct WatchHistoryItem: Identifiable, Equatable, Sendable {
     let id: UUID

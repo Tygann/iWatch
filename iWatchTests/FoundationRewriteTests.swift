@@ -3,8 +3,12 @@ import SwiftData
 import Testing
 @testable import iWatch
 
+// MARK: - Foundation and Sync Tests
+
 @MainActor
 struct FoundationRewriteTests {
+    // MARK: Initial Sync
+
     @Test
     func initialBaselineIsPullOnly() async throws {
         let persistence = makePersistence()
@@ -110,6 +114,8 @@ struct FoundationRewriteTests {
         #expect(rows[0].isInWatchlist == true)
         #expect(rows[0].dirty == true)
     }
+
+    // MARK: History and Library Mutations
 
     @Test
     func watchedHistoryMergeDeduplicatesLocalPendingEvents() async throws {
@@ -332,6 +338,8 @@ struct FoundationRewriteTests {
         #expect(try fetchAll(ShowDispositionRecord.self, from: migrated).isEmpty)
     }
 
+    // MARK: Show Progress
+
     @Test
     func showProgressIsDerivedFromEpisodeEvents() async throws {
         let persistence = makePersistence()
@@ -505,6 +513,8 @@ struct FoundationRewriteTests {
         #expect(progress.nextEpisode?.episode == 1)
         #expect(progress.watchedEpisodeKeys.contains("ep:400:S0:E1") == true)
     }
+
+    // MARK: Incremental Sync
 
     @Test
     func outboxClaimPreventsDoublePushAcrossEngines() async throws {
@@ -904,6 +914,8 @@ struct FoundationRewriteTests {
         #expect(rows[0].isInWatchlist == false)
     }
 
+    // MARK: Repair and Persistence
+
     @Test
     func retryDeadletterOperationsRequeuesFailedWork() async throws {
         let persistence = makePersistence()
@@ -1221,6 +1233,7 @@ struct FoundationRewriteTests {
         #expect(try fetchAll(WatchlistRecord.self, from: persistence).count == 1)
     }
 
+    // MARK: Architecture Boundaries
 
     @Test
     func viewsDoNotDependOnRemoteClientsOrPersistenceRecordsDirectly() throws {
@@ -1256,6 +1269,8 @@ struct FoundationRewriteTests {
         }
     }
 }
+
+// MARK: - Fixtures
 
 private func makePersistence() -> Persistence {
     Persistence(inMemory: true, cloudKitDatabase: ModelConfiguration.CloudKitDatabase.none)
@@ -1359,6 +1374,8 @@ private func makeLastActivities(
         watchlist: TraktActivityTimestampDTO(updatedAt: watchlistAt)
     )
 }
+
+// MARK: - Test Doubles
 
 private actor FixedDeviceIdentityStore: DeviceIdentityStore {
     let id: String

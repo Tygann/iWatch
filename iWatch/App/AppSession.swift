@@ -3,6 +3,8 @@ import Observation
 import AuthenticationServices
 import UIKit
 
+// MARK: - Session State
+
 @MainActor
 @Observable
 final class AppSession {
@@ -102,6 +104,8 @@ final class AppSession {
     var traktRedirectURI: String {
         configuredTraktRedirectURI
     }
+
+    // MARK: Trakt Connection
 
     func startTraktOAuth() {
         do {
@@ -205,6 +209,8 @@ final class AppSession {
         }
     }
 
+    // MARK: Data Maintenance
+
     func clearCache() async {
         guard !isClearingCache else { return }
         isClearingCache = true
@@ -299,6 +305,8 @@ final class AppSession {
         }
     }
 
+    // MARK: App Lifecycle
+
     func markLibraryUpdated(syncIfConnected: Bool = false) {
         libraryRevision &+= 1
 
@@ -385,6 +393,8 @@ final class AppSession {
         }
     }
 
+    // MARK: Sync Maintenance
+
     func importTraktLibrary() async {
         guard let accountKey = pendingTraktAccountKey else { return }
         await syncEngine.beginDataReset()
@@ -469,6 +479,8 @@ final class AppSession {
     }
 
     @discardableResult
+    // MARK: Authentication State
+
     func refreshAuthState() async -> Bool {
         do {
             let status = try await trakt.sessionStatus()
@@ -509,6 +521,8 @@ final class AppSession {
             return false
         }
     }
+
+    // MARK: Helpers
 
     private func scheduleDebouncedSync(reason: SyncReason) {
         scheduledSyncTask?.cancel()

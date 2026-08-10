@@ -1,5 +1,7 @@
 import Foundation
 
+// MARK: - Identifiers and Media Types
+
 public nonisolated struct TraktIDs: Codable, Sendable, Equatable {
     public let trakt: Int?
     public let slug: String?
@@ -10,6 +12,8 @@ public nonisolated struct TraktIDs: Codable, Sendable, Equatable {
 public enum TraktMediaType: String, Codable, Sendable {
     case movie, show, season, episode, person
 }
+
+// MARK: - Authentication Models
 
 public struct TraktDeviceCodeResponse: Codable, Sendable, Equatable {
     public let deviceCode: String
@@ -91,6 +95,8 @@ public enum TraktSessionStatus: Sendable, Equatable {
     case reauthorizationRequired(message: String?)
 }
 
+// MARK: - Library Models
+
 public struct TraktWatchlistItemDTO: Codable, Sendable, Equatable {
     public let type: TraktMediaType
     public let listedAt: Date?
@@ -149,6 +155,8 @@ public struct TraktHistoryItemDTO: Codable, Sendable, Equatable {
     }
 }
 
+// MARK: - Activity Models
+
 public struct TraktLastActivitiesDTO: Codable, Sendable, Equatable {
     public let all: Date?
     public let movies: TraktActivityGroupDTO?
@@ -191,6 +199,8 @@ public struct TraktActivityTimestampDTO: Codable, Sendable, Equatable {
         case updatedAt = "updated_at"
     }
 }
+
+// MARK: - Sync Payloads
 
 public nonisolated struct TraktSyncEnvelope: Codable, Sendable, Equatable {
     public var movies: [TraktMoviePayload]?
@@ -248,6 +258,8 @@ public nonisolated struct TraktRemoveHistoryPayload: Codable, Sendable, Equatabl
     public let ids: [Int]
 }
 
+// MARK: - Decoding
+
 public extension JSONDecoder {
     static var trakt: JSONDecoder {
         let d = JSONDecoder()
@@ -267,6 +279,8 @@ public extension JSONDecoder {
         return d
     }
 }
+
+// MARK: - Errors
 
 nonisolated struct TraktOAuthErrorResponse: Codable {
     let error: String

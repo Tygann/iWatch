@@ -1,5 +1,7 @@
 import Foundation
 
+// MARK: - Trakt Service
+
 final class TraktService: TraktSyncing {
     private let api: APIClient
     private let clientId: String
@@ -17,6 +19,8 @@ final class TraktService: TraktSyncing {
         self.encoder = JSONEncoder()
         self.encoder.dateEncodingStrategy = .iso8601
     }
+
+    // MARK: Session
 
     func currentToken() async -> TokenResponse? {
         await authStore.currentToken()
@@ -53,6 +57,8 @@ final class TraktService: TraktSyncing {
         let req = try await request(path: "sync/last_activities")
         return try await sendAuthorized(req, decode: TraktLastActivitiesDTO.self)
     }
+
+    // MARK: OAuth
 
     func authorizationRequest(redirectURI: String, state: String) throws -> TraktAuthorizationRequest {
         try validateConfiguration(requiresClientSecret: false)
@@ -150,6 +156,8 @@ final class TraktService: TraktSyncing {
         }
     }
 
+    // MARK: Library Sync
+
     func getWatchlist() async throws -> [TraktWatchlistItemDTO] {
         try await getWatchlist(progress: nil)
     }
@@ -244,6 +252,8 @@ final class TraktService: TraktSyncing {
         let req = try await request(path: "sync/history/remove", method: "POST", body: try encoder.encode(body))
         _ = try await sendAuthorized(req, decode: TraktEmptyResponse.self)
     }
+
+    // MARK: Request Helpers
 
     private func traktIDs(for mediaID: MediaID) -> TraktIDs {
         TraktIDs(trakt: mediaID.traktID, slug: nil, tmdb: mediaID.tmdbID, imdb: nil)

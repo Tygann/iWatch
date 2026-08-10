@@ -1,12 +1,16 @@
 import Foundation
 import SwiftData
 
+// MARK: - Sync State
+
 enum SyncReason: String, Sendable {
     case appLaunch
     case foreground
     case userInitiated
     case background
 }
+
+// MARK: - Sync Engine
 
 actor SyncEngine {
     struct Snapshot: Sendable {
@@ -41,6 +45,8 @@ actor SyncEngine {
         self.deviceIdentityStore = deviceIdentityStore
         self.resetGate = resetGate
     }
+
+    // MARK: Sync Lifecycle
 
     func ensureInitialBaseline(progress: (@MainActor @Sendable (SyncProgress) async -> Void)? = nil) async throws {
         let token = await trakt.currentToken()
@@ -192,6 +198,8 @@ actor SyncEngine {
     }
 
     @discardableResult
+    // MARK: Maintenance
+
     func retryDeadletterOperations() throws -> Int {
         let context = persistence.makeContext()
         let deadletters = allOperations(context: context).filter { $0.status == .deadletter }
@@ -305,6 +313,8 @@ actor SyncEngine {
         try context.save()
         return now
     }
+
+    // MARK: Pull and Push
 
     private func pullAndMerge(into context: ModelContext,
                               state: SyncStateRecord,
@@ -489,6 +499,8 @@ actor SyncEngine {
 
         try context.save()
     }
+
+    // MARK: Remote Merge
 
     private func mergeWatchlist(_ remoteItems: [TraktWatchlistItemDTO],
                                 context: ModelContext,
@@ -759,6 +771,8 @@ actor SyncEngine {
             mediaByKey[key] = record
         }
     }
+
+    // MARK: Integrity Repair
 
     private func performIntegrityRepair(context: ModelContext, now: Date) throws -> SyncIntegrityRepairSummary {
         let mediaMerged = repairMediaDuplicates(context: context)
@@ -1147,6 +1161,8 @@ actor SyncEngine {
         canonical.lastSeenRemoteActivityAt = newest([canonical.lastSeenRemoteActivityAt, duplicate.lastSeenRemoteActivityAt])
     }
 
+    // MARK: Persistence Helpers
+
     private func syncState(context: ModelContext) -> SyncStateRecord {
         let accountKey = TraktLinkStore.activeAccountKey ?? "default"
         if let existing = allSyncStates(context: context).first(where: { $0.accountKey == accountKey }) {
@@ -1335,6 +1351,8 @@ actor SyncEngine {
 }
 
 typealias SyncRepository = SyncEngine
+
+// MARK: - Claim Coordination
 
 private actor SyncClaimCoordinator {
     func claimNextOperation(in persistence: Persistence,

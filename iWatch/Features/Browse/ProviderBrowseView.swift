@@ -1,6 +1,8 @@
 import Observation
 import SwiftUI
 
+// MARK: - Provider Browser State
+
 @MainActor
 @Observable
 private final class ProviderBrowseModel {
@@ -30,6 +32,8 @@ private final class ProviderBrowseModel {
     }
 }
 
+// MARK: - Provider Browser Screen
+
 struct ProviderBrowseView: View {
     @Environment(AppContainer.self) private var container
     @State private var model: ProviderBrowseModel?
@@ -55,6 +59,8 @@ struct ProviderBrowseView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 }
+
+// MARK: - Provider Browser Content
 
 private struct ProviderBrowseBody: View {
     @Bindable var model: ProviderBrowseModel
@@ -101,6 +107,8 @@ private struct ProviderBrowseBody: View {
     }
 }
 
+// MARK: - Provider Components
+
 struct ProviderLogo: View {
     let provider: DiscoveryProvider
     let size: CGFloat
@@ -115,6 +123,8 @@ struct ProviderLogo: View {
         )
     }
 }
+
+// MARK: - Provider Results State
 
 @MainActor
 @Observable
@@ -209,6 +219,8 @@ private func interleaved(_ movies: [SearchItem], _ shows: [SearchItem]) -> [Sear
     return items
 }
 
+// MARK: - Provider Results Screen
+
 struct ProviderResultsView: View {
     let provider: DiscoveryProvider
     let regionCode: String
@@ -234,6 +246,8 @@ struct ProviderResultsView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 }
+
+// MARK: - Provider Results Content
 
 private struct ProviderResultsBody: View {
     @Bindable var model: ProviderResultsModel

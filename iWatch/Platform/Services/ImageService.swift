@@ -2,6 +2,8 @@ import Foundation
 import ImageIO
 import UIKit
 
+// MARK: - Artwork Cache
+
 nonisolated final class ArtworkMemoryCache: @unchecked Sendable {
     static let shared = ArtworkMemoryCache()
 
@@ -25,6 +27,8 @@ nonisolated final class ArtworkMemoryCache: @unchecked Sendable {
         images.removeAllObjects()
     }
 }
+
+// MARK: - Artwork Loader
 
 actor ArtworkLoader {
     static let shared = ArtworkLoader()
@@ -137,6 +141,8 @@ actor ArtworkLoader {
         return UIImage(cgImage: image, scale: displayScale, orientation: .up)
     }
 }
+
+// MARK: - Image Service
 
 struct ImageService {
     let artworkLoader: ArtworkLoader

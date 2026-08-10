@@ -1,6 +1,8 @@
 import SwiftUI
 import SwiftData
 
+// MARK: - App Content
+
 struct ContentView: View {
     @Environment(AppContainer.self) private var container
     @Environment(AppSession.self) private var session
@@ -69,6 +71,8 @@ struct ContentView: View {
     }
 }
 
+// MARK: - Previews
+
 #Preview("Catalog") {
     let container = AppContainer.preview()
     ContentView()
@@ -81,6 +85,8 @@ struct ContentView: View {
 #Preview("TMDb Sandbox") {
     TMDbSandboxPreview()
 }
+
+// MARK: - Preview Support
 
 private struct TMDbSandboxPreview: View {
     @State private var container = AppContainer.tmdbSandboxPreview()

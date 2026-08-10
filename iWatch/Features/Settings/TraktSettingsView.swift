@@ -1,5 +1,7 @@
 import SwiftUI
 
+// MARK: - Connection State
+
 enum TraktConnectionAccessory: Equatable {
     case connect
     case connecting
@@ -12,6 +14,8 @@ enum TraktConnectionAccessory: Equatable {
         return isConnected ? .connected : .connect
     }
 }
+
+// MARK: - Trakt Settings Screen
 
 struct TraktSettingsView: View {
     @Environment(AppSession.self) private var session
@@ -204,6 +208,8 @@ struct TraktSettingsView: View {
         }
     }
 }
+
+// MARK: - Previews
 
 #Preview("Disconnected") {
     let container = AppContainer.preview()

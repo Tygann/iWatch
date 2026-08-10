@@ -1,5 +1,7 @@
 import SwiftUI
 
+// MARK: - About Screen
+
 struct AboutView: View {
     private var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
@@ -62,6 +64,8 @@ struct AboutView: View {
     }
 
 }
+
+// MARK: - Previews
 
 #Preview {
     NavigationStack {

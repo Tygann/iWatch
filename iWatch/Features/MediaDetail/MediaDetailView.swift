@@ -2,6 +2,8 @@ import Observation
 import SwiftUI
 import SwiftData
 
+// MARK: - Media Detail State
+
 @MainActor
 @Observable
 private final class MediaDetailScreenModel {
@@ -280,6 +282,8 @@ private final class MediaDetailScreenModel {
     }
 }
 
+// MARK: - Media Detail Screen
+
 struct MediaDetailView: View {
     let ref: MediaRef
     let onClose: (() -> Void)?
@@ -352,6 +356,8 @@ struct MediaDetailView: View {
         }
     }
 }
+
+// MARK: - Media Detail Content
 
 private struct MediaDetailBody: View {
     private enum Layout {
