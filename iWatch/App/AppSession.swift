@@ -11,6 +11,7 @@ final class AppSession {
     struct TransientFeedback: Equatable, Identifiable {
         let id = UUID()
         let message: String
+        let accessibilityMessage: String
     }
 
     enum CloudSyncStatus: Equatable {
@@ -113,22 +114,30 @@ final class AppSession {
     }
 
     func showMovieWatchSuccess(title: String, isRewatch: Bool) {
-        showWatchSuccess(
-            isRewatch ? "Added another play for \(title)" : "\(title) marked watched"
-        )
+        let message = isRewatch ? "Play added • \(title)" : title
+        let accessibilityMessage = isRewatch
+            ? "Another play added for \(title)"
+            : "\(title) marked watched"
+        showWatchSuccess(message, accessibilityMessage: accessibilityMessage)
     }
 
     func showEpisodeWatchSuccess(showTitle: String, season: Int, episode: Int) {
-        showWatchSuccess("\(showTitle) • S\(season) E\(episode) marked watched")
+        showWatchSuccess(
+            "\(showTitle) • S\(season) E\(episode)",
+            accessibilityMessage: "\(showTitle), season \(season) episode \(episode), marked watched"
+        )
     }
 
-    private func showWatchSuccess(_ message: String) {
+    private func showWatchSuccess(_ message: String, accessibilityMessage: String) {
         transientFeedbackTask?.cancel()
 
-        let feedback = TransientFeedback(message: message)
+        let feedback = TransientFeedback(
+            message: message,
+            accessibilityMessage: accessibilityMessage
+        )
         transientFeedback = feedback
         Haptics.notification(.success)
-        UIAccessibility.post(notification: .announcement, argument: message)
+        UIAccessibility.post(notification: .announcement, argument: accessibilityMessage)
 
         transientFeedbackTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(3))

@@ -27,9 +27,12 @@ struct ContentView: View {
         }
         .overlay(alignment: .bottom) {
             if let feedback = session.transientFeedback {
-                TransientFeedbackHUD(message: feedback.message)
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 72)
+                TransientFeedbackHUD(
+                    message: feedback.message,
+                    accessibilityMessage: feedback.accessibilityMessage
+                )
+                    .padding(.horizontal)
+                    .padding(.bottom, 58)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -81,9 +84,23 @@ struct ContentView: View {
 }
 
 private struct TransientFeedbackHUD: View {
-    let message: String
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
+    let message: String
+    let accessibilityMessage: String
+
+    @ViewBuilder
     var body: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            content
+                .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        } else {
+            content
+                .glassEffect(.regular, in: .capsule)
+        }
+    }
+
+    private var content: some View {
         HStack(spacing: 10) {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
@@ -93,12 +110,14 @@ private struct TransientFeedbackHUD: View {
             Text(message)
                 .font(.headline)
                 .multilineTextAlignment(.leading)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.8)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .glassEffect(.regular, in: .rect(cornerRadius: 18))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(message)
+        .accessibilityLabel(accessibilityMessage)
         .accessibilityIdentifier("TransientFeedbackHUD")
         .allowsHitTesting(false)
     }

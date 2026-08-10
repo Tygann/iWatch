@@ -75,9 +75,9 @@ final class iWatchUITests: XCTestCase {
         XCTAssertTrue(movieTile.waitForExistence(timeout: 5))
         movieTile.doubleTap()
 
-        XCTAssertTrue(
-            app.descendants(matching: .any)["TransientFeedbackHUD"].waitForExistence(timeout: 5)
-        )
+        let feedback = app.descendants(matching: .any)["TransientFeedbackHUD"]
+        XCTAssertTrue(feedback.waitForExistence(timeout: 5))
+        XCTAssertEqual(feedback.label, "UI Test Movie marked watched")
         XCTAssertTrue(app.staticTexts["Nothing to watch"].waitForExistence(timeout: 5))
     }
 
