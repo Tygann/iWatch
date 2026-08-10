@@ -310,18 +310,14 @@ private struct MoviesViewBody: View {
 
     private var sortMenu: some View {
         Menu {
-            ForEach(MovieSortOption.allCases) { option in
-                Button {
-                    selectSortOption(option)
-                } label: {
+            Picker("Sort By", selection: sortOptionSelection) {
+                ForEach(MovieSortOption.allCases) { option in
                     if option == sortOption {
-                        Label {
-                            Text("\(Text(option.label))\n\(Text(sortDirectionLabel).font(.caption).foregroundStyle(.secondary))")
-                        } icon: {
-                            Image(systemName: "checkmark")
-                        }
+                        Text("\(Text(option.label))\n\(Text(sortDirectionLabel).font(.caption).foregroundStyle(.secondary))")
+                            .tag(option)
                     } else {
                         Text(option.label)
+                            .tag(option)
                     }
                 }
             }
@@ -329,6 +325,13 @@ private struct MoviesViewBody: View {
             Image(systemName: "line.3.horizontal.decrease")
         }
         .accessibilityLabel("Sort Movies")
+    }
+
+    private var sortOptionSelection: Binding<MovieSortOption> {
+        Binding(
+            get: { sortOption },
+            set: { selectSortOption($0) }
+        )
     }
 
     private var sortDirectionLabel: String {
