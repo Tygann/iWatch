@@ -44,16 +44,28 @@ struct ContentView: View {
                 ShowsView()
             }
 
-            Tab(
-                "Search",
-                systemImage: "magnifyingglass",
-                value: AppRouter.Tab.search,
-                role: .search
-            ) {
-                SearchView()
+            if #available(iOS 27.0, *) {
+                Tab(
+                    "Search",
+                    systemImage: "magnifyingglass",
+                    value: AppRouter.Tab.search,
+                    role: .prominent
+                ) {
+                    SearchView()
+                }
+            } else {
+                Tab(
+                    "Search",
+                    systemImage: "magnifyingglass",
+                    value: AppRouter.Tab.search,
+                    role: .search
+                ) {
+                    SearchView()
+                }
             }
         }
-        .tabViewSearchActivation(.searchTabSelection)
+        // Links selecting the Search tab to search activation.
+        // .tabViewSearchActivation(.searchTabSelection)
     }
 }
 

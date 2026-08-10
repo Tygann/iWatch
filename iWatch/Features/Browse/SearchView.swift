@@ -2,6 +2,8 @@ import SwiftUI
 import Observation
 import SwiftData
 
+// MARK: - Search State
+
 private enum SearchMediaScope: String, CaseIterable, Identifiable {
     case all = "All"
     case movies = "Movies"
@@ -83,6 +85,8 @@ private final class SearchScreenModel {
     }
 }
 
+// MARK: - Search Screen
+
 struct SearchView: View {
     @Environment(AppContainer.self) private var container
 
@@ -117,6 +121,8 @@ struct SearchView: View {
         }
     }
 }
+
+// MARK: - Search Content
 
 private struct SearchViewBody: View {
     @Bindable var model: SearchScreenModel
@@ -177,6 +183,8 @@ private struct SearchViewBody: View {
         }
     }
 
+    // MARK: Trending
+
     @ViewBuilder private var trendingSection: some View {
         if !model.trending.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
@@ -212,6 +220,8 @@ private struct SearchViewBody: View {
         }
         .buttonStyle(.plain)
     }
+
+    // MARK: Streaming Services
 
     @ViewBuilder private var providerSection: some View {
         if !model.providers.isEmpty {
@@ -259,6 +269,8 @@ private struct SearchViewBody: View {
         }
     }
 
+    // MARK: Results
+
     @ViewBuilder
     private var resultsSection: some View {
         if model.isSearching {
@@ -305,6 +317,8 @@ private struct SearchViewBody: View {
         }
     }
 }
+
+// MARK: - Discovery Components
 
 private struct CompactProviderLogo: View {
     let provider: DiscoveryProvider
@@ -379,6 +393,8 @@ struct SearchCollectionView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 }
+
+// MARK: - Browse Components
 
 private struct BrowseGrid: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -471,6 +487,8 @@ private extension LinearGradient {
         endPoint: .bottomTrailing
     )
 }
+
+// MARK: - Previews
 
 #Preview {
     let container = AppContainer.preview()
