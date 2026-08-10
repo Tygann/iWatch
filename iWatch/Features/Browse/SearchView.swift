@@ -88,21 +88,31 @@ struct SearchView: View {
     @State private var model: SearchScreenModel?
 
     var body: some View {
-        Group {
-            if let model {
-                SearchViewBody(model: model)
-            } else {
-                ProgressView()
-                    .task {
-                        let newModel = SearchScreenModel(
-                            repository: container.libraryRepository,
-                            regionCode: Locale.current.region?.identifier ?? "US"
-                        )
-                        await newModel.bootstrap()
-                        guard !Task.isCancelled else { return }
-                        model = newModel
-                    }
+        NavigationStack {
+            Group {
+                if let model {
+                    SearchViewBody(model: model)
+                } else {
+                    ProgressView()
+                }
             }
+        }
+        .searchable(
+            text: Binding(
+                get: { model?.query ?? "" },
+                set: { model?.updateQuery($0) }
+            ),
+            prompt: "Movies and TV Shows"
+        )
+        .task {
+            guard model == nil else { return }
+
+            let newModel = SearchScreenModel(
+                repository: container.libraryRepository,
+                regionCode: Locale.current.region?.identifier ?? "US"
+            )
+            model = newModel
+            await newModel.bootstrap()
         }
     }
 }
@@ -127,53 +137,43 @@ private struct SearchViewBody: View {
     ]
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if model.query.isEmpty {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 24) {
-                            trendingSection
+        Group {
+            if model.query.isEmpty {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        trendingSection
 
-                            providerSection
+                        providerSection
 
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("Browse")
-                                    .font(.title2.bold())
-                                    .padding(.horizontal)
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Browse")
+                                .font(.title2.bold())
+                                .padding(.horizontal)
 
-                                BrowseGrid()
-                                    .padding(.horizontal)
-                            }
-                            .padding(.bottom, 16)
+                            BrowseGrid()
+                                .padding(.horizontal)
                         }
-                        .padding(.top, 8)
+                        .padding(.bottom, 16)
                     }
-                } else {
-                    resultsSection
+                    .padding(.top, 8)
                 }
-            }
-            .navigationTitle("Search")
-            .toolbarTitleDisplayMode(.inlineLarge)
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button { router.isShowingSettings = true } label: {
-                        Image(systemName: "person.crop.circle.fill")
-                            .symbolRenderingMode(.palette)
-                            .foregroundStyle(.primary, .clear)
-                            .scaleEffect(1.5)
-                    }
-                    .accessibilityLabel("Settings")
-                }
+            } else {
+                resultsSection
             }
         }
-        .searchable(
-            text: Binding(
-                get: { model.query },
-                set: { model.updateQuery($0) }
-            ),
-            placement: .navigationBarDrawer(displayMode: .automatic),
-            prompt: "Movies and TV Shows"
-        )
+        .navigationTitle("Search")
+        .toolbarTitleDisplayMode(.inlineLarge)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { router.isShowingSettings = true } label: {
+                    Image(systemName: "person.crop.circle.fill")
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.primary, .clear)
+                        .scaleEffect(1.5)
+                }
+                .accessibilityLabel("Settings")
+            }
+        }
     }
 
     @ViewBuilder private var trendingSection: some View {
