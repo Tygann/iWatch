@@ -1,5 +1,6 @@
 import SwiftUI
 import Observation
+import SwiftData
 
 // MARK: - Watchlist State
 
@@ -228,9 +229,9 @@ private struct WatchlistBody: View {
         }
     }
 
-    @ViewBuilder
     // MARK: Show Actions
 
+    @ViewBuilder
     private func continueWatchingTile(_ item: LibraryShowItem) -> some View {
         if let next = item.progress.nextEpisode {
             let episodeRef = EpisodeRef(
@@ -285,5 +286,122 @@ private struct WatchlistBody: View {
         } label: {
             Label("Stop Watching", systemImage: "stop.circle")
         }
+    }
+}
+
+// MARK: - Previews
+
+#Preview("Movie Watchlist") {
+    WatchlistPreview(mode: .movies)
+}
+
+#Preview("Continue Watching") {
+    WatchlistPreview(mode: .shows)
+}
+
+#Preview("Empty Watchlist") {
+    WatchlistPreview(mode: .empty)
+}
+
+// MARK: - Preview Support
+
+private enum WatchlistPreviewFixtures {
+    static let movies = [
+        LibraryMovieItem(
+            mediaID: MediaID(kind: .movie, id: 401),
+            title: "The Long Way Home",
+            posterPath: nil,
+            releaseDate: .now,
+            listedAt: .now,
+            isInWatchlist: true,
+            playCount: 0,
+            lastWatchedAt: nil
+        ),
+        LibraryMovieItem(
+            mediaID: MediaID(kind: .movie, id: 402),
+            title: "Midnight Signal",
+            posterPath: nil,
+            releaseDate: .now,
+            listedAt: .now,
+            isInWatchlist: true,
+            playCount: 0,
+            lastWatchedAt: nil
+        )
+    ]
+
+    static let shows = [
+        show(id: 501, title: "Northern Lights", season: 2, episode: 4, remaining: 3),
+        show(id: 502, title: "Foundation", season: 1, episode: 8, remaining: 1)
+    ]
+
+    private static func show(
+        id: Int,
+        title: String,
+        season: Int,
+        episode: Int,
+        remaining: Int
+    ) -> LibraryShowItem {
+        LibraryShowItem(
+            mediaID: MediaID(kind: .show, id: id),
+            title: title,
+            posterPath: nil,
+            status: ShowStatusSnapshot(bucket: .airing, nextAirDate: .now),
+            progress: ShowProgress(
+                watchedEpisodeKeys: [],
+                watchedCount: episode - 1,
+                totalEpisodes: episode + remaining,
+                remainingReleased: remaining,
+                nextEpisode: ShowProgress.NextEpisode(
+                    tmdbID: id * 10,
+                    traktID: nil,
+                    season: season,
+                    episode: episode,
+                    airDate: .now
+                )
+            ),
+            isInWatchlist: true,
+            disposition: .active,
+            listedAt: .now,
+            lastWatchedAt: .now,
+            needsProgressEnrichment: false
+        )
+    }
+}
+
+private struct WatchlistPreview: View {
+    enum Mode: Equatable {
+        case movies
+        case shows
+        case empty
+    }
+
+    private let container: AppContainer
+    @State private var model: WatchlistScreenModel
+
+    init(mode: Mode) {
+        let container = AppContainer.preview()
+        let kind: MediaKind = mode == .shows ? .show : .movie
+        let model = WatchlistScreenModel(
+            kind: kind,
+            repository: container.libraryRepository,
+            session: container.session,
+            initialShowItems: mode == .shows ? WatchlistPreviewFixtures.shows : [],
+            initialRevision: container.session.libraryRevision
+        )
+        if mode == .movies {
+            model.movieItems = WatchlistPreviewFixtures.movies
+        }
+        self.container = container
+        _model = State(initialValue: model)
+    }
+
+    var body: some View {
+        NavigationStack {
+            WatchlistBody(model: model)
+        }
+        .environment(container)
+        .environment(container.session)
+        .environment(container.router)
+        .modelContainer(container.persistence.modelContainer)
     }
 }

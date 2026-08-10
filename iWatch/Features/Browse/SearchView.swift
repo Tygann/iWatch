@@ -490,11 +490,71 @@ private extension LinearGradient {
 
 // MARK: - Previews
 
-#Preview {
-    let container = AppContainer.preview()
-    SearchView()
+#Preview("Browse") {
+    SearchPreview(mode: .browse)
+}
+
+#Preview("Results") {
+    SearchPreview(mode: .results)
+}
+
+// MARK: - Preview Support
+
+private enum SearchPreviewFixtures {
+    static let items = [
+        SearchItem(id: 101, kind: .movie, title: "The Long Way Home", posterPath: nil, year: "2025"),
+        SearchItem(id: 102, kind: .show, title: "Foundation", posterPath: nil, year: "2021"),
+        SearchItem(id: 103, kind: .movie, title: "Midnight Signal", posterPath: nil, year: "2024"),
+        SearchItem(id: 104, kind: .show, title: "Northern Lights", posterPath: nil, year: "2023")
+    ]
+
+    static let providers = [
+        DiscoveryProvider(id: 8, name: "Netflix", logoPath: nil, displayPriority: 1),
+        DiscoveryProvider(id: 350, name: "Apple TV+", logoPath: nil, displayPriority: 2),
+        DiscoveryProvider(id: 337, name: "Disney+", logoPath: nil, displayPriority: 3),
+        DiscoveryProvider(id: 9, name: "Prime Video", logoPath: nil, displayPriority: 4),
+        DiscoveryProvider(id: 15, name: "Hulu", logoPath: nil, displayPriority: 5)
+    ]
+}
+
+private struct SearchPreview: View {
+    enum Mode {
+        case browse
+        case results
+    }
+
+    private let container: AppContainer
+    @State private var model: SearchScreenModel
+
+    init(mode: Mode) {
+        let container = AppContainer.preview()
+        let model = SearchScreenModel(
+            repository: container.libraryRepository,
+            regionCode: "US"
+        )
+        switch mode {
+        case .browse:
+            model.trending = SearchPreviewFixtures.items
+            model.providers = SearchPreviewFixtures.providers
+        case .results:
+            model.query = "Foundation"
+            model.results = SearchPreviewFixtures.items
+        }
+        self.container = container
+        _model = State(initialValue: model)
+    }
+
+    var body: some View {
+        NavigationStack {
+            SearchViewBody(model: model)
+        }
+        .searchable(text: Binding(
+            get: { model.query },
+            set: { model.query = $0 }
+        ), prompt: "Movies and TV Shows")
         .environment(container)
         .environment(container.session)
         .environment(container.router)
         .modelContainer(container.persistence.modelContainer)
+    }
 }

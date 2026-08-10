@@ -1,5 +1,6 @@
 import Observation
 import SwiftUI
+import SwiftData
 
 // MARK: - Provider Browser State
 
@@ -132,6 +133,7 @@ private final class ProviderResultsModel {
     private let repository: LibraryRepository
     private let providerID: Int
     private let regionCode: String
+    let loadsRemotely: Bool
 
     var mediaScope: ProviderMediaScope = .all
     var offerType: ProviderOfferType = .stream
@@ -139,10 +141,16 @@ private final class ProviderResultsModel {
     var isLoading = true
     var errorText: String?
 
-    init(providerID: Int, regionCode: String, repository: LibraryRepository) {
+    init(
+        providerID: Int,
+        regionCode: String,
+        repository: LibraryRepository,
+        loadsRemotely: Bool = true
+    ) {
         self.providerID = providerID
         self.regionCode = regionCode
         self.repository = repository
+        self.loadsRemotely = loadsRemotely
     }
 
     func load() async {
@@ -282,7 +290,10 @@ private struct ProviderResultsBody: View {
                 }
             }
         }
-        .task(id: model.filterID) { await model.load() }
+        .task(id: model.filterID) {
+            guard model.loadsRemotely else { return }
+            await model.load()
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
@@ -308,5 +319,100 @@ private struct ProviderResultsBody: View {
                 .accessibilityValue("\(model.mediaScope.title), \(model.offerType.title)")
             }
         }
+    }
+}
+
+// MARK: - Previews
+
+#Preview("Services") {
+    ProviderBrowserPreview()
+}
+
+#Preview("Services, Accessibility Text") {
+    ProviderBrowserPreview()
+        .environment(\.dynamicTypeSize, .accessibility3)
+}
+
+#Preview("Provider Results") {
+    ProviderResultsPreview()
+}
+
+// MARK: - Preview Support
+
+private enum ProviderPreviewFixtures {
+    static let providers = [
+        DiscoveryProvider(id: 8, name: "Netflix", logoPath: nil, displayPriority: 1),
+        DiscoveryProvider(id: 350, name: "Apple TV+", logoPath: nil, displayPriority: 2),
+        DiscoveryProvider(id: 337, name: "Disney+", logoPath: nil, displayPriority: 3),
+        DiscoveryProvider(id: 9, name: "Prime Video", logoPath: nil, displayPriority: 4),
+        DiscoveryProvider(id: 15, name: "Hulu", logoPath: nil, displayPriority: 5),
+        DiscoveryProvider(id: 1899, name: "Max", logoPath: nil, displayPriority: 6),
+        DiscoveryProvider(id: 386, name: "Peacock", logoPath: nil, displayPriority: 7),
+        DiscoveryProvider(id: 531, name: "Paramount+", logoPath: nil, displayPriority: 8)
+    ]
+
+    static let items = [
+        SearchItem(id: 301, kind: .movie, title: "Midnight Signal", posterPath: nil, year: "2025"),
+        SearchItem(id: 302, kind: .show, title: "Northern Lights", posterPath: nil, year: "2024"),
+        SearchItem(id: 303, kind: .movie, title: "The Long Way Home", posterPath: nil, year: "2023"),
+        SearchItem(id: 304, kind: .show, title: "Foundation", posterPath: nil, year: "2021")
+    ]
+}
+
+private struct ProviderBrowserPreview: View {
+    private let container: AppContainer
+    @State private var model: ProviderBrowseModel
+
+    init() {
+        let container = AppContainer.preview()
+        let model = ProviderBrowseModel(repository: container.libraryRepository, regionCode: "US")
+        model.providers = ProviderPreviewFixtures.providers
+        model.isLoading = false
+        self.container = container
+        _model = State(initialValue: model)
+    }
+
+    var body: some View {
+        NavigationStack {
+            ProviderBrowseBody(model: model)
+                .navigationTitle("Services")
+        }
+        .environment(container)
+        .environment(container.session)
+        .environment(container.router)
+        .modelContainer(container.persistence.modelContainer)
+    }
+}
+
+private struct ProviderResultsPreview: View {
+    private let container: AppContainer
+    private let provider: DiscoveryProvider
+    @State private var model: ProviderResultsModel
+
+    init() {
+        let container = AppContainer.preview()
+        let provider = ProviderPreviewFixtures.providers[0]
+        let model = ProviderResultsModel(
+            providerID: provider.id,
+            regionCode: "US",
+            repository: container.libraryRepository,
+            loadsRemotely: false
+        )
+        model.items = ProviderPreviewFixtures.items
+        model.isLoading = false
+        self.container = container
+        self.provider = provider
+        _model = State(initialValue: model)
+    }
+
+    var body: some View {
+        NavigationStack {
+            ProviderResultsBody(model: model, regionCode: "US")
+                .navigationTitle(provider.name)
+        }
+        .environment(container)
+        .environment(container.session)
+        .environment(container.router)
+        .modelContainer(container.persistence.modelContainer)
     }
 }

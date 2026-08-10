@@ -1,5 +1,6 @@
 import Observation
 import SwiftUI
+import SwiftData
 
 // MARK: - Category State
 
@@ -137,5 +138,71 @@ private struct DiscoverySectionView: View {
                 .padding(.horizontal)
                 .padding(.vertical, 12)
         }
+    }
+}
+
+// MARK: - Previews
+
+#Preview("Movies") {
+    CategoryPreview(kind: .movie)
+}
+
+#Preview("Shows") {
+    CategoryPreview(kind: .show)
+}
+
+// MARK: - Preview Support
+
+private enum CategoryPreviewFixtures {
+    static func model(kind: MediaKind, repository: LibraryRepository) -> BrowseCategoryModel {
+        let model = BrowseCategoryModel(kind: kind, repository: repository)
+        model.sections = DiscoveryCollection.collections(for: kind).map { collection in
+            BrowseCategoryModel.Section(
+                collection: collection,
+                items: items(for: kind),
+                isLoading: false,
+                errorText: nil
+            )
+        }
+        return model
+    }
+
+    private static func items(for kind: MediaKind) -> [SearchItem] {
+        let noun = kind == .movie ? "Movie" : "Show"
+        return [
+            SearchItem(id: 201, kind: kind, title: "Featured \(noun)", posterPath: nil, year: "2025"),
+            SearchItem(id: 202, kind: kind, title: "Popular \(noun)", posterPath: nil, year: "2024"),
+            SearchItem(id: 203, kind: kind, title: "Classic \(noun)", posterPath: nil, year: "2020")
+        ]
+    }
+}
+
+private struct CategoryPreview: View {
+    private let kind: MediaKind
+    private let container: AppContainer
+    @State private var model: BrowseCategoryModel
+
+    init(kind: MediaKind) {
+        let container = AppContainer.preview()
+        self.kind = kind
+        self.container = container
+        _model = State(initialValue: CategoryPreviewFixtures.model(
+            kind: kind,
+            repository: container.libraryRepository
+        ))
+    }
+
+    var body: some View {
+        NavigationStack {
+            BrowseCategoryBody(
+                model: model,
+                kind: kind,
+                title: kind == .movie ? "Movies" : "Shows"
+            )
+        }
+        .environment(container)
+        .environment(container.session)
+        .environment(container.router)
+        .modelContainer(container.persistence.modelContainer)
     }
 }

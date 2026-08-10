@@ -61,6 +61,29 @@ private struct StarsRow: View {
     }
 }
 
+// MARK: - Previews
+
+#Preview("Rating States") {
+    RatingBadgePreview()
+}
+
+private struct RatingBadgePreview: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            LabeledContent("No rating") {
+                RatingBadge(rating: 0)
+            }
+            LabeledContent("Fractional") {
+                RatingBadge(rating: 3.7)
+            }
+            LabeledContent("Full rating") {
+                RatingBadge(rating: 5)
+            }
+        }
+        .padding()
+    }
+}
+
 
 
 
