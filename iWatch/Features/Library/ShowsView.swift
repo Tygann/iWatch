@@ -97,13 +97,20 @@ private final class ShowsScreenModel {
         return "\(days) days"
     }
 
-    func markNextEpisodeWatched(for item: LibraryShowItem) async {
+    func markNextEpisodeWatched(for item: LibraryShowItem, showsFeedback: Bool = false) async {
         guard let next = item.progress.nextEpisode else { return }
         do {
             try await repository.addWatchEvent(
                 for: MediaID(kind: .episode, id: next.tmdbID, traktID: next.traktID),
                 watchedAt: Date()
             )
+            if showsFeedback {
+                session.showEpisodeWatchSuccess(
+                    showTitle: item.title,
+                    season: next.season,
+                    episode: next.episode
+                )
+            }
             session.markLibraryUpdated(syncIfConnected: true)
             await load(revision: session.libraryRevision)
         } catch {
@@ -218,8 +225,7 @@ private struct ShowsViewBody: View {
                             ?? item.title
                     )
                     .onTapGesture(count: 2) {
-                        Haptics.notification(.success)
-                        Task { await model.markNextEpisodeWatched(for: item) }
+                        Task { await model.markNextEpisodeWatched(for: item, showsFeedback: true) }
                     }
                     .overlay(alignment: .topLeading) {
                         if let next = model.nextEpisodeLabel(for: item) {

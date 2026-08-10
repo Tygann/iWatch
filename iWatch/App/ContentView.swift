@@ -25,6 +25,15 @@ struct ContentView: View {
         .sheet(isPresented: $router.isShowingSettings) {
             SettingsSheet()
         }
+        .overlay(alignment: .bottom) {
+            if let feedback = session.transientFeedback {
+                TransientFeedbackHUD(message: feedback.message)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 72)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.snappy, value: session.transientFeedback?.id)
     }
 
     private func prewarmShows() async {
@@ -68,6 +77,30 @@ struct ContentView: View {
         }
         // Links selecting the Search tab to search activation.
         // .tabViewSearchActivation(.searchTabSelection)
+    }
+}
+
+private struct TransientFeedbackHUD: View {
+    let message: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .imageScale(.large)
+                .accessibilityHidden(true)
+
+            Text(message)
+                .font(.headline)
+                .multilineTextAlignment(.leading)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .glassEffect(.regular, in: .rect(cornerRadius: 18))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(message)
+        .accessibilityIdentifier("TransientFeedbackHUD")
+        .allowsHitTesting(false)
     }
 }
 

@@ -8,6 +8,11 @@ import UIKit
 @MainActor
 @Observable
 final class AppSession {
+    struct TransientFeedback: Equatable, Identifiable {
+        let id = UUID()
+        let message: String
+    }
+
     enum CloudSyncStatus: Equatable {
         case idle
         case exporting
@@ -57,6 +62,7 @@ final class AppSession {
     private var scheduledSyncTask: Task<Void, Never>?
     private var backgroundContinuationTask: Task<Void, Never>?
     private var cloudSyncMonitorTask: Task<Void, Never>?
+    private var transientFeedbackTask: Task<Void, Never>?
     private var syncSaveStartedAt: Date?
     private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
     private var pendingOAuthState: String?
@@ -76,6 +82,7 @@ final class AppSession {
     var syncMaintenanceMessage: String?
     var cacheMaintenanceMessage: String?
     var dataResetStatus: DataResetStatus = .idle
+    var transientFeedback: TransientFeedback?
 
     init(trakt: TraktService,
          syncEngine: SyncEngine,
@@ -103,6 +110,31 @@ final class AppSession {
 
     var traktRedirectURI: String {
         configuredTraktRedirectURI
+    }
+
+    func showMovieWatchSuccess(title: String, isRewatch: Bool) {
+        showWatchSuccess(
+            isRewatch ? "Added another play for \(title)" : "\(title) marked watched"
+        )
+    }
+
+    func showEpisodeWatchSuccess(showTitle: String, season: Int, episode: Int) {
+        showWatchSuccess("\(showTitle) • S\(season) E\(episode) marked watched")
+    }
+
+    private func showWatchSuccess(_ message: String) {
+        transientFeedbackTask?.cancel()
+
+        let feedback = TransientFeedback(message: message)
+        transientFeedback = feedback
+        Haptics.notification(.success)
+        UIAccessibility.post(notification: .announcement, argument: message)
+
+        transientFeedbackTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled, self?.transientFeedback?.id == feedback.id else { return }
+            self?.transientFeedback = nil
+        }
     }
 
     // MARK: Trakt Connection

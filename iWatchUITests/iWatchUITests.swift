@@ -75,7 +75,29 @@ final class iWatchUITests: XCTestCase {
         XCTAssertTrue(movieTile.waitForExistence(timeout: 5))
         movieTile.doubleTap()
 
+        XCTAssertTrue(
+            app.descendants(matching: .any)["TransientFeedbackHUD"].waitForExistence(timeout: 5)
+        )
         XCTAssertTrue(app.staticTexts["Nothing to watch"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testWatchFeedbackSupportsAccessibilityTextSize() throws {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "UITEST_MODE",
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+        ]
+        app.launch()
+
+        let movieTile = app.buttons["UI Test Movie"]
+        XCTAssertTrue(movieTile.waitForExistence(timeout: 5))
+        movieTile.doubleTap()
+
+        let feedback = app.descendants(matching: .any)["TransientFeedbackHUD"]
+        XCTAssertTrue(feedback.waitForExistence(timeout: 5))
+        XCTAssertEqual(feedback.label, "UI Test Movie marked watched")
     }
 
     @MainActor

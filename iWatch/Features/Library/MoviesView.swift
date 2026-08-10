@@ -182,9 +182,12 @@ private final class MoviesScreenModel {
             .sorted { ($0.lastWatchedAt ?? .distantPast) > ($1.lastWatchedAt ?? .distantPast) }
     }
 
-    func markWatched(_ item: LibraryMovieItem) async {
+    func markWatched(_ item: LibraryMovieItem, showsFeedback: Bool = false) async {
         do {
             try await repository.addWatchEvent(for: item.mediaID, watchedAt: Date())
+            if showsFeedback {
+                session.showMovieWatchSuccess(title: item.title, isRewatch: item.isWatched)
+            }
             session.markLibraryUpdated(syncIfConnected: true)
             await load(revision: session.libraryRevision)
         } catch {
@@ -405,8 +408,7 @@ private struct MoviesViewBody: View {
             }
         }
         .onTapGesture(count: 2) {
-            Haptics.notification(.success)
-            Task { await model.markWatched(item) }
+            Task { await model.markWatched(item, showsFeedback: true) }
         }
         .frame(width: 110)
     }

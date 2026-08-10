@@ -53,10 +53,17 @@ private final class WatchlistScreenModel {
 
     var title: String { kind == .movie ? "Watchlist" : "Continue Watching" }
 
-    func markNextEpisodeWatched(for item: LibraryShowItem) async {
+    func markNextEpisodeWatched(for item: LibraryShowItem, showsFeedback: Bool = false) async {
         guard let next = item.progress.nextEpisode else { return }
         do {
             try await repository.addWatchEvent(for: MediaID(kind: .episode, id: next.tmdbID, traktID: next.traktID), watchedAt: Date())
+            if showsFeedback {
+                session.showEpisodeWatchSuccess(
+                    showTitle: item.title,
+                    season: next.season,
+                    episode: next.episode
+                )
+            }
             session.markLibraryUpdated(syncIfConnected: true)
             loadedRevision = nil
             await load(revision: session.libraryRevision)
@@ -65,9 +72,12 @@ private final class WatchlistScreenModel {
         }
     }
 
-    func markMovieWatched(_ item: LibraryMovieItem) async {
+    func markMovieWatched(_ item: LibraryMovieItem, showsFeedback: Bool = false) async {
         do {
             try await repository.addWatchEvent(for: item.mediaID, watchedAt: Date())
+            if showsFeedback {
+                session.showMovieWatchSuccess(title: item.title, isRewatch: item.isWatched)
+            }
             session.markLibraryUpdated(syncIfConnected: true)
             loadedRevision = nil
             await load(revision: session.libraryRevision)
@@ -183,8 +193,7 @@ private struct WatchlistBody: View {
                                 }
                             )
                             .onTapGesture(count: 2) {
-                                Haptics.notification(.success)
-                                Task { await model.markMovieWatched(item) }
+                                Task { await model.markMovieWatched(item, showsFeedback: true) }
                             }
                             .frame(width: 110)
                         }
@@ -196,8 +205,7 @@ private struct WatchlistBody: View {
                                     ?? item.title
                             )
                             .onTapGesture(count: 2) {
-                                Haptics.notification(.success)
-                                Task { await model.markNextEpisodeWatched(for: item) }
+                                Task { await model.markNextEpisodeWatched(for: item, showsFeedback: true) }
                             }
                             .overlay(alignment: .topLeading) {
                                 if let next = item.progress.nextEpisode {
