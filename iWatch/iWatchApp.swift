@@ -11,6 +11,7 @@ import SwiftData
 
 @main
 struct iWatchApp: App {
+    @UIApplicationDelegateAdaptor(ReleaseNotificationAppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var scenePhase
     @State private var container = AppContainer.bootstrap()
 
@@ -37,6 +38,7 @@ struct iWatchApp: App {
          }
          .backgroundTask(.appRefresh(BackgroundRefresh.appRefreshIdentifier)) {
              await container.session.handleBackgroundRefresh()
+             await container.releaseNotificationCoordinator.reconcile()
          }
      }
 }

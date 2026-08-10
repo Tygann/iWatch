@@ -18,6 +18,7 @@ final class AppContainer {
     let libraryRepository: LibraryRepository
     let contentRepository: ContentRepository
     let peopleRepository: PeopleRepository
+    let releaseNotificationCoordinator: ReleaseNotificationCoordinator
     let syncEngine: SyncEngine
     let session: AppSession
     let router: AppRouter
@@ -48,6 +49,7 @@ final class AppContainer {
         self.libraryRepository = libraryRepository
         self.contentRepository = contentRepository
         self.peopleRepository = peopleRepository
+        self.releaseNotificationCoordinator = ReleaseNotificationCoordinator(repository: libraryRepository)
         self.syncEngine = syncEngine
         self.session = session
         self.router = router

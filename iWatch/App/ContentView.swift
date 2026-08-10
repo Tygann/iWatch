@@ -7,6 +7,7 @@ struct ContentView: View {
     @Environment(AppContainer.self) private var container
     @Environment(AppSession.self) private var session
     @Environment(AppRouter.self) private var router
+    @State private var notificationResponses = ReleaseNotificationResponseStore.shared
 
     var body: some View {
         @Bindable var router = router
@@ -21,9 +22,13 @@ struct ContentView: View {
         }
         .task(id: session.libraryRevision) {
             await prewarmShows()
+            await container.releaseNotificationCoordinator.reconcile()
         }
         .sheet(isPresented: $router.isShowingSettings) {
             SettingsSheet()
+        }
+        .sheet(item: $notificationResponses.destination) { destination in
+            NotificationDestinationView(destination: destination)
         }
         .overlay(alignment: .bottom) {
             if let feedback = session.transientFeedback {
@@ -80,6 +85,29 @@ struct ContentView: View {
         }
         // Links selecting the Search tab to search activation.
         // .tabViewSearchActivation(.searchTabSelection)
+    }
+}
+
+private struct NotificationDestinationView: View {
+    @Environment(\.dismiss) private var dismiss
+    let destination: ReleaseNotificationResponseStore.Destination
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                switch destination {
+                case let .media(mediaID):
+                    MediaDetailView(ref: mediaID)
+                case let .episode(episode):
+                    EpisodeView(ref: episode, onClose: { dismiss() })
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
     }
 }
 

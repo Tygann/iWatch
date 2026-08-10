@@ -56,6 +56,16 @@ struct SettingsView: View {
             }
             .pickerStyle(.menu)
             .tint(.secondary)
+
+            NavigationLink {
+                ReleaseNotificationsSettingsView()
+            } label: {
+                SettingsNavigationLabel(
+                    title: "Notifications",
+                    systemImage: "bell",
+                    detail: notificationStatus
+                )
+            }
         }
     }
 
@@ -130,6 +140,10 @@ struct SettingsView: View {
             isConnected: session.traktConnected,
             needsAttention: session.traktLastError != nil || session.syncDiagnostics.deadletterOperationCount > 0
         )
+    }
+
+    private var notificationStatus: String {
+        ReleaseNotificationPreferences.enabled ? "On" : "Off"
     }
 
     static func traktStatus(

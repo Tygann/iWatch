@@ -510,6 +510,10 @@ final class LibraryRepository {
         try await snapshotReader.movieItems()
     }
 
+    func releaseNotificationSnapshot(referenceDate: Date = .now) async throws -> ReleaseNotificationSnapshot {
+        try await snapshotReader.releaseNotificationSnapshot(referenceDate: referenceDate)
+    }
+
     func movieLibraryItems(revision: Int, forceRefresh: Bool = false) async throws -> [LibraryMovieItem] {
         if !forceRefresh, let cachedMovieSnapshot, cachedMovieSnapshot.revision == revision {
             return cachedMovieSnapshot.items

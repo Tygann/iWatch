@@ -10,6 +10,87 @@ actor LibrarySnapshotReader {
         self.persistence = persistence
     }
 
+    // MARK: Release Notifications
+
+    func releaseNotificationSnapshot(referenceDate: Date = .now) throws -> ReleaseNotificationSnapshot {
+        let context = persistence.makeContext()
+        let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
+        let includesLegacyRows = generationID == LibraryGenerationPolicy.legacyGenerationID
+        let watchlist = try context.fetch(FetchDescriptor<WatchlistRecord>(
+            predicate: #Predicate {
+                ($0.generationID == generationID || (includesLegacyRows && $0.generationID == "")) &&
+                    $0.isInWatchlist
+            }
+        ))
+        let media = try context.fetch(FetchDescriptor<MediaRecord>())
+        let episodes = try context.fetch(FetchDescriptor<EpisodeRecord>())
+        let dispositions = try context.fetch(FetchDescriptor<ShowDispositionRecord>(
+            predicate: #Predicate {
+                $0.generationID == generationID || (includesLegacyRows && $0.generationID == "")
+            }
+        ))
+        let events = try context.fetch(FetchDescriptor<WatchedEventRecord>(
+            predicate: #Predicate {
+                ($0.generationID == generationID || (includesLegacyRows && $0.generationID == "")) &&
+                    !$0.tombstoned
+            }
+        ))
+
+        let mediaByKey = Dictionary(
+            media.map { ("\($0.kindRaw):\($0.tmdbID)", $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let activeShowIDs = Set(watchlist.filter { $0.kindRaw == MediaKind.show.rawValue }.map(\.tmdbID))
+            .subtracting(dispositions.filter { $0.disposition == .stopped }.map(\.tmdbID))
+        let watchedEpisodeKeys = Set(events.compactMap { event -> String? in
+            guard let showID = event.showTMDbID,
+                  let season = event.seasonNumber,
+                  let episode = event.episodeNumber else { return nil }
+            return "ep:\(showID):S\(season):E\(episode)"
+        })
+
+        let movies = watchlist.compactMap { row -> ReleaseNotificationSnapshot.MovieRelease? in
+            guard row.kindRaw == MediaKind.movie.rawValue,
+                  let record = mediaByKey["\(row.kindRaw):\(row.tmdbID)"],
+                  let releaseDate = record.releaseDate,
+                  Calendar.current.startOfDay(for: releaseDate) >= Calendar.current.startOfDay(for: referenceDate)
+            else { return nil }
+            return .init(mediaID: row.mediaID, title: record.title, releaseDate: releaseDate)
+        }
+
+        let showMediaByID = Dictionary(
+            media.filter { $0.kind == .show }.map { ($0.tmdbID, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let episodeReleases = episodes.compactMap { episode -> ReleaseNotificationSnapshot.EpisodeRelease? in
+            guard activeShowIDs.contains(episode.showTMDbID),
+                  episode.seasonNumber > 0,
+                  !watchedEpisodeKeys.contains(episode.episodeKey),
+                  let airDate = episode.airDate,
+                  Calendar.current.startOfDay(for: airDate) >= Calendar.current.startOfDay(for: referenceDate),
+                  let show = showMediaByID[episode.showTMDbID]
+            else { return nil }
+
+            return .init(
+                showID: MediaID(kind: .show, id: episode.showTMDbID, traktID: episode.showTraktID ?? show.traktID),
+                episode: EpisodeRef(
+                    showId: episode.showTMDbID,
+                    showTraktID: episode.showTraktID ?? show.traktID,
+                    season: episode.seasonNumber,
+                    episode: episode.episodeNumber,
+                    tmdbID: episode.tmdbID,
+                    traktID: episode.traktID
+                ),
+                showTitle: show.title,
+                episodeTitle: episode.name,
+                airDate: airDate,
+                airedAt: episode.airedAt
+            )
+        }
+
+        return ReleaseNotificationSnapshot(movies: movies, episodes: episodeReleases)
+    }
+
     // MARK: Movies
 
     func movieItems() throws -> [LibraryMovieItem] {
