@@ -129,11 +129,31 @@ public struct TraktSeasonDTO: Codable, Sendable, Equatable {
     public let ids: TraktIDs
 }
 
-public struct TraktEpisodeDTO: Codable, Sendable, Equatable {
+public nonisolated struct TraktEpisodeDTO: Codable, Sendable, Equatable {
     public let season: Int?
     public let number: Int?
     public let title: String?
+    public let firstAired: Date?
     public let ids: TraktIDs
+
+    public init(
+        season: Int?,
+        number: Int?,
+        title: String?,
+        firstAired: Date? = nil,
+        ids: TraktIDs
+    ) {
+        self.season = season
+        self.number = number
+        self.title = title
+        self.firstAired = firstAired
+        self.ids = ids
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case season, number, title, ids
+        case firstAired = "first_aired"
+    }
 }
 
 public struct TraktHistoryItemDTO: Codable, Sendable, Equatable {

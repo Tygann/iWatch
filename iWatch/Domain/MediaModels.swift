@@ -100,6 +100,7 @@ struct EpisodeDetails: Equatable, Identifiable, Sendable {
     let episodeNumber: Int
     let name: String
     let airDate: Date?
+    let airedAt: Date?
     let stillPath: String?
     let overview: String?
     var extras: Extras?
@@ -217,6 +218,7 @@ struct ShowProgress: Equatable, Sendable {
         let season: Int
         let episode: Int
         let airDate: Date?
+        let airedAt: Date?
     }
 
     let watchedEpisodeKeys: Set<String>

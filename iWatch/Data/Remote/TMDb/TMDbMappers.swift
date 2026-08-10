@@ -182,6 +182,7 @@ enum TMDbMappers {
             episodeNumber: dto.episodeNumber,
             name: dto.name,
             airDate: dto.airDate,
+            airedAt: nil,
             stillPath: dto.stillPath,
             overview: dto.overview
         )

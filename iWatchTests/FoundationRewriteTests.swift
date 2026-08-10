@@ -341,6 +341,53 @@ struct FoundationRewriteTests {
     // MARK: Show Progress
 
     @Test
+    func episodeAvailabilityPrefersExactAirtimeOverCalendarDate() {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = Date(timeIntervalSince1970: 2_000_000)
+        let today = calendar.startOfDay(for: now)
+
+        #expect(
+            EpisodeAvailability.isReleased(
+                airDate: today,
+                airedAt: now.addingTimeInterval(60),
+                relativeTo: now,
+                calendar: calendar
+            ) == false
+        )
+        #expect(
+            EpisodeAvailability.isReleased(
+                airDate: today,
+                airedAt: now.addingTimeInterval(-60),
+                relativeTo: now,
+                calendar: calendar
+            ) == true
+        )
+        #expect(
+            EpisodeAvailability.isReleased(
+                airDate: today,
+                airedAt: nil,
+                relativeTo: now,
+                calendar: calendar
+            ) == true
+        )
+    }
+
+    @Test
+    func traktEpisodeDecodesExactFirstAiredTimestamp() throws {
+        let data = Data(
+            #"{"season":2,"number":3,"title":"Release","first_aired":"2026-08-10T20:00:00.000Z","ids":{"trakt":123,"tmdb":456}}"#
+                .utf8
+        )
+
+        let episode = try JSONDecoder.trakt.decode(TraktEpisodeDTO.self, from: data)
+
+        #expect(episode.season == 2)
+        #expect(episode.number == 3)
+        #expect(episode.ids.trakt == 123)
+        #expect(episode.firstAired == Date(timeIntervalSince1970: 1_786_392_000))
+    }
+
+    @Test
     func showProgressIsDerivedFromEpisodeEvents() async throws {
         let persistence = makePersistence()
         let repository = makeLibraryRepository(persistence: persistence)

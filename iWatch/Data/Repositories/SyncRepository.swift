@@ -1042,6 +1042,7 @@ actor SyncEngine {
         if record.traktID != nil { score += 1 }
         if !record.name.isEmpty { score += 1 }
         if record.airDate != nil { score += 1 }
+        if record.airedAt != nil { score += 1 }
         if record.stillPath != nil { score += 1 }
         if record.overview?.isEmpty == false { score += 1 }
         if record.extrasData != nil { score += 1 }
@@ -1058,6 +1059,7 @@ actor SyncEngine {
         if canonical.episodeNumber == 0 { canonical.episodeNumber = duplicate.episodeNumber }
         if canonical.name.isEmpty { canonical.name = duplicate.name }
         canonical.airDate = newest([canonical.airDate, duplicate.airDate])
+        canonical.airedAt = canonical.airedAt ?? duplicate.airedAt
         canonical.stillPath = canonical.stillPath ?? duplicate.stillPath
         canonical.overview = canonical.overview ?? duplicate.overview
         canonical.extrasData = canonical.extrasData ?? duplicate.extrasData
@@ -1332,6 +1334,7 @@ actor SyncEngine {
             existing.traktID = episode.ids.trakt ?? existing.traktID
             existing.showTraktID = showTraktID ?? existing.showTraktID
             existing.name = existing.name.isEmpty ? (episode.title ?? "Episode") : existing.name
+            existing.airedAt = episode.firstAired ?? existing.airedAt
             existing.updatedAt = .now
         } else {
             let record = EpisodeRecord(
@@ -1342,6 +1345,7 @@ actor SyncEngine {
                 seasonNumber: season,
                 episodeNumber: number,
                 name: episode.title ?? "Episode",
+                airedAt: episode.firstAired,
                 updatedAt: .now
             )
             context.insert(record)

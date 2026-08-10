@@ -469,7 +469,8 @@ private func makeShow(
                     traktID: nil,
                     season: 1,
                     episode: 2,
-                    airDate: $0
+                    airDate: $0,
+                    airedAt: nil
                 )
             }
         ),

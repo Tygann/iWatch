@@ -87,7 +87,12 @@ final class AppContainer {
         )
         let deviceIdentityStore = KeychainDeviceIdentityStore()
         let resetGate = AppDataResetGate()
-        let libraryRepository = LibraryRepository(persistence: persistence, tmdb: tmdb, resetGate: resetGate)
+        let libraryRepository = LibraryRepository(
+            persistence: persistence,
+            tmdb: tmdb,
+            airtimeProvider: trakt,
+            resetGate: resetGate
+        )
         let contentRepository = ContentRepository(library: libraryRepository)
         let peopleRepository = PeopleRepository(tmdb: tmdb)
         let syncEngine = SyncEngine(persistence: persistence, trakt: trakt, deviceIdentityStore: deviceIdentityStore, resetGate: resetGate)
@@ -140,7 +145,12 @@ final class AppContainer {
         )
         let deviceIdentityStore = PreviewDeviceIdentityStore()
         let resetGate = AppDataResetGate()
-        let libraryRepository = LibraryRepository(persistence: persistence, tmdb: tmdb, resetGate: resetGate)
+        let libraryRepository = LibraryRepository(
+            persistence: persistence,
+            tmdb: tmdb,
+            airtimeProvider: trakt,
+            resetGate: resetGate
+        )
         let contentRepository = ContentRepository(library: libraryRepository)
         let peopleRepository = PeopleRepository(tmdb: tmdb)
         let syncEngine = SyncEngine(persistence: persistence, trakt: trakt, deviceIdentityStore: deviceIdentityStore, resetGate: resetGate)

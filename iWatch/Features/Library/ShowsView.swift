@@ -64,7 +64,14 @@ private final class ShowsScreenModel {
             }
         }
 
-        if !missingMetadata.isEmpty {
+        var enrichedAirtimes = false
+        for item in snapshot.all {
+            guard !Task.isCancelled else { return }
+            enrichedAirtimes = await repository.enrichUpcomingEpisodeAirtimes(for: item.mediaID)
+                || enrichedAirtimes
+        }
+
+        if !missingMetadata.isEmpty || enrichedAirtimes {
             await load(revision: session.libraryRevision, forceRefresh: true)
         }
 

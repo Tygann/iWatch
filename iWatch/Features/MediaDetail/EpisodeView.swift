@@ -272,7 +272,12 @@ private struct EpisodeViewBody: View {
                 }
 
             HStack(spacing: 14) {
-                if let airDate = details.airDate {
+                if let airedAt = details.airedAt {
+                    Label(
+                        airedAt.formatted(date: .abbreviated, time: .shortened),
+                        systemImage: "calendar"
+                    )
+                } else if let airDate = details.airDate {
                     Label(airDate.formatted(date: .abbreviated, time: .omitted), systemImage: "calendar")
                 }
                 if let runtime = details.extras?.runtime {

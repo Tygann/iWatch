@@ -7,6 +7,7 @@ import SwiftData
 final class LibraryRepository {
     private let persistence: Persistence
     private let tmdb: TMDbService
+    private let airtimeProvider: (any EpisodeAirtimeProviding)?
     private let resetGate: AppDataResetGate
     private let snapshotReader: LibrarySnapshotReader
     private var cachedMovieSnapshot: (revision: Int, items: [LibraryMovieItem])?
@@ -14,9 +15,15 @@ final class LibraryRepository {
     private var showSnapshotTask: (revision: Int, task: Task<ShowLibrarySnapshot, Error>)?
     private var refreshedSeasonArtworkKeys: Set<String> = []
 
-    init(persistence: Persistence, tmdb: TMDbService, resetGate: AppDataResetGate = AppDataResetGate()) {
+    init(
+        persistence: Persistence,
+        tmdb: TMDbService,
+        airtimeProvider: (any EpisodeAirtimeProviding)? = nil,
+        resetGate: AppDataResetGate = AppDataResetGate()
+    ) {
         self.persistence = persistence
         self.tmdb = tmdb
+        self.airtimeProvider = airtimeProvider
         self.resetGate = resetGate
         self.snapshotReader = LibrarySnapshotReader(persistence: persistence)
     }
@@ -122,7 +129,8 @@ final class LibraryRepository {
         }
 
         let fresh = try await tmdb.seasonEpisodes(showId: showID.tmdbID, seasonNumber: seasonNumber)
-        try upsertEpisodes(fresh, for: showID)
+        let enriched = await enrichingEpisodesWithAirtimes(fresh, showID: showID, seasonNumber: seasonNumber)
+        try upsertEpisodes(enriched, for: showID)
         refreshedSeasonArtworkKeys.insert(seasonKey)
 
         let refreshedContext = persistence.makeContext()
@@ -136,15 +144,24 @@ final class LibraryRepository {
            let record = episodeRecord(for: ref, context: context) {
             let cached = mapEpisodeRecord(record)
             if hasRichEpisodeDetails(cached) {
-                return cached
+                guard cached.airedAt == nil else { return cached }
+                let enriched = await enrichingEpisodeWithAirtime(cached, ref: ref)
+                if enriched != cached {
+                    try upsertEpisodes(
+                        [enriched],
+                        for: MediaID(kind: .show, id: ref.showId, traktID: ref.showTraktID)
+                    )
+                }
+                return enriched
             }
         }
 
-        let fresh = try await tmdb.episodeDetails(
+        var fresh = try await tmdb.episodeDetails(
             showId: ref.showId,
             seasonNumber: ref.season,
             episodeNumber: ref.episode
         )
+        fresh = await enrichingEpisodeWithAirtime(fresh, ref: ref)
         try upsertEpisodes([fresh], for: MediaID(kind: .show, id: ref.showId, traktID: ref.showTraktID))
 
         let refreshedContext = persistence.makeContext()
@@ -164,6 +181,34 @@ final class LibraryRepository {
             || !extras.videos.isEmpty
             || extras.externalIDs.imdb != nil
             || extras.externalIDs.tvdb != nil
+    }
+
+    private func enrichingEpisodesWithAirtimes(
+        _ episodes: [EpisodeDetails],
+        showID: MediaID,
+        seasonNumber: Int
+    ) async -> [EpisodeDetails] {
+        guard let airtimeProvider, let showTraktID = showID.traktID else { return episodes }
+        guard let airtimes = try? await airtimeProvider.seasonAirtimes(
+            showTraktID: showTraktID,
+            seasonNumber: seasonNumber
+        ) else { return episodes }
+
+        let byEpisodeNumber = airtimes.reduce(into: [Int: EpisodeAirtime]()) {
+            $0[$1.episodeNumber] = $1
+        }
+        return episodes.map { episode in
+            guard let airtime = byEpisodeNumber[episode.episodeNumber] else { return episode }
+            return episode.merging(airtime: airtime, showTraktID: showTraktID)
+        }
+    }
+
+    private func enrichingEpisodeWithAirtime(_ episode: EpisodeDetails, ref: EpisodeRef) async -> EpisodeDetails {
+        guard let airtimeProvider, let traktID = ref.traktID,
+              let airtime = try? await airtimeProvider.episodeAirtime(traktID: traktID) else {
+            return episode
+        }
+        return episode.merging(airtime: airtime, showTraktID: ref.showTraktID)
     }
 
     // MARK: Library Mutations
@@ -507,9 +552,8 @@ final class LibraryRepository {
             return trackableKeys.contains(key) ? key : nil
         })
 
-        let released = trackableEpisodeRows.filter { row in
-            guard let airDate = row.airDate else { return false }
-            return Calendar.current.startOfDay(for: airDate) <= Calendar.current.startOfDay(for: Date())
+        let released = trackableEpisodeRows.filter {
+            EpisodeAvailability.isReleased(airDate: $0.airDate, airedAt: $0.airedAt)
         }
 
         let remaining = released.filter { row in
@@ -526,7 +570,8 @@ final class LibraryRepository {
                 traktID: $0.traktID,
                 season: $0.seasonNumber,
                 episode: $0.episodeNumber,
-                airDate: $0.airDate
+                airDate: $0.airDate,
+                airedAt: $0.airedAt
             )
         }
 
@@ -568,6 +613,46 @@ final class LibraryRepository {
             try Task.checkCancellation()
             _ = try await episodes(for: showID, seasonNumber: season.seasonNumber)
         }
+    }
+
+    func enrichUpcomingEpisodeAirtimes(for showID: MediaID) async -> Bool {
+        guard let airtimeProvider, let showTraktID = showID.traktID else { return false }
+
+        let context = persistence.makeContext()
+        let startOfToday = Calendar.current.startOfDay(for: .now)
+        let candidates = allEpisodeRecords(forShowID: showID.tmdbID, context: context).filter {
+            $0.airedAt == nil && ($0.airDate.map { $0 >= startOfToday } ?? false)
+        }
+        guard !candidates.isEmpty else { return false }
+
+        var changed = false
+        for seasonNumber in Set(candidates.map(\.seasonNumber)).sorted() {
+            guard !Task.isCancelled else { return changed }
+            guard let airtimes = try? await airtimeProvider.seasonAirtimes(
+                showTraktID: showTraktID,
+                seasonNumber: seasonNumber
+            ) else { continue }
+
+            let byEpisodeNumber = airtimes.reduce(into: [Int: EpisodeAirtime]()) {
+                $0[$1.episodeNumber] = $1
+            }
+            for record in candidates where record.seasonNumber == seasonNumber {
+                guard let airtime = byEpisodeNumber[record.episodeNumber] else { continue }
+                record.traktID = airtime.traktID ?? record.traktID
+                if record.airedAt != airtime.airedAt {
+                    record.airedAt = airtime.airedAt
+                    changed = true
+                }
+            }
+        }
+
+        if changed {
+            try? context.save()
+            cachedShowSnapshot = nil
+            showSnapshotTask?.task.cancel()
+            showSnapshotTask = nil
+        }
+        return changed
     }
 
     // MARK: Persistence Mapping
@@ -703,6 +788,7 @@ final class LibraryRepository {
                 existing.showTraktID = showID.traktID ?? existing.showTraktID
                 existing.name = episode.name
                 existing.airDate = episode.airDate
+                existing.airedAt = episode.airedAt ?? existing.airedAt
                 existing.stillPath = episode.stillPath ?? existing.stillPath
                 existing.overview = episode.overview ?? existing.overview
                 existing.extrasData = try episode.extras.map { try encoder.encode($0) } ?? existing.extrasData
@@ -718,6 +804,7 @@ final class LibraryRepository {
                         episodeNumber: episode.episodeNumber,
                         name: episode.name,
                         airDate: episode.airDate,
+                        airedAt: episode.airedAt,
                         stillPath: episode.stillPath,
                         overview: episode.overview,
                         extrasData: try episode.extras.map { try encoder.encode($0) },
@@ -875,6 +962,7 @@ final class LibraryRepository {
             episodeNumber: record.episodeNumber,
             name: record.name,
             airDate: record.airDate,
+            airedAt: record.airedAt,
             stillPath: record.stillPath,
             overview: record.overview,
             extras: extras

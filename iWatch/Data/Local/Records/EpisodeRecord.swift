@@ -15,6 +15,7 @@ final class EpisodeRecord {
     var episodeNumber: Int = 0
     var name: String = ""
     var airDate: Date?
+    var airedAt: Date?
     var stillPath: String?
     var overview: String?
     var extrasData: Data?
@@ -28,6 +29,7 @@ final class EpisodeRecord {
          episodeNumber: Int,
          name: String,
          airDate: Date? = nil,
+         airedAt: Date? = nil,
          stillPath: String? = nil,
          overview: String? = nil,
          extrasData: Data? = nil,
@@ -41,6 +43,7 @@ final class EpisodeRecord {
         self.episodeNumber = episodeNumber
         self.name = name
         self.airDate = airDate
+        self.airedAt = airedAt
         self.stillPath = stillPath
         self.overview = overview
         self.extrasData = extrasData

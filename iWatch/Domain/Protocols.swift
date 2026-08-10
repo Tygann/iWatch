@@ -8,6 +8,11 @@ protocol MediaLike {
     var rating: Double? { get }
 }
 
+nonisolated protocol EpisodeAirtimeProviding: Sendable {
+    func episodeAirtime(traktID: Int) async throws -> EpisodeAirtime
+    func seasonAirtimes(showTraktID: Int, seasonNumber: Int) async throws -> [EpisodeAirtime]
+}
+
 nonisolated protocol TraktSyncing: Sendable {
     func currentToken() async -> TokenResponse?
     func getLastActivities() async throws -> TraktLastActivitiesDTO

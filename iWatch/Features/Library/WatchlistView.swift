@@ -356,7 +356,8 @@ private enum WatchlistPreviewFixtures {
                     traktID: nil,
                     season: season,
                     episode: episode,
-                    airDate: .now
+                    airDate: .now,
+                    airedAt: nil
                 )
             ),
             isInWatchlist: true,

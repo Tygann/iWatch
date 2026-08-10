@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Trakt Service
 
-final class TraktService: TraktSyncing {
+final class TraktService: TraktSyncing, EpisodeAirtimeProviding {
     private let api: APIClient
     private let clientId: String
     private let clientSecret: String
@@ -50,6 +50,41 @@ final class TraktService: TraktSyncing {
 
     func clearAuth() async {
         await authStore.clear()
+    }
+
+    // MARK: Public Episode Metadata
+
+    func episodeAirtime(traktID: Int) async throws -> EpisodeAirtime {
+        let req = try await request(
+            path: "episodes/\(traktID)",
+            query: [URLQueryItem(name: "extended", value: "full")],
+            authorized: false
+        )
+        let episode = try await api.send(req, decode: TraktEpisodeDTO.self, decoder: .trakt)
+        return airtime(from: episode)
+    }
+
+    func seasonAirtimes(showTraktID: Int, seasonNumber: Int) async throws -> [EpisodeAirtime] {
+        let req = try await request(
+            path: "shows/\(showTraktID)/seasons/\(seasonNumber)",
+            query: [URLQueryItem(name: "extended", value: "full")],
+            authorized: false
+        )
+        let episodes = try await api.send(req, decode: [TraktEpisodeDTO].self, decoder: .trakt)
+        return episodes.compactMap { episode in
+            guard episode.season != nil, episode.number != nil else { return nil }
+            return airtime(from: episode)
+        }
+    }
+
+    private func airtime(from episode: TraktEpisodeDTO) -> EpisodeAirtime {
+        EpisodeAirtime(
+            traktID: episode.ids.trakt,
+            tmdbID: episode.ids.tmdb,
+            seasonNumber: episode.season ?? 0,
+            episodeNumber: episode.number ?? 0,
+            airedAt: episode.firstAired
+        )
     }
 
     func getLastActivities() async throws -> TraktLastActivitiesDTO {
