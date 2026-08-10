@@ -2,6 +2,110 @@ import SwiftUI
 import Observation
 import SwiftData
 
+enum MovieSortOption: String, CaseIterable, Identifiable {
+    case recentActivity
+    case title
+    case releaseDate
+
+    var id: Self { self }
+
+    var label: String {
+        switch self {
+        case .recentActivity: "Recent Activity"
+        case .title: "Title"
+        case .releaseDate: "Release Date"
+        }
+    }
+}
+
+enum MovieSortDirection: String, CaseIterable, Identifiable {
+    case ascending
+    case descending
+
+    var id: Self { self }
+}
+
+enum MovieLibrarySection {
+    case watchlist
+    case watched
+}
+
+enum MovieLibrarySorter {
+    static func sort(
+        _ items: [LibraryMovieItem],
+        by option: MovieSortOption,
+        direction: MovieSortDirection,
+        section: MovieLibrarySection
+    ) -> [LibraryMovieItem] {
+        items.sorted { lhs, rhs in
+            switch option {
+            case .recentActivity:
+                let lhsDate = activityDate(for: lhs, in: section)
+                let rhsDate = activityDate(for: rhs, in: section)
+                if lhsDate != rhsDate {
+                    return ordered(lhsDate, before: rhsDate, direction: direction)
+                }
+            case .title:
+                let comparison = lhs.title.localizedStandardCompare(rhs.title)
+                if comparison != .orderedSame {
+                    return direction == .ascending
+                        ? comparison == .orderedAscending
+                        : comparison == .orderedDescending
+                }
+            case .releaseDate:
+                if lhs.releaseDate != rhs.releaseDate {
+                    return orderedKnownDatesFirst(
+                        lhs.releaseDate,
+                        before: rhs.releaseDate,
+                        direction: direction
+                    )
+                }
+            }
+
+            let titleComparison = lhs.title.localizedStandardCompare(rhs.title)
+            if titleComparison != .orderedSame {
+                return titleComparison == .orderedAscending
+            }
+            return lhs.id < rhs.id
+        }
+    }
+
+    private static func activityDate(
+        for item: LibraryMovieItem,
+        in section: MovieLibrarySection
+    ) -> Date? {
+        switch section {
+        case .watchlist: item.listedAt
+        case .watched: item.lastWatchedAt
+        }
+    }
+
+    private static func ordered(
+        _ lhs: Date?,
+        before rhs: Date?,
+        direction: MovieSortDirection
+    ) -> Bool {
+        orderedKnownDatesFirst(lhs, before: rhs, direction: direction)
+    }
+
+    private static func orderedKnownDatesFirst(
+        _ lhs: Date?,
+        before rhs: Date?,
+        direction: MovieSortDirection
+    ) -> Bool {
+        switch (lhs, rhs) {
+        case let (lhs?, rhs?):
+            return direction == .ascending ? lhs < rhs : lhs > rhs
+        case (_?, nil):
+            return true
+        case (nil, _?):
+            return false
+        case (nil, nil):
+            return false
+        }
+    }
+}
+
 // MARK: - Movies State
 
 @MainActor
@@ -130,7 +234,28 @@ private struct MoviesViewBody: View {
     @Environment(AppSession.self) private var session
     @Environment(AppRouter.self) private var router
 
+    @AppStorage("movieSortOption") private var sortOption = MovieSortOption.recentActivity
+    @AppStorage("movieSortDirection") private var sortDirection = MovieSortDirection.descending
+
     private let cols = [GridItem(.adaptive(minimum: 110), spacing: 12)]
+
+    private var sortedWatchlistItems: [LibraryMovieItem] {
+        MovieLibrarySorter.sort(
+            model.watchlistItems,
+            by: sortOption,
+            direction: sortDirection,
+            section: .watchlist
+        )
+    }
+
+    private var sortedWatchedItems: [LibraryMovieItem] {
+        MovieLibrarySorter.sort(
+            model.watchedItems,
+            by: sortOption,
+            direction: sortDirection,
+            section: .watched
+        )
+    }
 
     var body: some View {
         NavigationStack {
@@ -160,6 +285,9 @@ private struct MoviesViewBody: View {
             .toolbarTitleDisplayMode(.inlineLarge)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
+                    sortMenu
+                }
+                ToolbarItem(placement: .primaryAction) {
                     Button { router.isShowingSettings = true } label: {
                         Image(systemName: "person.crop.circle.fill")
                             .symbolRenderingMode(.palette)
@@ -179,6 +307,42 @@ private struct MoviesViewBody: View {
     @ViewBuilder
     // MARK: Library Sections
 
+    private var sortMenu: some View {
+        Menu {
+            Picker("Sort By", selection: $sortOption) {
+                ForEach(MovieSortOption.allCases) { option in
+                    Text(option.label).tag(option)
+                }
+            }
+
+            Divider()
+
+            Picker("Order", selection: $sortDirection) {
+                Text(ascendingLabel).tag(MovieSortDirection.ascending)
+                Text(descendingLabel).tag(MovieSortDirection.descending)
+            }
+        } label: {
+            Image(systemName: "arrow.up.arrow.down")
+        }
+        .accessibilityLabel("Sort Movies")
+    }
+
+    private var ascendingLabel: String {
+        switch sortOption {
+        case .recentActivity: "Oldest First"
+        case .title: "A to Z"
+        case .releaseDate: "Oldest First"
+        }
+    }
+
+    private var descendingLabel: String {
+        switch sortOption {
+        case .recentActivity: "Newest First"
+        case .title: "Z to A"
+        case .releaseDate: "Newest First"
+        }
+    }
+
     private var toWatchSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("To Watch")
@@ -194,8 +358,8 @@ private struct MoviesViewBody: View {
                 .frame(maxWidth: .infinity, minHeight: 220)
             } else {
                 LazyVGrid(columns: cols, spacing: 12) {
-                    ForEach(model.watchlistItems) { item in
-                        movieTile(item, showTitle: false)
+                    ForEach(sortedWatchlistItems) { item in
+                        movieTile(item, showTitle: true)
                     }
                 }
                 .padding(.horizontal, 12)
@@ -210,11 +374,12 @@ private struct MoviesViewBody: View {
             MediaCollectionRow(title: "Watched") {
                 MovieCollectionView(
                     title: "Watched",
-                    items: model.watchedItems,
+                    items: sortedWatchedItems,
+                    showsReleaseYear: sortOption == .releaseDate,
                     markUnwatched: model.markUnwatched
                 )
             } content: {
-                ForEach(model.watchedItems.prefix(12)) { item in
+                ForEach(sortedWatchedItems.prefix(12)) { item in
                     movieTile(item, showTitle: false)
                 }
             }
@@ -253,6 +418,18 @@ private struct MoviesViewBody: View {
                 Divider()
             }
         )
+        .overlay(alignment: .topTrailing) {
+            if sortOption == .releaseDate, let releaseDate = item.releaseDate {
+                Text(releaseDate.formatted(.dateTime.year()))
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .padding(3)
+                    .glassEffect()
+                    .padding(3)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
         .onTapGesture(count: 2) {
             Haptics.notification(.success)
             Task { await model.markWatched(item) }
@@ -266,6 +443,7 @@ private struct MoviesViewBody: View {
 private struct MovieCollectionView: View {
     let title: String
     let items: [LibraryMovieItem]
+    let showsReleaseYear: Bool
     let markUnwatched: (LibraryMovieItem) async -> Void
 
     private let cols = [GridItem(.adaptive(minimum: 110), spacing: 12)]
@@ -289,6 +467,18 @@ private struct MovieCollectionView: View {
                             Divider()
                         }
                     )
+                    .overlay(alignment: .topTrailing) {
+                        if showsReleaseYear, let releaseDate = item.releaseDate {
+                            Text(releaseDate.formatted(.dateTime.year()))
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(.secondary)
+                                .padding(3)
+                                .glassEffect()
+                                .padding(3)
+                                .allowsHitTesting(false)
+                                .accessibilityHidden(true)
+                        }
+                    }
                     .frame(width: 110)
                 }
             }

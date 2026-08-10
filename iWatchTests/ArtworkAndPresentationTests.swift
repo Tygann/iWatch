@@ -115,6 +115,83 @@ struct ArtworkAndPresentationTests {
     }
 
     @Test
+    func movieSortingUsesSectionSpecificRecentActivity() {
+        let older = Date(timeIntervalSince1970: 1_000)
+        let newer = Date(timeIntervalSince1970: 2_000)
+        let items = [
+            makeMovie(id: 1, title: "First", listedAt: newer, lastWatchedAt: older),
+            makeMovie(id: 2, title: "Second", listedAt: older, lastWatchedAt: newer)
+        ]
+
+        let watchlist = MovieLibrarySorter.sort(
+            items,
+            by: .recentActivity,
+            direction: .descending,
+            section: .watchlist
+        )
+        let watched = MovieLibrarySorter.sort(
+            items,
+            by: .recentActivity,
+            direction: .descending,
+            section: .watched
+        )
+
+        #expect(watchlist.map(\.id) == [1, 2])
+        #expect(watched.map(\.id) == [2, 1])
+    }
+
+    @Test
+    func movieSortingSupportsBothTitleDirections() {
+        let items = [
+            makeMovie(id: 1, title: "Zulu"),
+            makeMovie(id: 2, title: "Alpha")
+        ]
+
+        let ascending = MovieLibrarySorter.sort(
+            items,
+            by: .title,
+            direction: .ascending,
+            section: .watchlist
+        )
+        let descending = MovieLibrarySorter.sort(
+            items,
+            by: .title,
+            direction: .descending,
+            section: .watchlist
+        )
+
+        #expect(ascending.map(\.title) == ["Alpha", "Zulu"])
+        #expect(descending.map(\.title) == ["Zulu", "Alpha"])
+    }
+
+    @Test
+    func movieReleaseDateSortingKeepsUnknownDatesLast() {
+        let older = Date(timeIntervalSince1970: 1_000)
+        let newer = Date(timeIntervalSince1970: 2_000)
+        let items = [
+            makeMovie(id: 1, title: "Unknown", releaseDate: nil),
+            makeMovie(id: 2, title: "Older", releaseDate: older),
+            makeMovie(id: 3, title: "Newer", releaseDate: newer)
+        ]
+
+        let ascending = MovieLibrarySorter.sort(
+            items,
+            by: .releaseDate,
+            direction: .ascending,
+            section: .watchlist
+        )
+        let descending = MovieLibrarySorter.sort(
+            items,
+            by: .releaseDate,
+            direction: .descending,
+            section: .watchlist
+        )
+
+        #expect(ascending.map(\.title) == ["Older", "Newer", "Unknown"])
+        #expect(descending.map(\.title) == ["Newer", "Older", "Unknown"])
+    }
+
+    @Test
     func showStatusUsesConciseDisplayNames() {
         #expect(makeShowDetails(status: "Returning Series").showStatusDisplayName == "Returning")
         #expect(makeShowDetails(status: "Cancelled").showStatusDisplayName == "Canceled")
@@ -401,6 +478,25 @@ private func makeShow(
         listedAt: listedAt ?? Date(timeIntervalSince1970: TimeInterval(id)),
         lastWatchedAt: lastWatchedAt ?? Date(timeIntervalSince1970: TimeInterval(id)),
         needsProgressEnrichment: false
+    )
+}
+
+private func makeMovie(
+    id: Int,
+    title: String,
+    releaseDate: Date? = nil,
+    listedAt: Date? = nil,
+    lastWatchedAt: Date? = nil
+) -> LibraryMovieItem {
+    LibraryMovieItem(
+        mediaID: MediaID(kind: .movie, id: id),
+        title: title,
+        posterPath: "/\(id).jpg",
+        releaseDate: releaseDate,
+        listedAt: listedAt,
+        isInWatchlist: true,
+        playCount: lastWatchedAt == nil ? 0 : 1,
+        lastWatchedAt: lastWatchedAt
     )
 }
 
