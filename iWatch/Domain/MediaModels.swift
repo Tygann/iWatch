@@ -163,6 +163,15 @@ struct EpisodeDetails: Equatable, Identifiable, Sendable {
     }
 }
 
+struct EpisodeWatchConfirmation: Identifiable, Equatable, Sendable {
+    let target: EpisodeDetails
+    let previousEpisodes: [MediaID]
+
+    var id: EpisodeRef { target.ref }
+    var episodeLabel: String { "S\(target.seasonNumber) E\(target.episodeNumber)" }
+    var totalCount: Int { previousEpisodes.count + 1 }
+}
+
 // MARK: - Person Details
 
 struct PersonDetails: Equatable, Sendable {

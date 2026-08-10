@@ -24,6 +24,7 @@ private final class EpisodeScreenModel {
     var showTitle = ""
     var watchEventID: UUID?
     var isWatched = false
+    var watchConfirmation: EpisodeWatchConfirmation?
     var showFullOverview = false
 
     init(ref: EpisodeRef,
@@ -86,11 +87,19 @@ private final class EpisodeScreenModel {
         }
     }
 
-    func toggleWatched() async {
+    func requestToggleWatched() async {
         do {
             if let watchEventID {
                 try await libraryRepository.removeWatchEvent(eventID: watchEventID)
             } else if let details {
+                let previousEpisodes = await libraryRepository.previousUnwatchedEpisodes(before: details)
+                if previousEpisodes.count >= 2 {
+                    watchConfirmation = EpisodeWatchConfirmation(
+                        target: details,
+                        previousEpisodes: previousEpisodes
+                    )
+                    return
+                }
                 try await libraryRepository.addWatchEvent(for: details.mediaID, watchedAt: Date())
             } else if let tmdbID = ref.tmdbID {
                 try await libraryRepository.addWatchEvent(
@@ -99,6 +108,22 @@ private final class EpisodeScreenModel {
                 )
             }
 
+            session.markLibraryUpdated(syncIfConnected: true)
+            await refreshLibraryState()
+        } catch {
+            guard !error.isCancelled else { return }
+            loadState = .failed(error.localizedDescription)
+        }
+    }
+
+    func confirmWatched(_ confirmation: EpisodeWatchConfirmation, includePrevious: Bool) async {
+        watchConfirmation = nil
+
+        do {
+            let ids = includePrevious
+                ? confirmation.previousEpisodes + [confirmation.target.mediaID]
+                : [confirmation.target.mediaID]
+            try await libraryRepository.addWatchEvents(for: ids, watchedAt: Date())
             session.markLibraryUpdated(syncIfConnected: true)
             await refreshLibraryState()
         } catch {
@@ -225,6 +250,27 @@ private struct EpisodeViewBody: View {
         .task(id: session.libraryRevision) {
             await model.refreshLibraryState()
         }
+        .confirmationDialog(
+            "Mark previous episodes as watched?",
+            isPresented: Binding(
+                get: { model.watchConfirmation != nil },
+                set: { if !$0 { model.watchConfirmation = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: model.watchConfirmation
+        ) { confirmation in
+            Button("Mark All \(confirmation.totalCount) Episodes Watched") {
+                Task { await model.confirmWatched(confirmation, includePrevious: true) }
+            }
+            Button("Mark Only \(confirmation.episodeLabel)") {
+                Task { await model.confirmWatched(confirmation, includePrevious: false) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { confirmation in
+            Text(
+                "There are \(confirmation.previousEpisodes.count) unwatched episodes before \(confirmation.episodeLabel)."
+            )
+        }
     }
 
     // MARK: - Banner Section
@@ -298,7 +344,7 @@ private struct EpisodeViewBody: View {
         HStack(spacing: 12) {
             Button {
                 Haptics.notification(.success)
-                Task { await model.toggleWatched() }
+                Task { await model.requestToggleWatched() }
             } label: {
                 Label(model.isWatched ? "Watched" : "Mark Watched",
                       systemImage: model.isWatched ? "checkmark.circle.fill" : "checkmark.circle")

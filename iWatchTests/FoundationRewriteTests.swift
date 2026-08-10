@@ -455,6 +455,69 @@ struct FoundationRewriteTests {
     }
 
     @Test
+    func previousEpisodeOfferUsesReleasedRegularViewingOrderAndBatchWritesHistory() async throws {
+        let persistence = makePersistence()
+        let repository = makeLibraryRepository(persistence: persistence)
+        let context = persistence.makeContext()
+        let past = Calendar.current.date(byAdding: .day, value: -10, to: .now)!
+        let future = Calendar.current.date(byAdding: .day, value: 10, to: .now)!
+
+        context.insert(
+            MediaRecord(
+                kind: .show,
+                tmdbID: 500,
+                traktID: 5_000,
+                title: "Viewing Order",
+                overview: "A show for previous episode testing.",
+                totalEpisodes: 5,
+                seasonsData: try JSONEncoder().encode([
+                    StoredShowSeason(id: 50, traktID: 500, seasonNumber: 0, name: "Specials", episodeCount: 1, posterPath: nil),
+                    StoredShowSeason(id: 51, traktID: 501, seasonNumber: 1, name: "Season 1", episodeCount: 2, posterPath: nil),
+                    StoredShowSeason(id: 52, traktID: 502, seasonNumber: 2, name: "Season 2", episodeCount: 3, posterPath: nil)
+                ])
+            )
+        )
+
+        let rows = [
+            EpisodeRecord(showTMDbID: 500, tmdbID: 50, seasonNumber: 0, episodeNumber: 1, name: "Special", airDate: past),
+            EpisodeRecord(showTMDbID: 500, tmdbID: 101, seasonNumber: 1, episodeNumber: 1, name: "Watched", airDate: past),
+            EpisodeRecord(showTMDbID: 500, tmdbID: 102, seasonNumber: 1, episodeNumber: 2, name: "Previous One", airDate: past),
+            EpisodeRecord(showTMDbID: 500, tmdbID: 201, seasonNumber: 2, episodeNumber: 1, name: "Previous Two", airDate: past),
+            EpisodeRecord(showTMDbID: 500, tmdbID: 202, seasonNumber: 2, episodeNumber: 2, name: "Target", airDate: past),
+            EpisodeRecord(showTMDbID: 500, tmdbID: 203, seasonNumber: 2, episodeNumber: 3, name: "Future", airDate: future)
+        ]
+        rows.forEach(context.insert)
+        try context.save()
+
+        try await repository.addWatchEvent(for: MediaID(kind: .episode, id: 101, traktID: nil), watchedAt: past)
+
+        let target = EpisodeDetails(
+            id: 202,
+            traktID: nil,
+            showId: 500,
+            showTraktID: 5_000,
+            seasonNumber: 2,
+            episodeNumber: 2,
+            name: "Target",
+            airDate: past,
+            airedAt: nil,
+            stillPath: nil,
+            overview: nil,
+            extras: nil
+        )
+        let previous = await repository.previousUnwatchedEpisodes(before: target)
+
+        #expect(previous.map(\.tmdbID) == [102, 201])
+
+        try await repository.addWatchEvents(for: previous + [target.mediaID], watchedAt: .now)
+
+        let events = try fetchAll(WatchedEventRecord.self, from: persistence).filter { !$0.tombstoned }
+        let operations = try fetchAll(SyncOperationRecord.self, from: persistence)
+        #expect(Set(events.map(\.tmdbID)) == [101, 102, 201, 202])
+        #expect(operations.filter { $0.kind == .addHistory }.count == 4)
+    }
+
+    @Test
     func importedShowLibraryRendersBeforeRemoteMetadataEnrichment() async throws {
         let persistence = makePersistence()
         let repository = makeLibraryRepository(persistence: persistence)

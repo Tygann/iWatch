@@ -33,6 +33,7 @@ private final class MediaDetailScreenModel {
     var episodesBySeason: [Int: [EpisodeDetails]] = [:]
     var loadingSeasons: Set<Int> = []
     var supplementaryDetails: MediaSupplementaryDetails?
+    var watchConfirmation: EpisodeWatchConfirmation?
 
     var isMovieWatched: Bool {
         movieWatchEventID != nil
@@ -249,13 +250,37 @@ private final class MediaDetailScreenModel {
         isMovieWatched || !watchedEpisodeKeys.isEmpty
     }
 
-    func toggleEpisodeWatched(_ episode: EpisodeDetails) async {
+    func requestToggleEpisodeWatched(_ episode: EpisodeDetails) async {
         do {
             if let eventID = await libraryRepository.latestWatchEventID(for: episode.mediaID) {
                 try await libraryRepository.removeWatchEvent(eventID: eventID)
             } else {
+                let previousEpisodes = await libraryRepository.previousUnwatchedEpisodes(before: episode)
+                if previousEpisodes.count >= 2 {
+                    watchConfirmation = EpisodeWatchConfirmation(
+                        target: episode,
+                        previousEpisodes: previousEpisodes
+                    )
+                    return
+                }
                 try await libraryRepository.addWatchEvent(for: episode.mediaID, watchedAt: Date())
             }
+            session.markLibraryUpdated(syncIfConnected: true)
+            await refreshLibraryState()
+        } catch {
+            guard !error.isCancelled else { return }
+            loadState = .failed(error.localizedDescription)
+        }
+    }
+
+    func confirmEpisodeWatched(_ confirmation: EpisodeWatchConfirmation, includePrevious: Bool) async {
+        watchConfirmation = nil
+
+        do {
+            let ids = includePrevious
+                ? confirmation.previousEpisodes + [confirmation.target.mediaID]
+                : [confirmation.target.mediaID]
+            try await libraryRepository.addWatchEvents(for: ids, watchedAt: Date())
             session.markLibraryUpdated(syncIfConnected: true)
             await refreshLibraryState()
         } catch {
@@ -413,6 +438,27 @@ private struct MediaDetailBody: View {
         }
         .task(id: session.libraryRevision) {
             await model.refreshLibraryState()
+        }
+        .confirmationDialog(
+            "Mark previous episodes as watched?",
+            isPresented: Binding(
+                get: { model.watchConfirmation != nil },
+                set: { if !$0 { model.watchConfirmation = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: model.watchConfirmation
+        ) { confirmation in
+            Button("Mark All \(confirmation.totalCount) Episodes Watched") {
+                Task { await model.confirmEpisodeWatched(confirmation, includePrevious: true) }
+            }
+            Button("Mark Only \(confirmation.episodeLabel)") {
+                Task { await model.confirmEpisodeWatched(confirmation, includePrevious: false) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { confirmation in
+            Text(
+                "There are \(confirmation.previousEpisodes.count) unwatched episodes before \(confirmation.episodeLabel)."
+            )
         }
     }
 
@@ -927,7 +973,7 @@ private struct MediaDetailBody: View {
                 } else {
                     Button {
                         Haptics.notification(.success)
-                        Task { await model.toggleEpisodeWatched(episode) }
+                        Task { await model.requestToggleEpisodeWatched(episode) }
                     } label: {
                         Image(systemName: "checkmark")
                             .bold()

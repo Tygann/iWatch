@@ -262,6 +262,10 @@ final class LibraryRepository {
     }
 
     func addWatchEvent(for id: MediaID, watchedAt: Date) async throws {
+        try await addWatchEvents(for: [id], watchedAt: watchedAt)
+    }
+
+    func addWatchEvents(for ids: [MediaID], watchedAt: Date) async throws {
         guard await resetGate.allowsLibraryWork() else {
             throw AppError.unknown("Wait for the library reset to finish before making changes.")
         }
@@ -269,86 +273,93 @@ final class LibraryRepository {
         let now = Date()
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
 
-        let episodeMetadata = id.kind == .episode ? episodeRecord(forTMDbID: id.tmdbID, context: context) : nil
-        let eventKey = WatchedEventRecord.makeEventKey(kind: id.kind, tmdbID: id.tmdbID, traktID: id.traktID, watchedAt: watchedAt)
-        if watchedEventRecord(forEventKey: eventKey, context: context) != nil {
-            return
-        }
-
-        let event = WatchedEventRecord(
-            kind: id.kind,
-            tmdbID: id.tmdbID,
-            traktID: id.traktID,
-            showTMDbID: episodeMetadata?.showTMDbID,
-            showTraktID: episodeMetadata?.showTraktID,
-            seasonNumber: episodeMetadata?.seasonNumber,
-            episodeNumber: episodeMetadata?.episodeNumber,
-            watchedAt: watchedAt,
-            dirty: true,
-            tombstoned: false,
-            createdAt: now,
-            updatedAt: now,
-            generationID: generationID
-        )
-        context.insert(event)
-
-        let payload = SyncOperationPayload(
-            mediaKind: id.kind,
-            tmdbID: id.tmdbID,
-            traktID: id.traktID,
-            showTMDbID: episodeMetadata?.showTMDbID,
-            showTraktID: episodeMetadata?.showTraktID,
-            seasonNumber: episodeMetadata?.seasonNumber,
-            episodeNumber: episodeMetadata?.episodeNumber,
-            watchedAt: watchedAt,
-            historyID: nil
-        )
-        try upsertSyncOperation(
-            kind: .addHistory,
-            payload: payload,
-            dedupeKey: "history:add:\(eventKey)",
-            context: context, accountKey: TraktLinkStore.activeAccountKey ?? ""
-        )
-
-        let planToWatchID: MediaID? = switch id.kind {
-        case .movie:
-            id
-        case .episode:
-            episodeMetadata.map {
-                MediaID(kind: .show, id: $0.showTMDbID, traktID: $0.showTraktID)
+        for id in ids {
+            let episodeMetadata = id.kind == .episode ? episodeRecord(forTMDbID: id.tmdbID, context: context) : nil
+            let eventKey = WatchedEventRecord.makeEventKey(
+                kind: id.kind,
+                tmdbID: id.tmdbID,
+                traktID: id.traktID,
+                watchedAt: watchedAt
+            )
+            if watchedEventRecord(forEventKey: eventKey, context: context) != nil {
+                continue
             }
-        default:
-            nil
-        }
 
-        if let planToWatchID,
-           let watchlist = watchlistRecord(for: planToWatchID, context: context),
-           watchlist.isInWatchlist {
-            watchlist.isInWatchlist = false
-            watchlist.localUpdatedAt = now
-            watchlist.dirty = true
-            let watchlistPayload = SyncOperationPayload(
-                mediaKind: planToWatchID.kind,
-                tmdbID: planToWatchID.tmdbID,
-                traktID: planToWatchID.traktID,
-                showTMDbID: nil,
-                showTraktID: nil,
-                seasonNumber: nil,
-                episodeNumber: nil,
-                watchedAt: nil,
+            let event = WatchedEventRecord(
+                kind: id.kind,
+                tmdbID: id.tmdbID,
+                traktID: id.traktID,
+                showTMDbID: episodeMetadata?.showTMDbID,
+                showTraktID: episodeMetadata?.showTraktID,
+                seasonNumber: episodeMetadata?.seasonNumber,
+                episodeNumber: episodeMetadata?.episodeNumber,
+                watchedAt: watchedAt,
+                dirty: true,
+                tombstoned: false,
+                createdAt: now,
+                updatedAt: now,
+                generationID: generationID
+            )
+            context.insert(event)
+
+            let payload = SyncOperationPayload(
+                mediaKind: id.kind,
+                tmdbID: id.tmdbID,
+                traktID: id.traktID,
+                showTMDbID: episodeMetadata?.showTMDbID,
+                showTraktID: episodeMetadata?.showTraktID,
+                seasonNumber: episodeMetadata?.seasonNumber,
+                episodeNumber: episodeMetadata?.episodeNumber,
+                watchedAt: watchedAt,
                 historyID: nil
             )
             try upsertSyncOperation(
-                kind: .removeWatchlist,
-                payload: watchlistPayload,
-                dedupeKey: "watchlist:\(planToWatchID.stableKey)",
-                context: context,
-                accountKey: TraktLinkStore.activeAccountKey ?? ""
+                kind: .addHistory,
+                payload: payload,
+                dedupeKey: "history:add:\(eventKey)",
+                context: context, accountKey: TraktLinkStore.activeAccountKey ?? ""
             )
-        }
 
-        if let showID = planToWatchID, showID.kind == .show {
-            setShowDisposition(.active, for: showID, context: context, now: now)
+            let planToWatchID: MediaID? = switch id.kind {
+            case .movie:
+                id
+            case .episode:
+                episodeMetadata.map {
+                    MediaID(kind: .show, id: $0.showTMDbID, traktID: $0.showTraktID)
+                }
+            default:
+                nil
+            }
+
+            if let planToWatchID,
+               let watchlist = watchlistRecord(for: planToWatchID, context: context),
+               watchlist.isInWatchlist {
+                watchlist.isInWatchlist = false
+                watchlist.localUpdatedAt = now
+                watchlist.dirty = true
+                let watchlistPayload = SyncOperationPayload(
+                    mediaKind: planToWatchID.kind,
+                    tmdbID: planToWatchID.tmdbID,
+                    traktID: planToWatchID.traktID,
+                    showTMDbID: nil,
+                    showTraktID: nil,
+                    seasonNumber: nil,
+                    episodeNumber: nil,
+                    watchedAt: nil,
+                    historyID: nil
+                )
+                try upsertSyncOperation(
+                    kind: .removeWatchlist,
+                    payload: watchlistPayload,
+                    dedupeKey: "watchlist:\(planToWatchID.stableKey)",
+                    context: context,
+                    accountKey: TraktLinkStore.activeAccountKey ?? ""
+                )
+            }
+
+            if let showID = planToWatchID, showID.kind == .show {
+                setShowDisposition(.active, for: showID, context: context, now: now)
+            }
         }
 
         try context.save()
@@ -466,6 +477,33 @@ final class LibraryRepository {
                 $0.seasonNumber == ref.season &&
                 $0.episodeNumber == ref.episode
             }
+    }
+
+    func previousUnwatchedEpisodes(before episode: EpisodeDetails) async -> [MediaID] {
+        let showID = MediaID(kind: .show, id: episode.showId, traktID: episode.showTraktID)
+        await enrichEpisodeCatalog(for: showID, throughSeason: episode.seasonNumber)
+
+        let context = persistence.makeContext()
+        let watchedKeys = Set(
+            watchedEventRecords(forShowID: episode.showId, context: context)
+                .filter { !$0.tombstoned }
+                .compactMap { event -> String? in
+                    guard let season = event.seasonNumber, let number = event.episodeNumber else { return nil }
+                    return "ep:\(episode.showId):S\(season):E\(number)"
+                }
+        )
+
+        return allEpisodeRecords(forShowID: episode.showId, context: context)
+            .filter {
+                $0.seasonNumber > 0
+                    && ($0.seasonNumber, $0.episodeNumber) < (episode.seasonNumber, episode.episodeNumber)
+                    && EpisodeAvailability.isReleased(airDate: $0.airDate, airedAt: $0.airedAt)
+                    && !watchedKeys.contains($0.episodeKey)
+            }
+            .sorted {
+                ($0.seasonNumber, $0.episodeNumber) < ($1.seasonNumber, $1.episodeNumber)
+            }
+            .map { MediaID(kind: .episode, id: $0.tmdbID, traktID: $0.traktID) }
     }
 
     func movieLibraryItems() async throws -> [LibraryMovieItem] {
@@ -612,6 +650,27 @@ final class LibraryRepository {
             } ?? true) {
             try Task.checkCancellation()
             _ = try await episodes(for: showID, seasonNumber: season.seasonNumber)
+        }
+    }
+
+    private func enrichEpisodeCatalog(for showID: MediaID, throughSeason targetSeason: Int) async {
+        guard case let .show(show) = try? await mediaDetails(for: showID) else { return }
+
+        let context = persistence.makeContext()
+        let cachedEpisodeCounts = Dictionary(
+            grouping: allEpisodeRecords(forShowID: showID.tmdbID, context: context),
+            by: \.seasonNumber
+        )
+        .mapValues(\.count)
+
+        for season in show.seasons
+        where season.seasonNumber > 0
+            && season.seasonNumber <= targetSeason
+            && (season.episodeCount.map {
+                cachedEpisodeCounts[season.seasonNumber, default: 0] < $0
+            } ?? true) {
+            guard !Task.isCancelled else { return }
+            _ = try? await episodes(for: showID, seasonNumber: season.seasonNumber)
         }
     }
 
