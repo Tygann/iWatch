@@ -1,6 +1,7 @@
 import SwiftUI
 import Observation
 import SwiftData
+import UIKit
 
 enum MovieSortOption: String, CaseIterable, Identifiable {
     case recentActivity
@@ -309,41 +310,11 @@ private struct MoviesViewBody: View {
     // MARK: Library Sections
 
     private var sortMenu: some View {
-        Menu {
-            Picker("Sort By", selection: sortOptionSelection) {
-                ForEach(MovieSortOption.allCases) { option in
-                    if option == sortOption {
-                        Text("\(Text(option.label))\n\(Text(sortDirectionLabel).font(.caption).foregroundStyle(.secondary))")
-                            .tag(option)
-                    } else {
-                        Text(option.label)
-                            .tag(option)
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: "line.3.horizontal.decrease")
-        }
-        .accessibilityLabel("Sort Movies")
-    }
-
-    private var sortOptionSelection: Binding<MovieSortOption> {
-        Binding(
-            get: { sortOption },
-            set: { selectSortOption($0) }
+        NativeMovieSortMenu(
+            sortOption: $sortOption,
+            sortDirection: $sortDirection
         )
-    }
-
-    private var sortDirectionLabel: String {
-        sortDirection == .ascending ? "Ascending" : "Descending"
-    }
-
-    private func selectSortOption(_ option: MovieSortOption) {
-        if option == sortOption {
-            sortDirection = sortDirection == .ascending ? .descending : .ascending
-        } else {
-            sortOption = option
-        }
+        .frame(width: 24, height: 24)
     }
 
     private var toWatchSection: some View {
@@ -438,6 +409,49 @@ private struct MoviesViewBody: View {
             Task { await model.markWatched(item) }
         }
         .frame(width: 110)
+    }
+}
+
+private struct NativeMovieSortMenu: UIViewRepresentable {
+    @Binding var sortOption: MovieSortOption
+    @Binding var sortDirection: MovieSortDirection
+
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(type: .system)
+        button.setImage(UIImage(systemName: "line.3.horizontal.decrease"), for: .normal)
+        button.tintColor = .label
+        button.showsMenuAsPrimaryAction = true
+        button.accessibilityLabel = "Sort Movies"
+        return button
+    }
+
+    func updateUIView(_ button: UIButton, context: Context) {
+        button.menu = UIMenu(
+            options: .singleSelection,
+            children: MovieSortOption.allCases.map { option in
+                UIAction(
+                    title: option.label,
+                    subtitle: option == sortOption ? sortDirection.label : nil,
+                    state: option == sortOption ? .on : .off
+                ) { _ in
+                    if option == sortOption {
+                        sortDirection.toggle()
+                    } else {
+                        sortOption = option
+                    }
+                }
+            }
+        )
+    }
+}
+
+private extension MovieSortDirection {
+    var label: String {
+        self == .ascending ? "Ascending" : "Descending"
+    }
+
+    mutating func toggle() {
+        self = self == .ascending ? .descending : .ascending
     }
 }
 
