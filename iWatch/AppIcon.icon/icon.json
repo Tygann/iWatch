@@ -5,7 +5,7 @@
   "groups" : [
     {
       "blur-material" : null,
-      "hidden" : false,
+      "hidden" : true,
       "layers" : [
         {
           "blend-mode" : "normal",
@@ -33,6 +33,83 @@
           }
         }
       ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    },
+    {
+      "blend-mode" : "normal",
+      "blur-material" : 0.2,
+      "layers" : [
+        {
+          "blend-mode" : "normal",
+          "fill" : "none",
+          "glass" : true,
+          "hidden" : false,
+          "image-name" : "iwatch-check.svg",
+          "name" : "iwatch-check",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              65,
+              40
+            ]
+          }
+        },
+        {
+          "hidden" : false,
+          "image-name" : "iwatch-frame-stand.svg",
+          "name" : "iwatch-frame-stand"
+        }
+      ],
+      "lighting" : "combined",
+      "name" : "iWatch Frame",
+      "opacity" : 1,
+      "position" : {
+        "scale" : 0.95,
+        "translation-in-points" : [
+          0,
+          21
+        ]
+      },
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    },
+    {
+      "blend-mode" : "normal",
+      "blur-material" : 0.3,
+      "hidden" : false,
+      "layers" : [
+        {
+          "fill" : "none",
+          "glass" : true,
+          "image-name" : "iwatch-screen.svg",
+          "name" : "iwatch-screen"
+        }
+      ],
+      "lighting" : "individual",
+      "name" : "iWatch Screen",
+      "opacity" : 0.43,
+      "position" : {
+        "scale" : 0.95,
+        "translation-in-points" : [
+          0,
+          21
+        ]
+      },
       "shadow" : {
         "kind" : "neutral",
         "opacity" : 0.5

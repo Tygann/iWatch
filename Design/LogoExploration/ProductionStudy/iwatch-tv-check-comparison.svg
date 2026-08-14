@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1050" viewBox="0 0 1600 1050">
+  <rect width="1600" height="1050" fill="#F5F5F7"/>
+  <text x="80" y="72" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="34" font-weight="700" fill="#111">iWatch — modern widescreen geometry</text>
+  <text x="80" y="112" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="19" fill="#666">Constant frame inset, structural rounded check, and a closely tucked pill-shaped stand.</text>
+  <defs>
+    <g id="a"><path fill-rule="evenodd" d="M92 265C92 207 139 160 197 160H827C885 160 932 207 932 265V654C932 712 885 759 827 759H197C139 759 92 712 92 654V265ZM164 267C164 248 179 232 199 232H825C844 232 860 248 860 267V548C860 571 851 593 835 609L775 669C765 679 749 679 739 669L699 629C690 620 676 617 665 623C651 630 645 647 653 661L669 687H199C179 687 164 671 164 652V267Z"/><rect x="350" y="771" width="324" height="48" rx="24"/></g>
+    <g id="b"><path fill-rule="evenodd" d="M82 278C82 222 127 177 183 177H841C897 177 942 222 942 278V641C942 697 897 742 841 742H183C127 742 82 697 82 641V278ZM146 285C146 261 165 241 189 241H835C859 241 878 261 878 285V547C878 568 870 588 855 603L799 659C789 669 774 669 764 659L728 623C719 614 706 611 695 616C682 623 676 638 683 651L698 677H189C165 677 146 657 146 633V285Z"/><rect x="364" y="752" width="296" height="44" rx="22"/></g>
+    <g id="c"><path fill-rule="evenodd" d="M75 250C75 188 125 138 187 138H837C899 138 949 188 949 250V669C949 731 899 781 837 781H187C125 781 75 731 75 669V250ZM157 269C157 242 179 220 206 220H818C845 220 867 242 867 269V533C867 559 857 584 838 603L772 669C761 680 744 680 733 669L689 625C680 616 665 613 653 619C638 627 631 645 639 660L661 699H206C179 699 157 677 157 650V269Z"/><rect x="338" y="793" width="348" height="52" rx="26"/></g>
+  </defs>
+  <g font-family="-apple-system,BlinkMacSystemFont,sans-serif">
+    <g transform="translate(60 155)"><rect width="470" height="570" rx="44" fill="white"/><text x="28" y="46" font-size="22" font-weight="700" fill="#777">A · BALANCED</text><use href="#a" transform="translate(25 40) scale(.41)" fill="#111"/></g>
+    <g transform="translate(565 155)"><rect width="470" height="570" rx="44" fill="white"/><text x="28" y="46" font-size="22" font-weight="700" fill="#777">B · SUBTLE</text><use href="#b" transform="translate(25 40) scale(.41)" fill="#111"/></g>
+    <g transform="translate(1070 155)"><rect width="470" height="570" rx="44" fill="white"/><text x="28" y="46" font-size="22" font-weight="700" fill="#777">C · PRONOUNCED</text><use href="#c" transform="translate(25 40) scale(.41)" fill="#111"/></g>
+    <text x="80" y="785" font-size="22" font-weight="700" fill="#333">Real-size silhouette checks</text>
+    <text x="80" y="818" font-size="17" fill="#777">Rendered at 120 px, 60 px, and 32 px without relying on glow or color.</text>
+    <g transform="translate(80 850)" fill="#111"><use href="#a" transform="scale(.1171875)"/><use href="#a" transform="translate(150 30) scale(.05859375)"/><use href="#a" transform="translate(245 44) scale(.03125)"/></g>
+    <g transform="translate(575 850)" fill="#111"><use href="#b" transform="scale(.1171875)"/><use href="#b" transform="translate(150 30) scale(.05859375)"/><use href="#b" transform="translate(245 44) scale(.03125)"/></g>
+    <g transform="translate(1070 850)" fill="#111"><use href="#c" transform="scale(.1171875)"/><use href="#c" transform="translate(150 30) scale(.05859375)"/><use href="#c" transform="translate(245 44) scale(.03125)"/></g>
+  </g>
+</svg>

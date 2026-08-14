@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>iWatch TV Check — Widescreen balanced</title>
+  <!-- 72 pt constant frame inset on top, left, right, and bottom. -->
+  <path fill="#111" fill-rule="evenodd" d="M92 265C92 207 139 160 197 160H827C885 160 932 207 932 265V654C932 712 885 759 827 759H197C139 759 92 712 92 654V265ZM164 267C164 248 179 232 199 232H825C844 232 860 248 860 267V548C860 571 851 593 835 609L775 669C765 679 749 679 739 669L699 629C690 620 676 617 665 623C651 630 645 647 653 661L669 687H199C179 687 164 671 164 652V267Z"/>
+  <rect x="350" y="771" width="324" height="48" rx="24" fill="#111"/>
+</svg>

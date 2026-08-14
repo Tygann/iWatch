@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1220" height="1590" viewBox="0 0 1220 1590">
+  <rect width="1220" height="1590" fill="#f5f5f7"/>
+  <text x="80" y="72" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="34" font-weight="700" fill="#111">iWatch — silhouette construction study</text>
+  <text x="80" y="110" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="19" fill="#666">Screens / poster planes + W + deliberate negative space. Geometry only; no color or material.</text>
+
+  <defs>
+    <g id="tile"><rect width="340" height="320" rx="38" fill="white"/></g>
+    <style>
+      .label{font:700 20px -apple-system,BlinkMacSystemFont,sans-serif;fill:#777}
+      .mark{fill:#111}
+      .stroke{fill:none;stroke:#111;stroke-width:34;stroke-linecap:round;stroke-linejoin:round}
+    </style>
+  </defs>
+
+  <!-- A: two poster planes create a W-shaped valley -->
+  <g transform="translate(80 150)"><use href="#tile"/><text class="label" x="24" y="40">A</text>
+    <path class="mark" d="M66 82 Q66 66 82 66 H158 Q174 66 174 82 V217 L120 265 66 217 Z"/>
+    <path class="mark" d="M166 82 Q166 66 182 66 H258 Q274 66 274 82 V217 L220 265 166 217 Z"/>
+  </g>
+
+  <!-- B: widescreen with the lower edge folding into a W -->
+  <g transform="translate(460 150)"><use href="#tile"/><text class="label" x="24" y="40">B</text>
+    <path class="mark" fill-rule="evenodd" d="M58 74 Q58 58 74 58 H266 Q282 58 282 74 V232 Q282 248 266 248 H222 L170 282 118 248 H74 Q58 248 58 232 Z M91 92 V210 Q91 216 97 216 H128 L170 244 212 216 H243 Q249 216 249 210 V92 Q249 86 243 86 H97 Q91 86 91 92 Z"/>
+  </g>
+
+  <!-- C: one continuous folded screen ribbon -->
+  <g transform="translate(840 150)"><use href="#tile"/><text class="label" x="24" y="40">C</text>
+    <path class="stroke" d="M72 224 V92 Q72 72 92 72 H248 Q268 72 268 92 V174 L220 242 170 188 120 242 72 196"/>
+  </g>
+
+  <!-- D: three cinematic planes form a compact W -->
+  <g transform="translate(80 500)"><use href="#tile"/><text class="label" x="24" y="40">D</text>
+    <path class="mark" d="M52 90 Q52 72 70 72 H126 V214 L90 260 52 224 Z"/>
+    <path class="mark" d="M142 72 H198 V214 L170 250 142 214 Z"/>
+    <path class="mark" d="M214 72 H270 Q288 72 288 90 V224 L250 260 214 214 Z"/>
+  </g>
+
+  <!-- E: two interlocked screens, gap is the W -->
+  <g transform="translate(460 500)"><use href="#tile"/><text class="label" x="24" y="40">E</text>
+    <path class="mark" d="M54 76 Q54 60 70 60 H158 V178 L112 248 54 210 Z"/>
+    <path class="mark" d="M182 60 H270 Q286 60 286 76 V210 L228 248 182 178 Z"/>
+    <path class="mark" d="M128 60 H212 V154 L170 218 128 154 Z" opacity=".72"/>
+  </g>
+
+  <!-- F: stacked poster cards with one carved W channel -->
+  <g transform="translate(840 500)"><use href="#tile"/><text class="label" x="24" y="40">F</text>
+    <path class="mark" d="M52 88 Q52 68 72 68 H184 V206 L132 264 52 214 Z" opacity=".45"/>
+    <path class="mark" d="M102 70 Q102 50 122 50 H288 V212 L226 270 170 214 120 270 102 250 Z"/>
+  </g>
+
+  <!-- G: a W built from four soft poster strokes -->
+  <g transform="translate(80 850)"><use href="#tile"/><text class="label" x="24" y="40">G</text>
+    <path class="stroke" stroke-width="46" d="M70 86 L105 236 170 156 235 236 270 86"/>
+    <path class="stroke" stroke-width="24" opacity=".55" d="M92 82 H248"/>
+  </g>
+
+  <!-- H: screen split by a single W-shaped negative channel -->
+  <g transform="translate(460 850)"><use href="#tile"/><text class="label" x="24" y="40">H</text>
+    <path class="mark" d="M50 76 Q50 58 68 58 H272 Q290 58 290 76 V122 L220 218 170 166 120 218 50 122 Z"/>
+    <path class="mark" d="M50 158 L120 250 170 198 220 250 290 158 V238 Q290 256 272 256 H68 Q50 256 50 238 Z"/>
+  </g>
+
+  <!-- I: bookmark planes whose notches assemble into a W -->
+  <g transform="translate(840 850)"><use href="#tile"/><text class="label" x="24" y="40">I</text>
+    <path class="mark" d="M62 72 Q62 58 76 58 H152 Q166 58 166 72 V258 L114 214 62 258 Z"/>
+    <path class="mark" d="M174 72 Q174 58 188 58 H264 Q278 58 278 72 V258 L226 214 174 258 Z"/>
+  </g>
+
+  <!-- J: a cinematic window supported by a W pedestal -->
+  <g transform="translate(80 1200)"><use href="#tile"/><text class="label" x="24" y="40">J</text>
+    <rect class="mark" x="52" y="58" width="236" height="148" rx="32"/>
+    <path class="mark" d="M70 218 H116 L170 270 224 218 H270 L206 284 H134 Z"/>
+    <rect x="82" y="86" width="176" height="92" rx="20" fill="white"/>
+  </g>
+
+  <!-- K: two screen corners make an abstract W aperture -->
+  <g transform="translate(460 1200)"><use href="#tile"/><text class="label" x="24" y="40">K</text>
+    <path class="mark" d="M54 72 Q54 56 70 56 H286 V122 L220 252 170 188 120 252 54 122 Z"/>
+    <path d="M92 92 H248 L210 174 170 132 130 174 Z" fill="white"/>
+  </g>
+
+  <!-- L: minimal screen ribbon; negative center is a W -->
+  <g transform="translate(840 1200)"><use href="#tile"/><text class="label" x="24" y="40">L</text>
+    <path class="mark" fill-rule="evenodd" d="M46 84 Q46 58 72 58 H268 Q294 58 294 84 V224 Q294 250 268 250 H232 L170 288 108 250 H72 Q46 250 46 224 Z M82 92 V206 Q82 214 90 214 H122 L170 246 218 214 H250 Q258 214 258 206 V92 Q258 84 250 84 H90 Q82 84 82 92 Z"/>
+  </g>
+</svg>

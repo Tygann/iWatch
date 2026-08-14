@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>iWatch check layer</title>
+  <!-- Opaque neutral artwork. Group with the TV frame in Icon Composer. -->
+  <path
+    d="M704 642L765 686L854 597"
+    fill="none"
+    stroke="#FFF7EE"
+    stroke-width="42"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

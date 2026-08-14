@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>iWatch TV Check — Widescreen pronounced</title>
+  <!-- 82 pt constant frame inset on top, left, right, and bottom. -->
+  <path fill="#111" fill-rule="evenodd" d="M75 250C75 188 125 138 187 138H837C899 138 949 188 949 250V669C949 731 899 781 837 781H187C125 781 75 731 75 669V250ZM157 269C157 242 179 220 206 220H818C845 220 867 242 867 269V533C867 559 857 584 838 603L772 669C761 680 744 680 733 669L689 625C680 616 665 613 653 619C638 627 631 645 639 660L661 699H206C179 699 157 677 157 650V269Z"/>
+  <rect x="338" y="793" width="348" height="52" rx="26" fill="#111"/>
+</svg>

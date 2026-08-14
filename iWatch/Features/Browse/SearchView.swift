@@ -107,6 +107,7 @@ struct SearchView: View {
                 get: { model?.query ?? "" },
                 set: { model?.updateQuery($0) }
             ),
+            placement: .navigationBarDrawer,
             prompt: "Movies and TV Shows"
         )
         .task {

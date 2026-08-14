@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="590" viewBox="0 0 1400 590">
+  <rect width="1400" height="590" fill="#f5f5f7"/>
+  <text x="70" y="65" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="32" font-weight="700" fill="#111">iWatch — watch-history territory</text>
+  <text x="70" y="103" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="18" fill="#666">Three product-led constructions: frames, continuity, and timeline. Geometry only.</text>
+
+  <defs>
+    <style>
+      .label{font:700 20px -apple-system,BlinkMacSystemFont,sans-serif;fill:#777}
+      .caption{font:600 17px -apple-system,BlinkMacSystemFont,sans-serif;fill:#333}
+      .note{font:15px -apple-system,BlinkMacSystemFont,sans-serif;fill:#777}
+      .ink{fill:#111}
+    </style>
+  </defs>
+
+  <!-- A: one uninterrupted negative channel moves through three media frames -->
+  <g transform="translate(70 135)">
+    <rect width="400" height="400" rx="42" fill="white"/>
+    <text class="label" x="24" y="38">A</text>
+    <path class="ink" fill-rule="evenodd" d="M62 70 Q62 52 80 52 H320 Q338 52 338 70 V262 Q338 280 320 280 H80 Q62 280 62 262 Z
+      M92 84 H180 Q190 84 190 94 V160 Q190 170 180 170 H92 Q82 170 82 160 V94 Q82 84 92 84 Z
+      M157 132 H250 Q260 132 260 142 V212 Q260 222 250 222 H157 Q147 222 147 212 V142 Q147 132 157 132 Z
+      M222 184 H307 V248 H222 Z"/>
+    <path d="M118 170 C132 184 139 194 147 206 C155 218 166 229 184 229 H222" fill="none" stroke="white" stroke-width="18" stroke-linecap="round"/>
+    <text class="caption" x="200" y="326" text-anchor="middle">Path through frames</text>
+    <text class="note" x="200" y="352" text-anchor="middle">A viewing journey through saved titles</text>
+  </g>
+
+  <!-- B: portrait movie card and landscape episode card share one continuous aperture -->
+  <g transform="translate(500 135)">
+    <rect width="400" height="400" rx="42" fill="white"/>
+    <text class="label" x="24" y="38">B</text>
+    <path class="ink" fill-rule="evenodd" d="M54 82 Q54 58 78 58 H322 Q346 58 346 82 V258 Q346 282 322 282 H78 Q54 282 54 258 Z
+      M92 102 Q92 90 104 90 H166 Q178 90 178 102 V232 Q178 244 166 244 H104 Q92 244 92 232 Z
+      M214 116 Q214 104 226 104 H312 V188 Q312 200 300 200 H226 Q214 200 214 188 Z"/>
+    <path d="M135 244 C135 270 165 270 184 246 L218 202 C234 181 252 181 270 200" fill="none" stroke="white" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="caption" x="200" y="326" text-anchor="middle">Continuity loop</text>
+    <text class="note" x="200" y="352" text-anchor="middle">Movies and episodes in one history</text>
+  </g>
+
+  <!-- C: a single negative ribbon unfolds across time -->
+  <g transform="translate(930 135)">
+    <rect width="400" height="400" rx="42" fill="white"/>
+    <text class="label" x="24" y="38">C</text>
+    <path class="ink" d="M52 92 Q52 64 80 64 H292 L348 120 V250 Q348 278 320 278 H80 Q52 278 52 250 Z"/>
+    <path d="M88 118 H178 Q193 118 193 133 V158 Q193 173 208 173 H286 Q301 173 301 188 V224 Q301 239 286 239 H116" fill="none" stroke="white" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="103" cy="118" r="12" fill="#111"/>
+    <circle cx="286" cy="173" r="12" fill="#111"/>
+    <circle cx="116" cy="239" r="12" fill="#111"/>
+    <text class="caption" x="200" y="326" text-anchor="middle">Unfolding timeline</text>
+    <text class="note" x="200" y="352" text-anchor="middle">A personal record that continues</text>
+  </g>
+</svg>

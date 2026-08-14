@@ -20,12 +20,14 @@ struct ContentView: View {
                     .tabBarMinimizeBehavior(.onScrollDown)
             }
         }
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .task(id: session.libraryRevision) {
             await prewarmShows()
             await container.releaseNotificationCoordinator.reconcile()
         }
         .sheet(isPresented: $router.isShowingSettings) {
             SettingsSheet()
+                .scrollEdgeEffectStyle(.soft, for: .top)
         }
         .sheet(item: $notificationResponses.destination) { destination in
             NotificationDestinationView(destination: destination)

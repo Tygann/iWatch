@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>iWatch flat color proof</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#121936"/><stop offset="1" stop-color="#090D21"/></linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="220" fill="url(#bg)"/>
+  <!-- Static approximation only; Icon Composer supplies the actual clear material. -->
+  <rect x="138" y="259" width="748" height="453" rx="64" fill="#FFFFFF" opacity=".12"/>
+  <path fill="#FFF7EE" fill-rule="evenodd" d="M82 304C82 248 127 203 183 203H841C897 203 942 248 942 304V667C942 723 897 768 841 768H183C127 768 82 723 82 667V304ZM202 259H822C857 259 886 288 886 323V648C886 683 857 712 822 712H202C167 712 138 683 138 648V323C138 288 167 259 202 259Z"/>
+  <rect x="364" y="778" width="296" height="42" rx="21" fill="#FFF7EE"/>
+</svg>
