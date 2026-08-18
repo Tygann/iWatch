@@ -236,14 +236,13 @@ private final class MediaDetailScreenModel {
     var primaryLabel: String {
         switch ref.kind {
         case .movie:
-            if isInWatchlist { return "In Watchlist" }
-            if moviePlayCount > 1 { return "Watched \(moviePlayCount) Times" }
+            if isInWatchlist { return "Watchlist" }
             if isMovieWatched { return "Watched" }
-            return "Add to Watchlist"
+            return "Watchlist"
         case .show:
             if showDisposition == .stopped { return "Stopped" }
             if watchedEpisodeKeys.isEmpty {
-                return isInWatchlist ? "In Watchlist" : "Add to Watchlist"
+                return "Watchlist"
             }
             if case let .loaded(.show(show)) = loadState,
                show.status?.localizedCaseInsensitiveContains("ended") == true,
@@ -253,7 +252,7 @@ private final class MediaDetailScreenModel {
             }
             return remainingReleasedEpisodes == 0 ? "Caught Up" : "Watching"
         default:
-            return isInWatchlist ? "In Watchlist" : "Add to Watchlist"
+            return "Watchlist"
         }
     }
 
@@ -546,30 +545,49 @@ private struct MediaDetailBody: View {
 
     @ViewBuilder
     private var lifecycleControl: some View {
-        if model.hasProgress || model.showDisposition == .stopped {
+        if presentsLifecycleMenu {
             Menu {
                 if model.ref.kind == .movie {
-                    Button {
-                        Task { await model.addMovieRewatch() }
-                    } label: {
-                        Label("Add Rewatch", systemImage: "arrow.clockwise")
-                    }
-                    Button {
-                        Task { await model.toggleMovieWatched() }
-                    } label: {
-                        Label("Remove Latest Play", systemImage: "minus.circle")
-                    }
-                    if !model.isInWatchlist {
+                    if model.isMovieWatched {
                         Button {
-                            Task { await model.toggleWatchlist() }
+                            Task { await model.addMovieRewatch() }
                         } label: {
-                            Label("Watch Again", systemImage: "plus.circle")
+                            Label("Watch Again", systemImage: "arrow.clockwise")
                         }
                     } else {
                         Button {
+                            Haptics.notification(.success)
+                            Task { await model.toggleMovieWatched() }
+                        } label: {
+                            Label("Mark as Watched", systemImage: "checkmark.circle")
+                        }
+                    }
+
+                    if !model.isInWatchlist, model.isMovieWatched {
+                        Button {
+                            Task { await model.toggleWatchlist() }
+                        } label: {
+                            Label("Add to Watchlist", systemImage: "bookmark")
+                        }
+                    }
+
+                    if model.isInWatchlist || model.isMovieWatched {
+                        Divider()
+                    }
+
+                    if model.isInWatchlist {
+                        Button(role: .destructive) {
                             Task { await model.toggleWatchlist() }
                         } label: {
                             Label("Remove from Watchlist", systemImage: "minus.circle")
+                        }
+                    }
+
+                    if model.isMovieWatched {
+                        Button(role: .destructive) {
+                            Task { await model.toggleMovieWatched() }
+                        } label: {
+                            Label("Remove Latest Play", systemImage: "minus.circle")
                         }
                     }
                 } else if model.showDisposition == .stopped {
@@ -577,6 +595,12 @@ private struct MediaDetailBody: View {
                         Task { await model.setShowDisposition(.active) }
                     } label: {
                         Label("Resume Watching", systemImage: "play.circle")
+                    }
+                } else if model.isInWatchlist {
+                    Button(role: .destructive) {
+                        Task { await model.toggleWatchlist() }
+                    } label: {
+                        Label("Remove from Watchlist", systemImage: "minus.circle")
                     }
                 } else {
                     Button {
@@ -586,25 +610,26 @@ private struct MediaDetailBody: View {
                     }
                 }
             } label: {
-                lifecycleLabel
+                lifecycleLabel(isMenu: true)
             }
             .buttonStyle(.borderedProminent)
             .glassEffect(.regular, in: .capsule)
             .clipShape(.capsule)
-            .tint(Color.accentColor)
-            .accessibilityLabel("\(model.primaryLabel). Show options")
+            .tint(model.showDisposition == .stopped ? Color.secondary : Color.accentColor)
+            .accessibilityLabel("Viewing status: \(model.primaryLabel)")
+            .accessibilityHint("Shows viewing-status options")
         } else {
             Button {
                 Haptics.notification(.success)
                 Task { await model.toggleWatchlist() }
             } label: {
-                lifecycleLabel
+                lifecycleLabel(isMenu: false)
             }
             .buttonStyle(.borderedProminent)
             .glassEffect(.regular, in: .capsule)
             .clipShape(.capsule)
-            .tint(model.isInWatchlist ? Color.accentColor : Color.secondary)
-            .accessibilityLabel(model.isInWatchlist ? "Remove from watchlist" : "Add to watchlist")
+            .tint(.secondary)
+            .accessibilityLabel("Add to Watchlist")
         }
     }
 
@@ -613,48 +638,46 @@ private struct MediaDetailBody: View {
         if dynamicTypeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: 8) {
                 lifecycleControl
-
-                if model.ref.kind == .movie, !model.isMovieWatched {
-                    movieWatchedControl
-                }
             }
         } else {
             HStack {
                 lifecycleControl
-
-                if model.ref.kind == .movie, !model.isMovieWatched {
-                    Spacer()
-                    movieWatchedControl
-                }
             }
         }
     }
 
-    private var movieWatchedControl: some View {
-        Button {
-            Haptics.notification(.success)
-            Task { await model.toggleMovieWatched() }
-        } label: {
-            Image(systemName: "checkmark")
-                .font(.body.weight(.semibold))
-                .frame(width: 25, height: 25)
-        }
-        .buttonStyle(.bordered)
-        .glassEffect(.regular, in: .circle)
-        .clipShape(.circle)
-        .tint(.secondary)
-        .accessibilityLabel("Mark as watched")
-        .accessibilityHint("Adds this movie to your watched history")
+    private var presentsLifecycleMenu: Bool {
+        model.isInWatchlist || model.hasProgress || model.showDisposition == .stopped
     }
 
-    private var lifecycleLabel: some View {
-        Text(model.primaryLabel)
-            .bold()
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(minWidth: 90, minHeight: 25)
-            .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil)
-            .padding(.horizontal, 6)
+    private var lifecycleSymbol: String {
+        if !presentsLifecycleMenu { return "plus" }
+
+        switch model.primaryLabel {
+        case "Watching": return "play.fill"
+        case "Stopped": return "stop.fill"
+        case "Completed": return "checkmark.seal.fill"
+        case "Watchlist": return "checkmark"
+        default: return "checkmark"
+        }
+    }
+
+    private func lifecycleLabel(isMenu: Bool) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: lifecycleSymbol)
+            Text(model.primaryLabel)
+            if isMenu {
+                Image(systemName: "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .accessibilityHidden(true)
+            }
+        }
+        .font(.body.weight(.semibold))
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(minWidth: 116, minHeight: 25)
+        .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil)
+        .padding(.horizontal, 6)
     }
 
     // MARK: - Metadata Section
