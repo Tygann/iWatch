@@ -44,6 +44,28 @@
       }
     },
     {
+      "hidden" : true,
+      "layers" : [
+        {
+          "blend-mode" : "normal",
+          "fill" : "automatic",
+          "glass" : false,
+          "hidden" : false,
+          "image-name" : "iwatch-check2.svg",
+          "name" : "iwatch-check2"
+        }
+      ],
+      "name" : "iWatch Check",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    },
+    {
       "blend-mode" : "normal",
       "blur-material" : 0.2,
       "layers" : [
