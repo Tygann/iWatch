@@ -408,9 +408,6 @@ private struct MoviesViewBody: View {
                     .accessibilityHidden(true)
             }
         }
-        .onTapGesture(count: 2) {
-            Task { await model.markWatched(item, showsFeedback: true) }
-        }
         .frame(width: 110)
     }
 }
