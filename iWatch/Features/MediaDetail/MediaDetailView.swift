@@ -347,6 +347,8 @@ struct MediaDetailView: View {
                 session: session
             )
             model = newModel
+            // Let SwiftUI commit the loading state before starting local persistence work.
+            await Task.yield()
             await newModel.load()
         }
         .toolbar {
@@ -398,6 +400,7 @@ private struct MediaDetailBody: View {
 
     @State private var showsNavigationTitle = false
     @State private var overviewFullLines = 0
+    @State private var observedLibraryRevision: Int?
 
     // MARK: - Body
     var body: some View {
@@ -437,6 +440,9 @@ private struct MediaDetailBody: View {
             }
         }
         .task(id: session.libraryRevision) {
+            guard observedLibraryRevision != session.libraryRevision else { return }
+            observedLibraryRevision = session.libraryRevision
+            guard model.loadState != .idle else { return }
             await model.refreshLibraryState()
         }
         .confirmationDialog(

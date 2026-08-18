@@ -171,6 +171,8 @@ struct EpisodeView: View {
                 session: session
             )
             model = newModel
+            // Let SwiftUI commit the loading state before starting local persistence work.
+            await Task.yield()
             await newModel.load()
         }
         .toolbar {
@@ -201,6 +203,7 @@ private struct EpisodeViewBody: View {
     @Environment(AppSession.self) private var session
 
     @State private var showsNavigationTitle = false
+    @State private var observedLibraryRevision: Int?
 
     private var bannerShape: UnevenRoundedRectangle {
         UnevenRoundedRectangle(
@@ -248,6 +251,9 @@ private struct EpisodeViewBody: View {
             }
         }
         .task(id: session.libraryRevision) {
+            guard observedLibraryRevision != session.libraryRevision else { return }
+            observedLibraryRevision = session.libraryRevision
+            guard model.loadState != .idle else { return }
             await model.refreshLibraryState()
         }
         .confirmationDialog(

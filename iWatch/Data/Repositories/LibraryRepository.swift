@@ -1058,7 +1058,12 @@ final class LibraryRepository {
     // MARK: Record Queries
 
     private func mediaRecord(for id: MediaID, context: ModelContext) -> MediaRecord? {
-        allMediaRecords(context: context).first { $0.kind == id.kind && $0.tmdbID == id.tmdbID }
+        let mediaKey = id.stableKey
+        var descriptor = FetchDescriptor<MediaRecord>(
+            predicate: #Predicate { $0.mediaKey == mediaKey }
+        )
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
     }
 
     private func episodeRecord(for ref: EpisodeRef, context: ModelContext) -> EpisodeRecord? {
@@ -1085,11 +1090,25 @@ final class LibraryRepository {
     }
 
     private func watchlistRecord(for id: MediaID, context: ModelContext) -> WatchlistRecord? {
-        allWatchlistRecords(context: context).first { $0.mediaKey == id.stableKey }
+        let mediaKey = id.stableKey
+        let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
+        let descriptor = FetchDescriptor<WatchlistRecord>(
+            predicate: #Predicate { $0.mediaKey == mediaKey }
+        )
+        return (try? context.fetch(descriptor))?.first {
+            LibraryGenerationPolicy.belongsToCurrentGeneration($0.generationID, current: generationID)
+        }
     }
 
     private func showDispositionRecord(for id: MediaID, context: ModelContext) -> ShowDispositionRecord? {
-        allShowDispositionRecords(context: context).first { $0.mediaKey == id.stableKey }
+        let mediaKey = id.stableKey
+        let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
+        let descriptor = FetchDescriptor<ShowDispositionRecord>(
+            predicate: #Predicate { $0.mediaKey == mediaKey }
+        )
+        return (try? context.fetch(descriptor))?.first {
+            LibraryGenerationPolicy.belongsToCurrentGeneration($0.generationID, current: generationID)
+        }
     }
 
     private func setShowDisposition(
@@ -1169,12 +1188,21 @@ final class LibraryRepository {
     }
 
     private func watchedEventRecords(for id: MediaID, context: ModelContext) -> [WatchedEventRecord] {
-        allWatchedEventRecords(context: context).filter { $0.tmdbID == id.tmdbID && $0.mediaID.kind == id.kind }
+        let tmdbID = id.tmdbID
+        let kindRaw = id.kind.rawValue
+        let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
+        return ((try? context.fetch(FetchDescriptor<WatchedEventRecord>(
+            predicate: #Predicate { $0.tmdbID == tmdbID && $0.kindRaw == kindRaw }
+        ))) ?? [])
+        .filter { LibraryGenerationPolicy.belongsToCurrentGeneration($0.generationID, current: generationID) }
     }
 
     private func watchedEventRecords(forShowID showID: Int, context: ModelContext) -> [WatchedEventRecord] {
-        allWatchedEventRecords(context: context)
-            .filter { $0.showTMDbID == showID }
+        let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
+        return ((try? context.fetch(FetchDescriptor<WatchedEventRecord>(
+            predicate: #Predicate { $0.showTMDbID == showID }
+        ))) ?? [])
+        .filter { LibraryGenerationPolicy.belongsToCurrentGeneration($0.generationID, current: generationID) }
     }
 
     private func allSyncOperations(context: ModelContext) -> [SyncOperationRecord] {
