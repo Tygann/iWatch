@@ -224,6 +224,9 @@ private struct ShowsViewBody: View {
                         item.progress.nextEpisode.map { "\(item.title), Season \($0.season) Episode \($0.episode), Continue Watching" }
                             ?? item.title
                     )
+                    .onTapGesture(count: 2) {
+                        Task { await model.markNextEpisodeWatched(for: item, showsFeedback: true) }
+                    }
                     .overlay(alignment: .topLeading) {
                         if let next = model.nextEpisodeLabel(for: item) {
                             Text(next)
