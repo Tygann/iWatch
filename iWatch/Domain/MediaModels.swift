@@ -228,6 +228,25 @@ struct ShowProgress: Equatable, Sendable {
         let episode: Int
         let airDate: Date?
         let airedAt: Date?
+        let stillPath: String?
+
+        nonisolated init(
+            tmdbID: Int,
+            traktID: Int?,
+            season: Int,
+            episode: Int,
+            airDate: Date?,
+            airedAt: Date?,
+            stillPath: String? = nil
+        ) {
+            self.tmdbID = tmdbID
+            self.traktID = traktID
+            self.season = season
+            self.episode = episode
+            self.airDate = airDate
+            self.airedAt = airedAt
+            self.stillPath = stillPath
+        }
     }
 
     let watchedEpisodeKeys: Set<String>

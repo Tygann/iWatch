@@ -2,12 +2,14 @@ import SwiftUI
 
 struct EpisodeStillImage: View {
     let path: String?
+    var fallbackPosterPath: String? = nil
     var width: CGFloat = 120
     var height: CGFloat = 68
     var cornerRadius: CGFloat = 12
 
     var body: some View {
         let url = ImageURLBuilder.make(path, size: .episodeStill)
+            ?? ImageURLBuilder.make(fallbackPosterPath, size: .posterTile)
 
         CachedArtworkImage(url: url, targetSize: CGSize(width: width, height: height)) { image in
             image

@@ -613,7 +613,8 @@ final class LibraryRepository {
                 season: $0.seasonNumber,
                 episode: $0.episodeNumber,
                 airDate: $0.airDate,
-                airedAt: $0.airedAt
+                airedAt: $0.airedAt,
+                stillPath: $0.stillPath
             )
         }
         let nextUpcoming = trackableEpisodeRows
@@ -634,7 +635,8 @@ final class LibraryRepository {
                     season: $0.seasonNumber,
                     episode: $0.episodeNumber,
                     airDate: $0.airDate,
-                    airedAt: $0.airedAt
+                    airedAt: $0.airedAt,
+                    stillPath: $0.stillPath
                 )
             }
         let mostRecentWatchedSeason = events

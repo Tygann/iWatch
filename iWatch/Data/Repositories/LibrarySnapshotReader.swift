@@ -288,7 +288,8 @@ actor LibrarySnapshotReader {
                 season: $0.seasonNumber,
                 episode: $0.episodeNumber,
                 airDate: $0.airDate,
-                airedAt: $0.airedAt
+                airedAt: $0.airedAt,
+                stillPath: $0.stillPath
             )
         }
         let nextUpcoming = trackableEpisodes
@@ -307,7 +308,8 @@ actor LibrarySnapshotReader {
                     season: $0.seasonNumber,
                     episode: $0.episodeNumber,
                     airDate: $0.airDate,
-                    airedAt: $0.airedAt
+                    airedAt: $0.airedAt,
+                    stillPath: $0.stillPath
                 )
             }
         let mostRecentWatchedSeason = events
