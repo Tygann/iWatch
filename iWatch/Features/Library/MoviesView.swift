@@ -384,7 +384,7 @@ private struct MoviesViewBody: View {
                         Haptics.notification(.success)
                         Task { await model.markUnwatched(item) }
                     } label: {
-                        Label("Remove Latest Play", systemImage: "arrow.uturn.backward.circle")
+                        Label("Remove Latest Play", systemImage: "minus.circle")
                     }
                 } else {
                     Button {
@@ -483,7 +483,7 @@ private struct MovieCollectionView: View {
                                 Haptics.notification(.success)
                                 Task { await markUnwatched(item) }
                             } label: {
-                                Label("Remove Latest Play", systemImage: "arrow.uturn.backward.circle")
+                                Label("Remove Latest Play", systemImage: "minus.circle")
                             }
                         }
                     )

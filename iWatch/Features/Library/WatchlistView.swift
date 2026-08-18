@@ -274,17 +274,18 @@ private struct WatchlistBody: View {
 
     @ViewBuilder
     private func continueWatchingMenu(for item: LibraryShowItem) -> some View {
-        NavigationLink {
-            MediaDetailView(ref: item.mediaID)
-        } label: {
-            Label("Go to Show", systemImage: "info.circle")
-        }
-        if let next = item.progress.nextEpisode {
+        if item.progress.nextEpisode != nil {
+            NavigationLink {
+                MediaDetailView(ref: item.mediaID)
+            } label: {
+                Label("Go to Show", systemImage: "info.circle")
+            }
+            Divider()
             Button {
                 Haptics.notification(.success)
                 Task { await model.markNextEpisodeWatched(for: item) }
             } label: {
-                Label("Mark S\(next.season) E\(next.episode) Watched", systemImage: "checkmark.circle")
+                Label("Mark as Watched", systemImage: "checkmark.circle")
             }
         }
         Button {
