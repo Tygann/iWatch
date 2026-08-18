@@ -235,6 +235,8 @@ struct ShowProgress: Equatable, Sendable {
     let totalEpisodes: Int?
     let remainingReleased: Int
     let nextEpisode: NextEpisode?
+    let nextUpcomingEpisode: NextEpisode?
+    let mostRecentWatchedSeason: Int?
 
     var isComplete: Bool {
         remainingReleased == 0 && (totalEpisodes.map { watchedCount >= $0 } ?? false)

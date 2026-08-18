@@ -472,7 +472,9 @@ private func makeShow(
                     airDate: $0,
                     airedAt: nil
                 )
-            }
+            },
+            nextUpcomingEpisode: nil,
+            mostRecentWatchedSeason: watchedCount > 0 ? 1 : nil
         ),
         isInWatchlist: watchedCount == 0,
         disposition: .active,

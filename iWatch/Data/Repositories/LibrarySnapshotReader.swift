@@ -291,6 +291,29 @@ actor LibrarySnapshotReader {
                 airedAt: $0.airedAt
             )
         }
+        let nextUpcoming = trackableEpisodes
+            .filter { !EpisodeAvailability.isReleased(airDate: $0.airDate, airedAt: $0.airedAt) }
+            .filter { episode in
+                !watchedTrackableKeys.contains(
+                    "ep:\(showID.tmdbID):S\(episode.seasonNumber):E\(episode.episodeNumber)"
+                )
+            }
+            .sorted { ($0.airDate ?? .distantFuture) < ($1.airDate ?? .distantFuture) }
+            .first
+            .map {
+                ShowProgress.NextEpisode(
+                    tmdbID: $0.tmdbID,
+                    traktID: $0.traktID,
+                    season: $0.seasonNumber,
+                    episode: $0.episodeNumber,
+                    airDate: $0.airDate,
+                    airedAt: $0.airedAt
+                )
+            }
+        let mostRecentWatchedSeason = events
+            .compactMap(\.seasonNumber)
+            .filter { $0 > 0 }
+            .max()
         let episodeCount = trackableEpisodes.count
 
         return ShowProgress(
@@ -298,7 +321,9 @@ actor LibrarySnapshotReader {
             watchedCount: watchedTrackableKeys.count,
             totalEpisodes: media?.totalEpisodes ?? (episodeCount == 0 ? nil : episodeCount),
             remainingReleased: remaining.count,
-            nextEpisode: next
+            nextEpisode: next,
+            nextUpcomingEpisode: nextUpcoming,
+            mostRecentWatchedSeason: mostRecentWatchedSeason
         )
     }
 

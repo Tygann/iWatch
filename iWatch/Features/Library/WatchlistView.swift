@@ -366,7 +366,9 @@ private enum WatchlistPreviewFixtures {
                     episode: episode,
                     airDate: .now,
                     airedAt: nil
-                )
+                ),
+                nextUpcomingEpisode: nil,
+                mostRecentWatchedSeason: season
             ),
             isInWatchlist: true,
             disposition: .active,

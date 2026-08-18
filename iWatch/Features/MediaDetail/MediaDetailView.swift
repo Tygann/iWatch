@@ -30,6 +30,8 @@ private final class MediaDetailScreenModel {
     var showDisposition: ShowDisposition = .active
     var remainingReleasedEpisodes = 0
     var nextEpisode: ShowProgress.NextEpisode?
+    var nextUpcomingEpisode: ShowProgress.NextEpisode?
+    var mostRecentWatchedSeason: Int?
     var episodesBySeason: [Int: [EpisodeDetails]] = [:]
     var loadingSeasons: Set<Int> = []
     var supplementaryDetails: MediaSupplementaryDetails?
@@ -80,10 +82,15 @@ private final class MediaDetailScreenModel {
                 expandedSeason = nextEpisode
                     .map(\.season)
                     .flatMap { availableSeasonNumbers.contains($0) ? $0 : nil }
+                    ?? nextUpcomingEpisode
+                        .map(\.season)
+                        .flatMap { availableSeasonNumbers.contains($0) ? $0 : nil }
+                    ?? mostRecentWatchedSeason
+                        .flatMap { availableSeasonNumbers.contains($0) ? $0 : nil }
                     ?? show.seasons
                         .filter { $0.seasonNumber > 0 }
                         .map(\.seasonNumber)
-                        .min()
+                        .max()
                     ?? show.seasons
                         .filter { $0.seasonNumber >= 0 }
                         .map(\.seasonNumber)
@@ -130,10 +137,14 @@ private final class MediaDetailScreenModel {
                 watchedEpisodeKeys = progress.watchedEpisodeKeys
                 remainingReleasedEpisodes = progress.remainingReleased
                 nextEpisode = progress.nextEpisode
+                nextUpcomingEpisode = progress.nextUpcomingEpisode
+                mostRecentWatchedSeason = progress.mostRecentWatchedSeason
             } catch {
                 watchedEpisodeKeys = []
                 remainingReleasedEpisodes = 0
                 nextEpisode = nil
+                nextUpcomingEpisode = nil
+                mostRecentWatchedSeason = nil
             }
 
         default:
@@ -909,6 +920,11 @@ private struct MediaDetailBody: View {
                         .contentMargins(.horizontal, Layout.horizontalInset, for: .scrollContent)
                         .padding(.horizontal, -Layout.horizontalInset)
                         .scrollTargetBehavior(.viewAligned)
+                        .onAppear {
+                            if let seasonNumber = model.expandedSeason {
+                                proxy.scrollTo(seasonNumber, anchor: .center)
+                            }
+                        }
                         .onChange(of: model.expandedSeason) { _, seasonNumber in
                             if let seasonNumber {
                                 withAnimation(.snappy) {

@@ -616,13 +616,40 @@ final class LibraryRepository {
                 airedAt: $0.airedAt
             )
         }
+        let nextUpcoming = trackableEpisodeRows
+            .filter { !EpisodeAvailability.isReleased(airDate: $0.airDate, airedAt: $0.airedAt) }
+            .filter {
+                !trackedWatchedKeys.contains(
+                    "ep:\(showID.tmdbID):S\($0.seasonNumber):E\($0.episodeNumber)"
+                )
+            }
+            .sorted {
+                ($0.airDate ?? .distantFuture) < ($1.airDate ?? .distantFuture)
+            }
+            .first
+            .map {
+                ShowProgress.NextEpisode(
+                    tmdbID: $0.tmdbID,
+                    traktID: $0.traktID,
+                    season: $0.seasonNumber,
+                    episode: $0.episodeNumber,
+                    airDate: $0.airDate,
+                    airedAt: $0.airedAt
+                )
+            }
+        let mostRecentWatchedSeason = events
+            .compactMap(\.seasonNumber)
+            .filter { $0 > 0 }
+            .max()
 
         return ShowProgress(
             watchedEpisodeKeys: watchedKeys,
             watchedCount: trackedWatchedKeys.count,
             totalEpisodes: totalEpisodes,
             remainingReleased: remaining.count,
-            nextEpisode: next
+            nextEpisode: next,
+            nextUpcomingEpisode: nextUpcoming,
+            mostRecentWatchedSeason: mostRecentWatchedSeason
         )
     }
 

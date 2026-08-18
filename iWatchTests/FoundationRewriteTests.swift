@@ -432,6 +432,18 @@ struct FoundationRewriteTests {
             )
         )
         context.insert(
+            EpisodeRecord(
+                showTMDbID: 202,
+                showTraktID: 2002,
+                tmdbID: 401,
+                traktID: 4001,
+                seasonNumber: 2,
+                episodeNumber: 1,
+                name: "Future Episode",
+                airDate: Calendar.current.date(byAdding: .day, value: 7, to: .now)
+            )
+        )
+        context.insert(
             WatchedEventRecord(
                 kind: .episode,
                 tmdbID: 301,
@@ -452,6 +464,9 @@ struct FoundationRewriteTests {
         #expect(progress.nextEpisode?.season == 1)
         #expect(progress.nextEpisode?.episode == 2)
         #expect(progress.nextEpisode?.tmdbID == 302)
+        #expect(progress.nextUpcomingEpisode?.season == 2)
+        #expect(progress.nextUpcomingEpisode?.episode == 1)
+        #expect(progress.mostRecentWatchedSeason == 1)
     }
 
     @Test
