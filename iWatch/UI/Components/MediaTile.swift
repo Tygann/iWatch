@@ -55,8 +55,23 @@ struct MediaTile<Destination: View, ExtraMenu: View>: View {
         .buttonStyle(.plain)
         .accessibilityLabel(title)
         .contextMenu {
+            NavigationLink {
+                destination()
+            } label: {
+                Label(contextMenuDestinationTitle, systemImage: "info.circle")
+            }
+            Divider()
             extraMenu()
             WatchlistMenu(ref: ref, title: title, posterPath: posterPath)
+        }
+    }
+
+    private var contextMenuDestinationTitle: String {
+        switch transitionID {
+        case .episode:
+            return "Go to Episode"
+        case .media:
+            return ref.kind == .show ? "Go to Show" : "Go to Movie"
         }
     }
 }

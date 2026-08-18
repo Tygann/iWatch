@@ -181,7 +181,7 @@ struct EpisodeView: View {
                     NavigationLink {
                         MediaDetailView(ref: showRef, onClose: onClose)
                     } label: {
-                        Label("View Show", systemImage: "tv")
+                        Label("Go to Show", systemImage: "info.circle")
                     }
                 } label: {
                     Image(systemName: "ellipsis")

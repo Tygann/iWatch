@@ -554,6 +554,7 @@ private struct MediaDetailBody: View {
                         } label: {
                             Label("Watch Again", systemImage: "arrow.clockwise")
                         }
+                        .tint(.primary)
                     } else {
                         Button {
                             Haptics.notification(.success)
@@ -561,14 +562,7 @@ private struct MediaDetailBody: View {
                         } label: {
                             Label("Mark as Watched", systemImage: "checkmark.circle")
                         }
-                    }
-
-                    if !model.isInWatchlist, model.isMovieWatched {
-                        Button {
-                            Task { await model.toggleWatchlist() }
-                        } label: {
-                            Label("Add to Watchlist", systemImage: "bookmark")
-                        }
+                        .tint(.primary)
                     }
 
                     if model.isInWatchlist || model.isMovieWatched {
@@ -581,6 +575,7 @@ private struct MediaDetailBody: View {
                         } label: {
                             Label("Remove from Watchlist", systemImage: "minus.circle")
                         }
+                        .tint(.red)
                     }
 
                     if model.isMovieWatched {
@@ -589,6 +584,7 @@ private struct MediaDetailBody: View {
                         } label: {
                             Label("Remove Latest Play", systemImage: "minus.circle")
                         }
+                        .tint(.red)
                     }
                 } else if model.showDisposition == .stopped {
                     Button {
@@ -596,18 +592,21 @@ private struct MediaDetailBody: View {
                     } label: {
                         Label("Resume Watching", systemImage: "play.circle")
                     }
+                    .tint(.primary)
                 } else if model.isInWatchlist {
                     Button(role: .destructive) {
                         Task { await model.toggleWatchlist() }
                     } label: {
                         Label("Remove from Watchlist", systemImage: "minus.circle")
                     }
+                    .tint(.red)
                 } else {
                     Button {
                         Task { await model.setShowDisposition(.stopped) }
                     } label: {
                         Label("Stop Watching", systemImage: "stop.circle")
                     }
+                    .tint(.primary)
                 }
             } label: {
                 lifecycleLabel(isMenu: true)
@@ -667,7 +666,7 @@ private struct MediaDetailBody: View {
             Image(systemName: lifecycleSymbol)
             Text(model.primaryLabel)
             if isMenu {
-                Image(systemName: "chevron.down")
+                Image(systemName: "chevron.up.chevron.down")
                     .font(.caption.weight(.semibold))
                     .accessibilityHidden(true)
             }

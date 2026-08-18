@@ -373,7 +373,7 @@ private struct ShowsViewBody: View {
         NavigationLink {
             MediaDetailView(ref: item.mediaID)
         } label: {
-            Label("View Show", systemImage: "tv")
+            Label("Go to Show", systemImage: "info.circle")
         }
         Divider()
         if let next = item.progress.nextEpisode {
@@ -381,7 +381,7 @@ private struct ShowsViewBody: View {
                 Haptics.notification(.success)
                 Task { await model.markNextEpisodeWatched(for: item) }
             } label: {
-                Label("Mark S\(next.season) E\(next.episode) as Watched", systemImage: "checkmark.circle")
+                Label("Mark S\(next.season) E\(next.episode) Watched", systemImage: "checkmark.circle")
             }
         }
         Divider()
