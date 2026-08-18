@@ -10,6 +10,7 @@ struct MediaTile<Destination: View, ExtraMenu: View>: View {
     let title: String
     let posterPath: String?
     var showTitle: Bool = false
+    var showsWatchlistAction = true
     let transitionID: MediaTileTransitionID
 
     @ViewBuilder var destination: () -> Destination
@@ -22,6 +23,7 @@ struct MediaTile<Destination: View, ExtraMenu: View>: View {
         title: String,
         posterPath: String?,
         showTitle: Bool = false,
+        showsWatchlistAction: Bool = true,
         transitionID: MediaTileTransitionID,
         @ViewBuilder destination: @escaping () -> Destination,
         @ViewBuilder extraMenu: @escaping () -> ExtraMenu
@@ -30,6 +32,7 @@ struct MediaTile<Destination: View, ExtraMenu: View>: View {
         self.title = title
         self.posterPath = posterPath
         self.showTitle = showTitle
+        self.showsWatchlistAction = showsWatchlistAction
         self.transitionID = transitionID
         self.destination = destination
         self.extraMenu = extraMenu
@@ -60,9 +63,10 @@ struct MediaTile<Destination: View, ExtraMenu: View>: View {
             } label: {
                 Label(contextMenuDestinationTitle, systemImage: "info.circle")
             }
-            Divider()
             extraMenu()
-            WatchlistMenu(ref: ref, title: title, posterPath: posterPath)
+            if showsWatchlistAction {
+                WatchlistMenu(ref: ref, title: title, posterPath: posterPath)
+            }
         }
     }
 
@@ -82,6 +86,7 @@ extension MediaTile where Destination == MediaDetailView {
         title: String,
         posterPath: String?,
         showTitle: Bool = false,
+        showsWatchlistAction: Bool = true,
         @ViewBuilder extraMenu: @escaping () -> ExtraMenu
     ) {
         self.init(
@@ -89,6 +94,7 @@ extension MediaTile where Destination == MediaDetailView {
             title: title,
             posterPath: posterPath,
             showTitle: showTitle,
+            showsWatchlistAction: showsWatchlistAction,
             transitionID: .media(ref),
             destination: { MediaDetailView(ref: ref) },
             extraMenu: extraMenu
@@ -101,13 +107,15 @@ extension MediaTile where Destination == MediaDetailView, ExtraMenu == EmptyView
         ref: MediaRef,
         title: String,
         posterPath: String?,
-        showTitle: Bool = false
+        showTitle: Bool = false,
+        showsWatchlistAction: Bool = true
     ) {
         self.init(
             ref: ref,
             title: title,
             posterPath: posterPath,
             showTitle: showTitle,
+            showsWatchlistAction: showsWatchlistAction,
             extraMenu: { EmptyView() }
         )
     }

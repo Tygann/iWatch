@@ -189,7 +189,6 @@ private struct WatchlistBody: View {
                                     } label: {
                                         Label("Mark as Watched", systemImage: "checkmark.circle")
                                     }
-                                    Divider()
                                 }
                             )
                             .onTapGesture(count: 2) {
@@ -256,6 +255,7 @@ private struct WatchlistBody: View {
                 title: item.title,
                 posterPath: item.posterPath,
                 showTitle: true,
+                showsWatchlistAction: false,
                 transitionID: .episode(episodeRef),
                 destination: { EpisodeView(ref: episodeRef) },
                 extraMenu: { continueWatchingMenu(for: item) }
@@ -266,6 +266,7 @@ private struct WatchlistBody: View {
                 title: item.title,
                 posterPath: item.posterPath,
                 showTitle: true,
+                showsWatchlistAction: false,
                 extraMenu: { continueWatchingMenu(for: item) }
             )
         }
@@ -278,7 +279,6 @@ private struct WatchlistBody: View {
         } label: {
             Label("Go to Show", systemImage: "info.circle")
         }
-        Divider()
         if let next = item.progress.nextEpisode {
             Button {
                 Haptics.notification(.success)
@@ -287,7 +287,6 @@ private struct WatchlistBody: View {
                 Label("Mark S\(next.season) E\(next.episode) Watched", systemImage: "checkmark.circle")
             }
         }
-        Divider()
         Button {
             Haptics.notification(.success)
             Task { await model.stopWatching(item) }

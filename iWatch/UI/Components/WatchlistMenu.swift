@@ -15,6 +15,7 @@ struct WatchlistMenu: View {
             if !hasLoadedWatchlistState {
                 ProgressView()
             } else if isInWatchlist {
+                Divider()
                 Button(role: .destructive) {
                     Task {
                         try? await container.libraryRepository.setWatchlist(false, for: ref)

@@ -266,7 +266,8 @@ private struct ShowsViewBody: View {
                             ref: item.mediaID,
                             title: item.title,
                             posterPath: item.posterPath,
-                            showTitle: false
+                            showTitle: false,
+                            showsWatchlistAction: false
                         )
 
 //                        if let label = model.nextAirLabel(for: item) {
@@ -305,7 +306,8 @@ private struct ShowsViewBody: View {
                         ref: item.mediaID,
                         title: item.title,
                         posterPath: item.posterPath,
-                        showTitle: false
+                        showTitle: false,
+                        showsWatchlistAction: title == "Not Started"
                     )
                     .frame(width: 110)
                 }
@@ -327,7 +329,8 @@ private struct ShowsViewBody: View {
                         ref: item.mediaID,
                         title: item.title,
                         posterPath: item.posterPath,
-                        showTitle: false
+                        showTitle: false,
+                        showsWatchlistAction: false
                     )
                     .frame(width: 110)
                 }
@@ -353,6 +356,7 @@ private struct ShowsViewBody: View {
                 title: item.title,
                 posterPath: item.posterPath,
                 showTitle: false,
+                showsWatchlistAction: false,
                 transitionID: .episode(episodeRef),
                 destination: { EpisodeView(ref: episodeRef) },
                 extraMenu: { continueWatchingMenu(for: item) }
@@ -363,6 +367,7 @@ private struct ShowsViewBody: View {
                 title: item.title,
                 posterPath: item.posterPath,
                 showTitle: false,
+                showsWatchlistAction: false,
                 extraMenu: { continueWatchingMenu(for: item) }
             )
         }
@@ -375,7 +380,6 @@ private struct ShowsViewBody: View {
         } label: {
             Label("Go to Show", systemImage: "info.circle")
         }
-        Divider()
         if let next = item.progress.nextEpisode {
             Button {
                 Haptics.notification(.success)
@@ -384,7 +388,6 @@ private struct ShowsViewBody: View {
                 Label("Mark S\(next.season) E\(next.episode) Watched", systemImage: "checkmark.circle")
             }
         }
-        Divider()
         Button {
             Haptics.notification(.success)
             Task { await model.stopWatching(item) }
@@ -422,7 +425,8 @@ private struct ShowCollectionView: View {
                             ref: item.mediaID,
                             title: item.title,
                             posterPath: item.posterPath,
-                            showTitle: true
+                            showTitle: true,
+                            showsWatchlistAction: false
                         )
 
 //                        if let text = secondaryText(item) {

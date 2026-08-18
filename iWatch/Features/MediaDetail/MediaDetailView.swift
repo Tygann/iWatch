@@ -545,7 +545,9 @@ private struct MediaDetailBody: View {
 
     @ViewBuilder
     private var lifecycleControl: some View {
-        if presentsLifecycleMenu {
+        if isCompletedShow {
+            lifecycleStatusControl
+        } else if presentsLifecycleMenu {
             Menu {
                 if model.ref.kind == .movie {
                     if model.isMovieWatched {
@@ -647,6 +649,20 @@ private struct MediaDetailBody: View {
 
     private var presentsLifecycleMenu: Bool {
         model.isInWatchlist || model.hasProgress || model.showDisposition == .stopped
+    }
+
+    private var isCompletedShow: Bool {
+        model.ref.kind == .show && model.primaryLabel == "Completed"
+    }
+
+    private var lifecycleStatusControl: some View {
+        lifecycleLabel(isMenu: false)
+            .foregroundStyle(.white)
+            .padding(.vertical, 6)
+            .padding(.horizontal, 6)
+            .background(Color.accentColor, in: .capsule)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Viewing status: Completed")
     }
 
     private var lifecycleSymbol: String {

@@ -370,6 +370,7 @@ private struct MoviesViewBody: View {
             title: item.title,
             posterPath: item.posterPath,
             showTitle: showTitle,
+            showsWatchlistAction: !item.isWatched,
             extraMenu: {
                 if item.isWatched {
                     Button {
@@ -378,7 +379,8 @@ private struct MoviesViewBody: View {
                     } label: {
                         Label("Add Rewatch", systemImage: "arrow.clockwise")
                     }
-                    Button {
+                    Divider()
+                    Button(role: .destructive) {
                         Haptics.notification(.success)
                         Task { await model.markUnwatched(item) }
                     } label: {
@@ -392,7 +394,6 @@ private struct MoviesViewBody: View {
                         Label("Mark as Watched", systemImage: "checkmark.circle")
                     }
                 }
-                Divider()
             }
         )
         .overlay(alignment: .topTrailing) {
@@ -476,14 +477,14 @@ private struct MovieCollectionView: View {
                         title: item.title,
                         posterPath: item.posterPath,
                         showTitle: true,
+                        showsWatchlistAction: false,
                         extraMenu: {
-                            Button {
+                            Button(role: .destructive) {
                                 Haptics.notification(.success)
                                 Task { await markUnwatched(item) }
                             } label: {
                                 Label("Remove Latest Play", systemImage: "arrow.uturn.backward.circle")
                             }
-                            Divider()
                         }
                     )
                     .overlay(alignment: .topTrailing) {
