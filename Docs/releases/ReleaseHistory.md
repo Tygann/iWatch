@@ -2,6 +2,23 @@
 
 This file records builds uploaded to App Store Connect. The source commit in the newest entry is the exclusive comparison boundary for the next build: review meaningful product changes after that commit, excluding release-history-only commits, and do not repeat previously published notes.
 
+## Version 1 (Build 10)
+
+- Uploaded: 2026-08-19
+- Channel: TestFlight
+- Source commit: `74992746b51a82ae69ec0d55b9bee5937c55e2c7`
+
+### What to Test
+
+What's new:
+- Get notified when movies and episodes in your library become available to watch.
+- Sort movies and enjoy smoother season, episode, search, and action interactions.
+
+Please test:
+- Enable release notifications and confirm the settings are clear and behave as expected.
+- Try each movie sorting option and confirm the selected order remains after relaunching.
+- Continue a show episode and confirm its artwork, season selection, and watched actions behave as expected.
+
 ## Version 1 (Build 8)
 
 - Uploaded: 2026-08-07
