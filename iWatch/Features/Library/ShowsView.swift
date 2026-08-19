@@ -80,6 +80,11 @@ private final class ShowsScreenModel {
         // materializes large episode tables, making the first Shows navigation hang.
     }
 
+    func nextEpisodeLabel(for item: LibraryShowItem) -> String? {
+        guard let next = item.progress.nextEpisode else { return nil }
+        return "S\(next.season) E\(next.episode)"
+    }
+
     func nextAirLabel(for item: LibraryShowItem) -> String? {
         guard let date = item.status.nextAirDate else { return nil }
         let cal = Calendar.current
@@ -215,6 +220,28 @@ private struct ShowsViewBody: View {
             } content: {
                 ForEach(model.snapshot.continueWatching) { item in
                     continueWatchingTile(item)
+                    .accessibilityLabel(
+                        item.progress.nextEpisode.map { "\(item.title), Season \($0.season) Episode \($0.episode), Continue Watching" }
+                            ?? item.title
+                    )
+                    .overlay(alignment: .topLeading) {
+                        if let next = model.nextEpisodeLabel(for: item) {
+                            Text(next)
+                                .font(.caption2.bold())
+                                .padding(3)
+                                .glassEffect()
+                                .padding(3)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    .overlay(alignment: .topTrailing) {
+                        if item.progress.remainingReleased > 0 {
+                            SystemBadge(label: "\(item.progress.remainingReleased)", color: .red, height: 20)
+                                .offset(x: 8, y: -8)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    .frame(width: 110)
                 }
             }
         }
@@ -321,12 +348,14 @@ private struct ShowsViewBody: View {
                 traktID: next.traktID
             )
 
-            ContinueWatchingEpisodeTile(
-                showTitle: item.title,
-                episodeRef: episodeRef,
-                stillPath: next.stillPath,
-                fallbackPosterPath: item.posterPath,
-                remainingEpisodes: item.progress.remainingReleased,
+            MediaTile(
+                ref: item.mediaID,
+                title: item.title,
+                posterPath: item.posterPath,
+                showTitle: false,
+                showsWatchlistAction: false,
+                transitionID: .episode(episodeRef),
+                destination: { EpisodeView(ref: episodeRef) },
                 extraMenu: { continueWatchingMenu(for: item) }
             )
         } else {
