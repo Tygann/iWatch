@@ -90,7 +90,7 @@ private final class MediaDetailScreenModel {
                     ?? show.seasons
                         .filter { $0.seasonNumber > 0 }
                         .map(\.seasonNumber)
-                        .max()
+                        .min()
                     ?? show.seasons
                         .filter { $0.seasonNumber >= 0 }
                         .map(\.seasonNumber)
