@@ -561,6 +561,53 @@ struct FoundationRewriteTests {
     }
 
     @Test
+    func overlappingSnapshotRefreshesDoNotExposeCancellation() async throws {
+        let repository = makeLibraryRepository(persistence: makePersistence())
+        let first = Task { try await repository.showLibrarySnapshot(revision: 1, forceRefresh: true) }
+        let second = Task { try await repository.showLibrarySnapshot(revision: 1, forceRefresh: true) }
+        #expect(try await first.value == .empty)
+        #expect(try await second.value == .empty)
+        #expect(CancellationError().isCancelled)
+    }
+
+    @Test
+    func episodeEnrichmentRefreshesCachedImportedProgressWithoutLibraryMutation() async throws {
+        let persistence = makePersistence()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ProgressCatalogURLProtocol.self]
+        let repository = LibraryRepository(
+            persistence: persistence,
+            tmdb: TMDbService(apiClient: APIClient(session: URLSession(configuration: configuration)), apiKey: "test-key")
+        )
+        let context = persistence.makeContext()
+        let showID = MediaID(kind: .show, id: 515, traktID: 5150)
+        context.insert(MediaRecord(
+            kind: .show, tmdbID: 515, traktID: 5150, title: "Imported Show",
+            overview: "Test show", posterPath: "/show.jpg", totalEpisodes: 2,
+            seasonsData: try JSONEncoder().encode([
+                StoredShowSeason(id: 1, traktID: nil, seasonNumber: 1, name: "Season 1", episodeCount: 2, posterPath: nil)
+            ])
+        ))
+        context.insert(EpisodeRecord(showTMDbID: 515, tmdbID: 101, seasonNumber: 1, episodeNumber: 1, name: "First", airDate: .distantPast))
+        context.insert(WatchedEventRecord(kind: .episode, tmdbID: 101, showTMDbID: 515, seasonNumber: 1, episodeNumber: 1, watchedAt: .now))
+        try context.save()
+
+        let before = try await repository.showLibrarySnapshot(revision: 1)
+        #expect(before.continueWatching.isEmpty)
+        #expect(before.all.first?.needsProgressEnrichment == true)
+
+        try await repository.enrichShowProgress(for: showID)
+
+        // Same library revision: metadata writes must invalidate cached progress.
+        let after = try await repository.showLibrarySnapshot(revision: 1)
+        #expect(after.continueWatching.first?.progress.nextEpisode?.episode == 2)
+        #expect(after.continueWatching.first?.progress.remainingReleased == 1)
+        #expect(after.all.first?.needsProgressEnrichment == false)
+        #expect(try fetchAll(WatchedEventRecord.self, from: persistence).count == 1)
+        #expect(try fetchAll(SyncOperationRecord.self, from: persistence).isEmpty)
+    }
+
+    @Test
     func showProgressIgnoresSeasonZeroForNextUpAndRemainingCount() async throws {
         let persistence = makePersistence()
         let repository = makeLibraryRepository(persistence: persistence)
@@ -1612,4 +1659,20 @@ private actor FakeTraktSyncRemote: TraktSyncing {
             removeHistoryCalls: removeHistoryCalls
         )
     }
+}
+
+private final class ProgressCatalogURLProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        guard request.url?.path == "/3/tv/515/season/1" else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+            return
+        }
+        let data = #"{"id":1,"season_number":1,"name":"Season 1","episodes":[{"id":101,"season_number":1,"episode_number":1,"name":"First","air_date":"2020-01-01"},{"id":102,"season_number":1,"episode_number":2,"name":"Second","air_date":"2020-01-02"}]}"#.data(using: .utf8)!
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }

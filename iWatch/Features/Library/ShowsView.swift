@@ -46,9 +46,10 @@ private final class ShowsScreenModel {
         let revision = session.libraryRevision
         guard !isEnriching, enrichedRevision != revision else { return }
         isEnriching = true
+        var hadEnrichmentFailure = false
         defer {
             isEnriching = false
-            if !Task.isCancelled {
+            if !Task.isCancelled, !hadEnrichmentFailure {
                 enrichedRevision = revision
             }
         }
@@ -75,9 +76,23 @@ private final class ShowsScreenModel {
             await load(revision: session.libraryRevision, forceRefresh: true)
         }
 
-        // Episode progress is enriched when a show/season is opened or during sync.
-        // Doing it for every followed show here blocks the main actor while SwiftData
-        // materializes large episode tables, making the first Shows navigation hang.
+        // Publish the initial library first, then fill missing catalogs incrementally.
+        // Recently watched shows are most likely to have a next episode to surface.
+        let missingProgress = snapshot.all
+            .filter { $0.disposition == .active && $0.needsProgressEnrichment }
+            .sorted { ($0.lastWatchedAt ?? .distantPast) > ($1.lastWatchedAt ?? .distantPast) }
+        for item in missingProgress {
+            guard !Task.isCancelled else { return }
+            do {
+                try await repository.enrichShowProgress(for: item.mediaID)
+            } catch {
+                guard !error.isCancelled else { return }
+                hadEnrichmentFailure = true
+            }
+            await load(revision: session.libraryRevision, forceRefresh: true)
+            await Task.yield()
+        }
+        if hadEnrichmentFailure { enrichedRevision = nil }
     }
 
     func nextEpisodeLabel(for item: LibraryShowItem) -> String? {
@@ -200,7 +215,7 @@ private struct ShowsViewBody: View {
                 }
             }
             .task(id: session.libraryRevision) {
-                await model.load(revision: session.libraryRevision)
+                await model.load(revision: session.libraryRevision, forceRefresh: true)
                 await model.enrichLibrary()
             }
         }

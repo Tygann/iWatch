@@ -12,7 +12,7 @@ final class LibraryRepository {
     private let snapshotReader: LibrarySnapshotReader
     private var cachedMovieSnapshot: (revision: Int, items: [LibraryMovieItem])?
     private var cachedShowSnapshot: (revision: Int, snapshot: ShowLibrarySnapshot)?
-    private var showSnapshotTask: (revision: Int, task: Task<ShowLibrarySnapshot, Error>)?
+    private var showSnapshotTask: (revision: Int, token: UUID, task: Task<ShowLibrarySnapshot, Error>)?
     private var refreshedSeasonArtworkKeys: Set<String> = []
 
     init(
@@ -531,31 +531,44 @@ final class LibraryRepository {
         if !forceRefresh, let cachedShowSnapshot, cachedShowSnapshot.revision == revision {
             return cachedShowSnapshot.snapshot
         }
-        if !forceRefresh, let showSnapshotTask, showSnapshotTask.revision == revision {
-            return try await showSnapshotTask.task.value
-        }
 
         if forceRefresh {
             showSnapshotTask?.task.cancel()
             showSnapshotTask = nil
         }
 
-        let snapshotReader = snapshotReader
-        let task = Task {
-            ShowLibrarySnapshot(items: try await snapshotReader.showItems())
+        let pending: (revision: Int, token: UUID, task: Task<ShowLibrarySnapshot, Error>)
+        if let existing = showSnapshotTask, existing.revision == revision {
+            pending = existing
+        } else {
+            let snapshotReader = snapshotReader
+            let task = Task {
+                let items = try await snapshotReader.showItems()
+                try Task.checkCancellation()
+                return ShowLibrarySnapshot(items: items)
+            }
+            pending = (revision, UUID(), task)
+            showSnapshotTask = pending
         }
-        showSnapshotTask = (revision, task)
+        let task = pending.task
+        let token = pending.token
 
         do {
             let snapshot = try await task.value
-            cachedShowSnapshot = (revision, snapshot)
-            if showSnapshotTask?.revision == revision {
+            try Task.checkCancellation()
+            if showSnapshotTask?.token == token {
+                cachedShowSnapshot = (revision, snapshot)
                 showSnapshotTask = nil
             }
             return snapshot
         } catch {
-            if showSnapshotTask?.revision == revision {
+            if showSnapshotTask?.token == token {
                 showSnapshotTask = nil
+            }
+            // Catalog writes or another refresh can supersede a shared read.
+            // A caller that is still on screen should receive the replacement.
+            if error.isCancelled, !Task.isCancelled {
+                return try await showLibrarySnapshot(revision: revision)
             }
             throw error
         }
@@ -670,11 +683,9 @@ final class LibraryRepository {
             return
         }
 
-        let cachedEpisodeCounts = Dictionary(
-            grouping: allEpisodeRecords(forShowID: showID.tmdbID, context: context),
-            by: \.seasonNumber
+        let cachedEpisodeCounts = try await snapshotReader.episodeCounts(
+            for: showID.tmdbID, seasons: seasons.map(\.seasonNumber)
         )
-        .mapValues(\.count)
 
         for season in seasons
         where season.seasonNumber >= 0
@@ -683,6 +694,7 @@ final class LibraryRepository {
             } ?? true) {
             try Task.checkCancellation()
             _ = try await episodes(for: showID, seasonNumber: season.seasonNumber)
+            await Task.yield()
         }
     }
 
@@ -872,10 +884,16 @@ final class LibraryRepository {
     private func upsertEpisodes(_ episodes: [EpisodeDetails], for showID: MediaID) throws {
         let context = persistence.makeContext()
         let encoder = JSONEncoder()
+        let seasonNumbers = Set(episodes.map(\.seasonNumber))
+        var existingByKey = Dictionary(
+            seasonNumbers.flatMap { episodeRecords(forShowID: showID.tmdbID, seasonNumber: $0, context: context) }.map {
+                ("\($0.seasonNumber):\($0.episodeNumber)", $0)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
 
         for episode in episodes {
-            let ref = episode.ref
-            if let existing = episodeRecord(for: ref, context: context) {
+            if let existing = existingByKey["\(episode.seasonNumber):\(episode.episodeNumber)"] {
                 existing.traktID = episode.traktID ?? existing.traktID
                 existing.showTraktID = showID.traktID ?? existing.showTraktID
                 existing.name = episode.name
@@ -886,27 +904,30 @@ final class LibraryRepository {
                 existing.extrasData = try episode.extras.map { try encoder.encode($0) } ?? existing.extrasData
                 existing.updatedAt = .now
             } else {
-                context.insert(
-                    EpisodeRecord(
-                        showTMDbID: showID.tmdbID,
-                        showTraktID: showID.traktID,
-                        tmdbID: episode.id,
-                        traktID: episode.traktID,
-                        seasonNumber: episode.seasonNumber,
-                        episodeNumber: episode.episodeNumber,
-                        name: episode.name,
-                        airDate: episode.airDate,
-                        airedAt: episode.airedAt,
-                        stillPath: episode.stillPath,
-                        overview: episode.overview,
-                        extrasData: try episode.extras.map { try encoder.encode($0) },
-                        updatedAt: .now
-                    )
+                let record = EpisodeRecord(
+                    showTMDbID: showID.tmdbID,
+                    showTraktID: showID.traktID,
+                    tmdbID: episode.id,
+                    traktID: episode.traktID,
+                    seasonNumber: episode.seasonNumber,
+                    episodeNumber: episode.episodeNumber,
+                    name: episode.name,
+                    airDate: episode.airDate,
+                    airedAt: episode.airedAt,
+                    stillPath: episode.stillPath,
+                    overview: episode.overview,
+                    extrasData: try episode.extras.map { try encoder.encode($0) },
+                    updatedAt: .now
                 )
+                context.insert(record)
+                existingByKey["\(episode.seasonNumber):\(episode.episodeNumber)"] = record
             }
         }
 
         try context.save()
+        cachedShowSnapshot = nil
+        showSnapshotTask?.task.cancel()
+        showSnapshotTask = nil
     }
 
     private func upsertSyncOperation(kind: SyncOperationKind,

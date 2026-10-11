@@ -10,6 +10,18 @@ actor LibrarySnapshotReader {
         self.persistence = persistence
     }
 
+    func episodeCounts(for showID: Int, seasons: [Int]) throws -> [Int: Int] {
+        let context = persistence.makeContext()
+        var counts: [Int: Int] = [:]
+        for season in seasons {
+            try Task.checkCancellation()
+            counts[season] = try context.fetchCount(FetchDescriptor<EpisodeRecord>(
+                predicate: #Predicate { $0.showTMDbID == showID && $0.seasonNumber == season }
+            ))
+        }
+        return counts
+    }
+
     // MARK: Release Notifications
 
     func releaseNotificationSnapshot(referenceDate: Date = .now) throws -> ReleaseNotificationSnapshot {
