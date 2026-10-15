@@ -5,17 +5,35 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   verify:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Reject committed secrets
         run: |
           test ! -f iWatch/Secrets.plist
           ! git grep -nE '(TRAKT_CLIENT_SECRET|TMDB_API_KEY).*[=:][[:space:]]*[A-Za-z0-9_-]{24,}' -- ':!iWatch/Secrets.example.plist'
       - name: Check whitespace
-        run: git diff --check HEAD^ HEAD
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BASE_SHA: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            base=$(git merge-base "$PR_BASE_SHA" HEAD)
+          elif [ -n "$PUSH_BASE_SHA" ] && [ "$PUSH_BASE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            base="$PUSH_BASE_SHA"
+          else
+            base=$(git hash-object -t tree /dev/null)
+          fi
+          git diff --check "$base" HEAD
       - name: Build
         run: xcodebuild -project iWatch.xcodeproj -scheme iWatch -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build
       - name: Unit tests
