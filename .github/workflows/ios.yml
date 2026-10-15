@@ -12,6 +12,7 @@ concurrency:
 jobs:
   verify:
     runs-on: xcode-27
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,7 +35,16 @@ jobs:
             base=$(git hash-object -t tree /dev/null)
           fi
           git diff --check "$base" HEAD
+      - name: Check UI architecture boundaries
+        run: python3 scripts/check-view-boundaries.py
       - name: Build
         run: xcodebuild -project iWatch.xcodeproj -scheme iWatch -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build
       - name: Unit tests
-        run: xcodebuild test -project iWatch.xcodeproj -scheme iWatch -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:iWatchTests
+        run: xcodebuild test -project iWatch.xcodeproj -scheme iWatch -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:iWatchTests -parallel-testing-enabled NO -resultBundlePath work/iWatchTests.xcresult
+      - name: Save test failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iwatch-test-results
+          path: work/iWatchTests.xcresult
+          retention-days: 7
