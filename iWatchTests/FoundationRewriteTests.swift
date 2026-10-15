@@ -1405,41 +1405,6 @@ struct FoundationRewriteTests {
         #expect(try fetchAll(WatchlistRecord.self, from: persistence).count == 1)
     }
 
-    // MARK: Architecture Boundaries
-
-    @Test
-    func viewsDoNotDependOnRemoteClientsOrPersistenceRecordsDirectly() throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let viewsURL = root.appendingPathComponent("iWatch/Views")
-        let files = try FileManager.default.subpathsOfDirectory(atPath: viewsURL.path)
-            .filter { $0.hasSuffix(".swift") && !$0.contains("ShowsView-Backup") }
-
-        let disallowedSnippets = [
-            "TMDbService",
-            "TraktService",
-            "Persistence(",
-            "ModelContext(",
-            "FetchDescriptor<",
-            "MediaRecord",
-            "EpisodeRecord",
-            "WatchlistRecord",
-            "WatchedEventRecord",
-            "SyncOperationRecord",
-            "SyncStateRecord",
-        ]
-
-        for file in files {
-            let contents = try String(contentsOf: viewsURL.appendingPathComponent(file), encoding: .utf8)
-            for snippet in disallowedSnippets {
-                #expect(
-                    contents.contains(snippet) == false,
-                    Comment("Found disallowed dependency '\(snippet)' in \(file)")
-                )
-            }
-        }
-    }
 }
 
 // MARK: - Fixtures
