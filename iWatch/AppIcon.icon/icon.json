@@ -71,7 +71,15 @@
       "layers" : [
         {
           "blend-mode" : "normal",
-          "fill" : "none",
+          "fill-specializations" : [
+            {
+              "value" : "none"
+            },
+            {
+              "appearance" : "dark",
+              "value" : "automatic"
+            }
+          ],
           "glass" : true,
           "hidden" : false,
           "image-name" : "iwatch-check.svg",
@@ -116,7 +124,15 @@
       "hidden" : false,
       "layers" : [
         {
-          "fill" : "none",
+          "fill-specializations" : [
+            {
+              "value" : "none"
+            },
+            {
+              "appearance" : "dark",
+              "value" : "automatic"
+            }
+          ],
           "glass" : true,
           "image-name" : "iwatch-screen.svg",
           "name" : "iwatch-screen"
