@@ -79,22 +79,28 @@ private final class MediaDetailScreenModel {
             if expandedSeason == nil,
                case let .show(show) = details {
                 let availableSeasonNumbers = Set(show.seasons.map(\.seasonNumber))
-                expandedSeason = nextEpisode
+                let nextSeason: Int? = nextEpisode
                     .map(\.season)
                     .flatMap { availableSeasonNumbers.contains($0) ? $0 : nil }
-                    ?? nextUpcomingEpisode
-                        .map(\.season)
-                        .flatMap { availableSeasonNumbers.contains($0) ? $0 : nil }
-                    ?? mostRecentWatchedSeason
-                        .flatMap { availableSeasonNumbers.contains($0) ? $0 : nil }
-                    ?? show.seasons
-                        .filter { $0.seasonNumber > 0 }
-                        .map(\.seasonNumber)
-                        .min()
-                    ?? show.seasons
-                        .filter { $0.seasonNumber >= 0 }
-                        .map(\.seasonNumber)
-                        .min()
+                let upcomingSeason: Int? = nextUpcomingEpisode
+                    .map(\.season)
+                    .flatMap { availableSeasonNumbers.contains($0) ? $0 : nil }
+                let watchedSeason: Int? = mostRecentWatchedSeason
+                    .flatMap { availableSeasonNumbers.contains($0) ? $0 : nil }
+                let firstRegularSeason: Int? = show.seasons
+                    .filter { $0.seasonNumber > 0 }
+                    .map(\.seasonNumber)
+                    .min()
+                let firstAvailableSeason: Int? = show.seasons
+                    .filter { $0.seasonNumber >= 0 }
+                    .map(\.seasonNumber)
+                    .min()
+
+                expandedSeason = nextSeason
+                    ?? upcomingSeason
+                    ?? watchedSeason
+                    ?? firstRegularSeason
+                    ?? firstAvailableSeason
             }
 
             if let expandedSeason,
