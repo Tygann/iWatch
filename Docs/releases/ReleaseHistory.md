@@ -2,6 +2,23 @@
 
 This file records builds uploaded to App Store Connect. The source commit in the newest entry is the exclusive comparison boundary for the next build: review meaningful product changes after that commit, excluding release-history-only commits, and do not repeat previously published notes.
 
+## Version 1 (Build 19)
+
+- Uploaded: 2026-10-24
+- Channel: TestFlight
+- Source commit: `b2f6f3605ac8792a5ad2df7c478d2cc8d032023f`
+
+### What to Test
+
+What's new:
+- Fixed missing shows in Continue Watching after library imports, with next-episode progress filling in as your library loads.
+- Refined the app icon in dark appearance.
+
+Please test:
+- After importing your Trakt library, open Shows and confirm in-progress shows appear in Continue Watching with the correct next episode.
+- Mark an episode watched and confirm Continue Watching advances correctly, including after relaunching.
+- With a large library, check that Shows remains responsive while episode progress loads.
+
 ## Version 1 (Build 10)
 
 - Uploaded: 2026-08-19
