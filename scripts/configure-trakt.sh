@@ -1,5 +1,5 @@
 #!/bin/sh
-# Runs after Copy Bundle Resources. Never prints credential values.
+# Configures TMDb and Trakt after Copy Bundle Resources. Never prints values.
 set -eu
 
 bundle="${TARGET_BUILD_DIR:?}/${UNLOCALIZED_RESOURCES_FOLDER_PATH:?}"
@@ -7,7 +7,7 @@ info="${TARGET_BUILD_DIR}/${INFOPLIST_PATH:?}"
 secrets="$bundle/Secrets.plist"
 plistbuddy=/usr/libexec/PlistBuddy
 
-fail() { echo "error: Trakt configuration: $1" >&2; exit 1; }
+fail() { echo "error: API configuration: $1" >&2; exit 1; }
 read_key() {
     if [ -f "$1" ]; then
         "$plistbuddy" -c "Print :$2" "$1" 2>/dev/null || true
@@ -31,14 +31,15 @@ if [ -f "$local_secrets" ]; then
 else
     /bin/rm -f "$secrets"
 fi
-for key in TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET TRAKT_REDIRECT_URI; do
+for key in TMDB_API_KEY TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET TRAKT_REDIRECT_URI; do
     /usr/bin/plutil -remove "$key" "$info" 2>/dev/null || true
 done
 
 # Environment variables are a private CI input. Write only into the build
 # product, leaving the developer's local Secrets.plist untouched.
-for key in TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET TRAKT_REDIRECT_URI; do
+for key in TMDB_API_KEY TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET TRAKT_REDIRECT_URI; do
     case "$key" in
+        TMDB_API_KEY) value="${TMDB_API_KEY:-}" ;;
         TRAKT_CLIENT_ID) value="${TRAKT_CLIENT_ID:-}" ;;
         TRAKT_CLIENT_SECRET) value="${TRAKT_CLIENT_SECRET:-}" ;;
         TRAKT_REDIRECT_URI) value="${TRAKT_REDIRECT_URI:-}" ;;
@@ -53,12 +54,12 @@ for key in TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET TRAKT_REDIRECT_URI; do
     fi
 done
 
-# Debug remains usable without an optional Trakt integration.
+# Debug remains usable without remote service configuration.
 if [ "${CONFIGURATION:-}" != Release ] && [ "${ACTION:-}" != install ]; then
     exit 0
 fi
 
-for key in TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET TRAKT_REDIRECT_URI; do
+for key in TMDB_API_KEY TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET TRAKT_REDIRECT_URI; do
     value="$(read_key "$info" "$key")"
     if ! valid_value "$value"; then
         # An invalid nonempty Info value would mask the bundled fallback.
@@ -78,4 +79,4 @@ for key in TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET TRAKT_REDIRECT_URI; do
         esac
     fi
 done
-echo "Trakt release configuration validated."
+echo "TMDb and Trakt release configuration validated."

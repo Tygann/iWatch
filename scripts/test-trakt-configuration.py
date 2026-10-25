@@ -41,13 +41,16 @@ elif args[0] in ('-replace', '-remove'):
     base = dict(PATH=os.environ['PATH'], SRCROOT=str(root), TARGET_BUILD_DIR=str(root),
                 UNLOCALIZED_RESOURCES_FOLDER_PATH='App.app', INFOPLIST_PATH='App.app/Info.plist',
                 PRODUCT_BUNDLE_IDENTIFIER='com.tyler.iWatch', CONFIGURATION='Release')
-    valid = {'TRAKT_CLIENT_ID': 'fixture-id', 'TRAKT_CLIENT_SECRET': 'fixture-secret'}
+    valid = {'TMDB_API_KEY': 'fixture-tmdb-key', 'TRAKT_CLIENT_ID': 'fixture-id', 'TRAKT_CLIENT_SECRET': 'fixture-secret'}
     cases = [
         ('missing', {}, {}, False),
         ('debug missing', {}, {'CONFIGURATION': 'Debug'}, True),
         ('archive missing', {}, {'CONFIGURATION': 'Debug', 'ACTION': 'install'}, False),
         ('local credentials', valid, {}, True),
-        ('missing secret', {'TRAKT_CLIENT_ID': 'fixture-id'}, {}, False),
+        ('missing TMDb key', {k: v for k, v in valid.items() if k != 'TMDB_API_KEY'}, {}, False),
+        ('placeholder TMDb key', dict(valid, TMDB_API_KEY='replace-with-key'), {}, False),
+        ('whitespace TMDb key', dict(valid, TMDB_API_KEY='  '), {}, False),
+        ('missing secret', {k: v for k, v in valid.items() if k != 'TRAKT_CLIENT_SECRET'}, {}, False),
         ('placeholder', dict(valid, TRAKT_CLIENT_ID='replace-with-id'), {}, False),
         ('whitespace', dict(valid, TRAKT_CLIENT_ID='  '), {}, False),
         ('unresolved', dict(valid, TRAKT_CLIENT_ID='$(TRAKT_CLIENT_ID)'), {}, False),
@@ -59,6 +62,7 @@ elif args[0] in ('-replace', '-remove'):
         result = subprocess.run(['/bin/sh', str(script)], env=base | extra, capture_output=True, text=True)
         assert (result.returncode == 0) == expected, 'Unexpected configuration result'
         assert 'fixture-secret' not in result.stdout + result.stderr
+        assert 'fixture-tmdb-key' not in result.stdout + result.stderr
     for name, values, extra, expected in cases:
         info.write_bytes(plistlib.dumps({}))
         secrets.unlink(missing_ok=True)
@@ -70,12 +74,14 @@ elif args[0] in ('-replace', '-remove'):
         assert (local_secrets.read_bytes() if local_secrets.exists() else None) == before
         if name.startswith('CI'):
             assert plistlib.loads(info.read_bytes())['TRAKT_CLIENT_ID'] == 'fixture-id'
+            assert plistlib.loads(info.read_bytes())['TMDB_API_KEY'] == 'fixture-tmdb-key'
         print('PASS:', name)
     local_secrets.unlink(missing_ok=True)
     run(valid, True)
     run({}, False)
     assert not secrets.exists()
     assert 'TRAKT_CLIENT_ID' not in plistlib.loads(info.read_bytes())
+    assert 'TMDB_API_KEY' not in plistlib.loads(info.read_bytes())
     print('PASS: removed CI inputs cannot reuse stale credentials')
     local_secrets.write_bytes(plistlib.dumps(valid))
     run({}, True)

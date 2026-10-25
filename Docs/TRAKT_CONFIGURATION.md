@@ -1,4 +1,4 @@
-# Trakt build configuration
+# TMDb and Trakt build configuration
 
 Trakt credentials belong to the iWatch Trakt application, not the person signing
 in. Obtain valid credentials from that application's owner. Do not commit them.
@@ -7,9 +7,13 @@ For local builds, copy `iWatch/Secrets.example.plist` to the ignored
 `iWatch/Secrets.plist` and replace the placeholder values privately. Xcode's
 synchronized app folder includes the local file as a bundle resource.
 
+TMDb supplies movie/show metadata and artwork independently of Trakt. Configure
+`TMDB_API_KEY` with a TMDb v3 API key (not the API Read Access Token).
+Keep it in the ignored local plist for local builds.
+
 For CI and Xcode Cloud, configure private environment variables
-`TRAKT_CLIENT_ID`, `TRAKT_CLIENT_SECRET`, and `TRAKT_REDIRECT_URI` in the build
-service. Make them available to the archive action. The Configure Trakt phase
+`TMDB_API_KEY`, `TRAKT_CLIENT_ID`, `TRAKT_CLIENT_SECRET`, and
+`TRAKT_REDIRECT_URI` in the build service. Make them available to the archive action. The Configure Trakt phase
 places these values into the app build product without changing the source
 Secrets.plist. Use `main` as the workflow source branch. Local Xcode does not
 inherit Xcode Cloud variables; keep the ignored local file for local builds.
@@ -22,10 +26,12 @@ to the bundle identifier followed by `://oauth/callback`.
 
 Every Release build and archive validates the effective configuration in the
 built app. Missing, whitespace-only, placeholder, or unresolved values stop the
-build. Debug builds can omit Trakt so local library development and unit tests
-remain available. The phase runs on every build and reconstructs Trakt
+build. TMDb is also required and validated for Release builds, preventing a
+missing key from reaching TestFlight. This validates configuration presence,
+not whether the provider has revoked a key. Debug builds can omit remote
+configuration so local library development and unit tests remain available. The phase runs on every build and reconstructs API
 configuration from the current local file and environment, so removed inputs cannot reuse old values
-from an incremental build. Trakt keys in the generated Info.plist are owned by
+from an incremental build. API keys in the generated Info.plist are owned by
 this phase; configure them through these two inputs. App-target script
 sandboxing is disabled so it can update build-product configuration using private
 environment variables. This does not change the app's runtime sandbox.
