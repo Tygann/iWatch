@@ -23,6 +23,18 @@ valid_value() {
     esac
 }
 
+# Rebuild the bundled fallback from the current local source on every run.
+# Never trust credentials left in an incremental build product.
+local_secrets="${SRCROOT:?}/iWatch/Secrets.plist"
+if [ -f "$local_secrets" ]; then
+    /bin/cp "$local_secrets" "$secrets"
+else
+    /bin/rm -f "$secrets"
+fi
+for key in TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET TRAKT_REDIRECT_URI; do
+    /usr/bin/plutil -remove "$key" "$info" 2>/dev/null || true
+done
+
 # Environment variables are a private CI input. Write only into the build
 # product, leaving the developer's local Secrets.plist untouched.
 for key in TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET TRAKT_REDIRECT_URI; do
@@ -33,7 +45,7 @@ for key in TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET TRAKT_REDIRECT_URI; do
     esac
     if [ -n "$value" ]; then
         if [ ! -f "$secrets" ]; then
-            /usr/bin/plutil -create xml "$secrets"
+            /usr/bin/plutil -create xml1 "$secrets"
         fi
         /usr/bin/plutil -replace "$key" -string "$value" "$secrets"
         # AppConfig prefers Info.plist. Prevent a stale value from masking CI.
