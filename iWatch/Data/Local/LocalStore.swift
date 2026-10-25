@@ -16,6 +16,9 @@ nonisolated enum SyncOperationStatus: String, Codable, Sendable {
 }
 
 nonisolated struct SyncOperationPayload: Codable, Sendable {
+    // Kept inside the existing payload to preserve the CloudKit schema.
+    var originDeviceID: String? = nil
+    var mutationAt: Date? = nil
     var mediaKind: MediaKind?
     var tmdbID: Int?
     var traktID: Int?
@@ -30,13 +33,23 @@ nonisolated struct SyncOperationPayload: Codable, Sendable {
 nonisolated enum SyncPayloadCodec {
     static let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
+        encoder.dateEncodingStrategy = .secondsSince1970
         return encoder
     }()
 
     static let decoder: JSONDecoder = {
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let value = try decoder.singleValueContainer()
+            if let seconds = try? value.decode(Double.self) { return Date(timeIntervalSince1970: seconds) }
+            let string = try value.decode(String.self)
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = formatter.date(from: string) { return date }
+            formatter.formatOptions = [.withInternetDateTime]
+            if let date = formatter.date(from: string) { return date }
+            throw DecodingError.dataCorruptedError(in: value, debugDescription: "Invalid operation date")
+        }
         return decoder
     }()
 }

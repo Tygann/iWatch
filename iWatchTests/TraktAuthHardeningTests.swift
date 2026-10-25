@@ -8,6 +8,71 @@ import Testing
 @Suite(.serialized)
 struct TraktAuthHardeningTests {
     @Test
+    func disconnectCannotBeUndoneByAnInFlightRefresh() async throws {
+        let auth = InMemoryTraktAuthStore()
+        await auth.save(token: TokenResponse(accessToken: "old", tokenType: "bearer", expiresIn: 1,
+            refreshToken: "refresh", scope: "public", createdAt: 0))
+        let requests = LockedRequestCounter()
+        MockTraktURLProtocol.handler = { request in
+            requests.increment()
+            Thread.sleep(forTimeInterval: 0.1)
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (response, Data(#"{"access_token":"new","token_type":"bearer","expires_in":86400,"refresh_token":"rotated","scope":"public"}"#.utf8))
+        }
+        defer { MockTraktURLProtocol.handler = nil }
+        let service = makeTraktService(authStore: auth)
+        let refresh = Task { try await service.refreshTokenIfNeeded() }
+        for _ in 0..<100 {
+            if requests.value > 0 { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(requests.value == 1)
+        await service.clearAuth()
+        _ = try? await refresh.value
+        #expect(await auth.currentToken() == nil)
+    }
+
+    @Test
+    func simultaneousRequestsShareTokenRefresh() async throws {
+        let auth = InMemoryTraktAuthStore()
+        await auth.save(token: TokenResponse(accessToken: "old", tokenType: "bearer", expiresIn: 1,
+            refreshToken: "refresh", scope: "public", createdAt: 0))
+        let requests = LockedRequestCounter()
+        MockTraktURLProtocol.handler = { request in
+            requests.increment()
+            Thread.sleep(forTimeInterval: 0.1)
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (response, Data(#"{"access_token":"new","token_type":"bearer","expires_in":86400,"refresh_token":"rotated","scope":"public"}"#.utf8))
+        }
+        defer { MockTraktURLProtocol.handler = nil }
+        let service = makeTraktService(authStore: auth)
+        async let first: Void = service.refreshTokenIfNeeded()
+        async let second: Void = service.refreshTokenIfNeeded()
+        _ = try await (first, second)
+        #expect(requests.value == 1)
+        #expect(await auth.currentToken()?.accessToken == "new")
+    }
+
+    @Test
+    func identicalReadsShareAnHTTPTask() async throws {
+        let requests = LockedRequestCounter()
+        MockTraktURLProtocol.handler = { request in
+            requests.increment()
+            Thread.sleep(forTimeInterval: 0.1)
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("{}".utf8))
+        }
+        defer { MockTraktURLProtocol.handler = nil }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockTraktURLProtocol.self]
+        let api = APIClient(session: URLSession(configuration: config))
+        let request = URLRequest(url: URL(string: "https://example.com/fixture")!)
+        async let first: EmptyHTTPResponse = api.send(request, decode: EmptyHTTPResponse.self)
+        async let second: EmptyHTTPResponse = api.send(request, decode: EmptyHTTPResponse.self)
+        _ = try await (first, second)
+        #expect(requests.value == 1)
+    }
+
+    @Test
     func authorizationRequestIncludesStateAndRedirectURI() throws {
         let service = makeTraktService()
 
@@ -252,3 +317,12 @@ private extension URLRequest {
         return data
     }
 }
+
+private final class LockedRequestCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    var value: Int { lock.lock(); defer { lock.unlock() }; return count }
+    func increment() { lock.lock(); defer { lock.unlock() }; count += 1 }
+}
+
+private nonisolated struct EmptyHTTPResponse: Decodable, Sendable {}

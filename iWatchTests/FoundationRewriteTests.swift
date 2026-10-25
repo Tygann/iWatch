@@ -1,4 +1,5 @@
 import Foundation
+import CloudKit
 import SwiftData
 import Testing
 @testable import iWatch
@@ -691,6 +692,199 @@ struct FoundationRewriteTests {
         #expect(progress.watchedEpisodeKeys.contains("ep:400:S0:E1") == true)
     }
 
+    @Test
+    func historyReconciliationIsPeriodicButNotTriggeredByLocalEdits() {
+        let schedule = HistoryReconciliationSchedule()
+        let now = Date()
+        let yesterday = now.addingTimeInterval(-86401)
+        #expect(!schedule.shouldReconcile(account: "a", reason: .localMutation, previousPull: yesterday, now: now))
+        #expect(schedule.shouldReconcile(account: "a", reason: .background, previousPull: yesterday, now: now))
+        schedule.recordFullSync(account: "a", now: now)
+        #expect(!schedule.shouldReconcile(account: "a", reason: .foreground, previousPull: yesterday, now: now))
+        #expect(schedule.shouldReconcile(account: "a", reason: .userInitiated, previousPull: now, now: now))
+        #expect(schedule.shouldReconcile(account: "b", reason: .background, previousPull: nil, now: now))
+    }
+
+    @Test
+    func cloudImportsInvalidateSnapshotsWithoutTrakt() async throws {
+        let persistence = makePersistence()
+        let remote = FakeTraktSyncRemote(token: nil,
+            lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now), watchlist: [], history: [])
+        let engine = SyncEngine(persistence: persistence, trakt: remote,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { nil })
+        let monitor = ActivityTestMonitor()
+        var invalidations = 0
+        let session = AppSession(
+            trakt: TraktService(apiClient: APIClient(session: .shared), clientId: "fixture", clientSecret: "fixture", authStore: InMemoryTraktAuthStore()),
+            syncEngine: engine, traktRedirectURI: "com.tyler.iWatch://oauth/callback", cacheService: CacheService(),
+            cloudExportMonitor: monitor, invalidateLibrarySnapshots: { invalidations += 1 })
+        let date = Date()
+        monitor.handler?(.imported(date))
+        monitor.handler?(.imported(date))
+        for _ in 0..<100 {
+            if invalidations > 0 { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(invalidations == 1)
+        #expect(session.libraryRevision == 1)
+        #expect(session.lastCloudImportAt == date)
+        #expect(!session.traktConnected)
+        monitor.handler?(.exported(date))
+        #expect(session.lastCloudExportAt == date)
+    }
+
+    @Test
+    func repairDoesNotRequeueAnAlreadyAcknowledgedReplica() async throws {
+        let persistence = makePersistence()
+        let context = persistence.makeContext()
+        let id = UUID()
+        for status in [SyncOperationStatus.succeeded, .pending] {
+            let operation = SyncOperationRecord(kind: .addWatchlist,
+                payload: try SyncPayloadCodec.encoder.encode(SyncOperationPayload(originDeviceID: "device-a", mediaKind: .movie, tmdbID: 42)),
+                dedupeKey: "watchlist:movie:42", accountKey: "default", status: status)
+            operation.id = id
+            context.insert(operation)
+        }
+        try context.save()
+        let engine = SyncEngine(persistence: persistence,
+            trakt: FakeTraktSyncRemote(token: nil, lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now), watchlist: [], history: []),
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { "default" })
+        _ = try await engine.repairIntegrity()
+        let operations = try fetchAll(SyncOperationRecord.self, from: persistence)
+        #expect(operations.count == 1)
+        #expect(operations.first?.status == .succeeded)
+    }
+
+    @Test
+    func repairPreservesDifferentAccountAndSuccessiveOperations() async throws {
+        let persistence = makePersistence()
+        let context = persistence.makeContext()
+        for account in ["account-a", "account-b", "account-a"] {
+            context.insert(SyncOperationRecord(kind: .addWatchlist,
+                payload: try SyncPayloadCodec.encoder.encode(SyncOperationPayload(originDeviceID: "device-a", mediaKind: .movie, tmdbID: 42)),
+                dedupeKey: "watchlist:movie:42", accountKey: account))
+        }
+        try context.save()
+        let engine = SyncEngine(persistence: persistence,
+            trakt: FakeTraktSyncRemote(token: nil, lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now), watchlist: [], history: []),
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { "account-a" })
+        _ = try await engine.repairIntegrity()
+        #expect(try fetchAll(SyncOperationRecord.self, from: persistence).count == 3)
+    }
+
+    @Test
+    func pendingOperationsKeepTheirAccountAndDeviceOwnership() async throws {
+        let persistence = makePersistence()
+        let tmdb = TMDbService(apiClient: APIClient(session: .shared), apiKey: "fixture")
+        let a = LibraryRepository(persistence: persistence, tmdb: tmdb,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { "account-a" })
+        let b = LibraryRepository(persistence: persistence, tmdb: tmdb,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-b"), accountKeyProvider: { "account-b" })
+        let movie = MediaID(kind: .movie, id: 42)
+        try await a.setWatchlist(true, for: movie)
+        try await b.setWatchlist(false, for: movie)
+        try await a.setWatchlist(false, for: movie)
+        let operations = try fetchAll(SyncOperationRecord.self, from: persistence)
+        #expect(operations.count == 2)
+        #expect(Set(operations.map(\.accountKey)) == ["account-a", "account-b"])
+        let owners = try operations.map { try SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: $0.payload).originDeviceID }
+        #expect(Set(owners.compactMap { $0 }) == ["device-a", "device-b"])
+    }
+
+    @Test(arguments: [nil, "device-b", "device-a"] as [String?])
+    func uploadRequiresOriginDeviceAndExplicitRecovery(origin: String?) async throws {
+        let persistence = makePersistence()
+        let context = persistence.makeContext()
+        context.insert(SyncOperationRecord(kind: .addWatchlist,
+            payload: try SyncPayloadCodec.encoder.encode(SyncOperationPayload(originDeviceID: origin, mediaKind: .movie, tmdbID: 42)),
+            accountKey: "default"))
+        try context.save()
+        let remote = FakeTraktSyncRemote(token: makeToken(),
+            lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now), watchlist: [], history: [])
+        let engine = SyncEngine(persistence: persistence, trakt: remote,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { "default" })
+        #expect(await engine.run(reason: .background))
+        let before = await remote.snapshot()
+        #expect(before.addWatchlistCalls == (origin == "device-a" ? 1 : 0))
+        if origin != "device-a" {
+            #expect(try await engine.recoverPendingUploads() == 1)
+            #expect(await engine.run(reason: .localMutation))
+            let after = await remote.snapshot()
+            #expect(after.addWatchlistCalls == 1)
+        }
+    }
+
+    @Test
+    func uploadAcknowledgementPreservesNewerLocalEdit() async throws {
+        let persistence = makePersistence()
+        let context = persistence.makeContext()
+        let movie = MediaID(kind: .movie, id: 42)
+        let sentAt = Date()
+        context.insert(WatchlistRecord(mediaID: movie, isInWatchlist: true, localUpdatedAt: sentAt, dirty: true))
+        context.insert(SyncOperationRecord(kind: .addWatchlist,
+            payload: try SyncPayloadCodec.encoder.encode(SyncOperationPayload(originDeviceID: "device-a", mutationAt: sentAt, mediaKind: .movie, tmdbID: 42)),
+            accountKey: "default"))
+        try context.save()
+        let remote = FakeTraktSyncRemote(token: makeToken(),
+            lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now), watchlist: [], history: [],
+            onAddWatchlist: {
+                try await MainActor.run {
+                    let edit = persistence.makeContext()
+                    let row = try #require(edit.fetch(FetchDescriptor<WatchlistRecord>()).first)
+                    row.isInWatchlist = false
+                    row.localUpdatedAt = sentAt.addingTimeInterval(1)
+                    row.dirty = true
+                    try edit.save()
+                }
+            })
+        let engine = SyncEngine(persistence: persistence, trakt: remote,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { "default" })
+        #expect(await engine.run(reason: .background))
+        let row = try #require(fetchAll(WatchlistRecord.self, from: persistence).first)
+        #expect(!row.isInWatchlist)
+        #expect(row.dirty)
+    }
+
+    @Test
+    func operationDatesDecodeLegacyAndPreserveMutationPrecision() throws {
+        let legacy = Data(#"{"mediaKind":"movie","tmdbID":42,"watchedAt":"2026-10-25T10:00:00Z"}"#.utf8)
+        let decoded = try SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: legacy)
+        #expect(decoded.watchedAt != nil)
+        #expect(decoded.originDeviceID == nil)
+        let now = Date(timeIntervalSince1970: 12345.123456)
+        let payload = SyncOperationPayload(mutationAt: now)
+        let restored = try SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: SyncPayloadCodec.encoder.encode(payload))
+        #expect(restored.mutationAt == now)
+    }
+
+    @Test
+    func metadataFreshnessExpiresIndependentlyOfLibraryUpdates() throws {
+        let suite = "iWatch.freshness.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = MetadataFreshnessStore(defaults: defaults)
+        let now = Date(timeIntervalSince1970: 10000)
+        #expect(store.needsRefresh("show:42", after: 3600, now: now))
+        store.markFetched("show:42", now: now)
+        #expect(!store.needsRefresh("show:42", after: 3600, now: now.addingTimeInterval(3599)))
+        #expect(store.needsRefresh("show:42", after: 3600, now: now.addingTimeInterval(3600)))
+        store.clear()
+        #expect(store.needsRefresh("show:42", after: 3600, now: now))
+    }
+
+    @Test
+    func diagnosticFormattingRedactsPrivateValues() throws {
+        let url = try #require(URL(string: "https://example.com/search?api_key=private&query=private#private"))
+        #expect(redactedRequestURL(url) == "https://example.com/search")
+        let nested = NSError(domain: CKErrorDomain, code: CKError.quotaExceeded.rawValue,
+            userInfo: [NSLocalizedDescriptionKey: "private server details"])
+        let error = NSError(domain: CKErrorDomain, code: CKError.partialFailure.rawValue,
+            userInfo: [CKPartialErrorsByItemIDKey: ["private-record": nested]])
+        let summary = CloudKitExportMonitor.errorSummary(error)
+        #expect(summary.contains("storage"))
+        #expect(!summary.contains("private"))
+    }
+
     // MARK: Incremental Sync
 
     @Test
@@ -705,7 +899,7 @@ struct FoundationRewriteTests {
             SyncOperationRecord(
                 kind: .addWatchlist,
                 payload: try SyncPayloadCodec.encoder.encode(
-                    SyncOperationPayload(mediaKind: .movie, tmdbID: 11, traktID: 111)
+                    SyncOperationPayload(originDeviceID: "device-a", mediaKind: .movie, tmdbID: 11, traktID: 111)
                 ),
                 dedupeKey: "watchlist:movie:11",
                 accountKey: "default"
@@ -788,7 +982,7 @@ struct FoundationRewriteTests {
             context.insert(SyncOperationRecord(
                 kind: .addWatchlist,
                 payload: try SyncPayloadCodec.encoder.encode(
-                    SyncOperationPayload(mediaKind: .movie, tmdbID: index + 1, traktID: index + 1)
+                    SyncOperationPayload(originDeviceID: "device-a", mediaKind: .movie, tmdbID: index + 1, traktID: index + 1)
                 ),
                 dedupeKey: "watchlist:movie:\(index + 1)", accountKey: owner
             ))
@@ -822,7 +1016,7 @@ struct FoundationRewriteTests {
             SyncOperationRecord(
                 kind: .addWatchlist,
                 payload: try SyncPayloadCodec.encoder.encode(
-                    SyncOperationPayload(mediaKind: .movie, tmdbID: 11, traktID: 111)
+                    SyncOperationPayload(originDeviceID: "device-a", mediaKind: .movie, tmdbID: 11, traktID: 111)
                 ),
                 dedupeKey: "watchlist:movie:11"
             )
@@ -1178,9 +1372,10 @@ struct FoundationRewriteTests {
             SyncOperationRecord(
                 kind: .addWatchlist,
                 payload: try SyncPayloadCodec.encoder.encode(
-                    SyncOperationPayload(mediaKind: .movie, tmdbID: 11, traktID: 111)
+                    SyncOperationPayload(originDeviceID: "device-a", mediaKind: .movie, tmdbID: 11, traktID: 111)
                 ),
                 dedupeKey: "watchlist:movie:11",
+                accountKey: "default",
                 status: .deadletter
             )
         )
@@ -1264,7 +1459,7 @@ struct FoundationRewriteTests {
         context.insert(
             SyncOperationRecord(
                 kind: .addWatchlist,
-                payload: try SyncPayloadCodec.encoder.encode(SyncOperationPayload(mediaKind: .movie, tmdbID: 1, traktID: 10))
+                payload: try SyncPayloadCodec.encoder.encode(SyncOperationPayload(originDeviceID: "device-a", mediaKind: .movie, tmdbID: 1, traktID: 10))
             )
         )
         context.insert(SyncStateRecord(accountKey: "default"))
@@ -1386,7 +1581,7 @@ struct FoundationRewriteTests {
         context.insert(
             SyncOperationRecord(
                 kind: .addWatchlist,
-                payload: try SyncPayloadCodec.encoder.encode(SyncOperationPayload(mediaKind: .movie, tmdbID: 1, traktID: 10))
+                payload: try SyncPayloadCodec.encoder.encode(SyncOperationPayload(originDeviceID: "device-a", mediaKind: .movie, tmdbID: 1, traktID: 10))
             )
         )
         context.insert(SyncStateRecord(accountKey: "default"))
@@ -1505,7 +1700,8 @@ private func makeLibraryRepository(
 ) -> LibraryRepository {
     let apiClient = APIClient(session: .shared)
     let tmdb = TMDbService(apiClient: apiClient, apiKey: "test-key")
-    return LibraryRepository(persistence: persistence, tmdb: tmdb, resetGate: resetGate)
+    return LibraryRepository(persistence: persistence, tmdb: tmdb, resetGate: resetGate,
+        deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { "default" })
 }
 
 private func fetchAll<T: PersistentModel>(_ type: T.Type, from persistence: Persistence) throws -> [T] {
@@ -1635,6 +1831,7 @@ private actor FakeTraktSyncRemote: TraktSyncing {
     private let watchlist: [TraktWatchlistItemDTO]
     private let history: [TraktHistoryItemDTO]
     private let addWatchlistDelayNanos: UInt64
+    private let onAddWatchlist: (@Sendable () async throws -> Void)?
 
     private var getLastActivitiesCalls = 0
     private var getWatchlistCalls = 0
@@ -1648,12 +1845,14 @@ private actor FakeTraktSyncRemote: TraktSyncing {
          lastActivities: TraktLastActivitiesDTO,
          watchlist: [TraktWatchlistItemDTO],
          history: [TraktHistoryItemDTO],
-         addWatchlistDelayNanos: UInt64 = 0) {
+         addWatchlistDelayNanos: UInt64 = 0,
+         onAddWatchlist: (@Sendable () async throws -> Void)? = nil) {
         self.token = token
         self.lastActivities = lastActivities
         self.watchlist = watchlist
         self.history = history
         self.addWatchlistDelayNanos = addWatchlistDelayNanos
+        self.onAddWatchlist = onAddWatchlist
     }
 
     func currentToken() async -> TokenResponse? {
@@ -1677,6 +1876,7 @@ private actor FakeTraktSyncRemote: TraktSyncing {
 
     func addToWatchlist(_ items: [MediaID]) async throws {
         addWatchlistCalls += 1
+        try await onAddWatchlist?()
         if addWatchlistDelayNanos > 0 {
             try await Task.sleep(nanoseconds: addWatchlistDelayNanos)
         }
@@ -1725,4 +1925,11 @@ private final class ProgressCatalogURLProtocol: URLProtocol, @unchecked Sendable
         client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}
+}
+
+@MainActor
+private final class ActivityTestMonitor: CloudExportMonitoring {
+    var handler: (@MainActor (CloudStoreActivity) -> Void)?
+    func observeActivity(_ handler: @escaping @MainActor (CloudStoreActivity) -> Void) { self.handler = handler }
+    func waitForExport(startingAfter date: Date, timeout: Duration) async -> CloudExportConfirmation { .completed(date) }
 }

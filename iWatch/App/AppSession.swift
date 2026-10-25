@@ -16,6 +16,8 @@ final class AppSession {
 
     enum CloudSyncStatus: Equatable {
         case idle
+        case importing
+        case imported(Date)
         case exporting
         case completed(Date)
         case unavailable(String)
@@ -25,6 +27,8 @@ final class AppSession {
         var title: String {
             switch self {
             case .idle: return "Waiting"
+            case .importing: return "Downloading…"
+            case .imported: return "Downloaded"
             case .exporting: return "Uploading…"
             case .completed: return "Uploaded"
             case .unavailable: return "Unavailable"
@@ -35,7 +39,7 @@ final class AppSession {
 
         var detail: String? {
             switch self {
-            case let .completed(date):
+            case let .completed(date), let .imported(date):
                 return date.formatted(date: .abbreviated, time: .shortened)
             case let .unavailable(message), let .failed(message):
                 return message
@@ -59,7 +63,9 @@ final class AppSession {
     private let configuredTraktRedirectURI: String
     private let cacheService: CacheService
     private let cloudExportMonitor: any CloudExportMonitoring
+    private let invalidateLibrarySnapshots: @MainActor () -> Void
     private let authCoordinator = TraktAuthCoordinator()
+    private var storeInvalidationTask: Task<Void, Never>?
     private var scheduledSyncTask: Task<Void, Never>?
     private var backgroundContinuationTask: Task<Void, Never>?
     private var cloudSyncMonitorTask: Task<Void, Never>?
@@ -80,6 +86,8 @@ final class AppSession {
     var syncDiagnostics: SyncDiagnostics = .empty
     var syncProgress: SyncProgress = .idle
     var cloudSyncStatus: CloudSyncStatus = .idle
+    var lastCloudImportAt: Date?
+    var lastCloudExportAt: Date?
     var syncMaintenanceMessage: String?
     var cacheMaintenanceMessage: String?
     var dataResetStatus: DataResetStatus = .idle
@@ -89,12 +97,29 @@ final class AppSession {
          syncEngine: SyncEngine,
          traktRedirectURI: String,
          cacheService: CacheService,
-         cloudExportMonitor: any CloudExportMonitoring) {
+         cloudExportMonitor: any CloudExportMonitoring,
+         invalidateLibrarySnapshots: @escaping @MainActor () -> Void = {}) {
         self.trakt = trakt
         self.syncEngine = syncEngine
         self.configuredTraktRedirectURI = traktRedirectURI
         self.cacheService = cacheService
         self.cloudExportMonitor = cloudExportMonitor
+        self.invalidateLibrarySnapshots = invalidateLibrarySnapshots
+        cloudExportMonitor.observeActivity { [weak self] activity in
+            guard let self else { return }
+            switch activity {
+            case .importing: self.cloudSyncStatus = .importing
+            case let .imported(date):
+                self.lastCloudImportAt = date
+                self.cloudSyncStatus = .imported(date)
+                self.scheduleLibraryInvalidation()
+            case .exporting: self.cloudSyncStatus = .exporting
+            case let .exported(date):
+                self.lastCloudExportAt = date
+                self.cloudSyncStatus = .completed(date)
+            case let .failed(message): self.cloudSyncStatus = .failed(message)
+            }
+        }
 
         if DataResetReceiptStore.pendingResetAt != nil {
             dataResetStatus = .needsAttention(
@@ -150,6 +175,7 @@ final class AppSession {
 
     func startTraktOAuth() {
         do {
+            guard !isSyncing else { throw AppError.unknown("Wait for the current Trakt sync to finish before connecting an account.") }
             let state = OAuthStateGenerator.make()
             let authRequest = try trakt.authorizationRequest(redirectURI: traktRedirectURI, state: state)
             let callbackScheme = try callbackScheme()
@@ -194,7 +220,7 @@ final class AppSession {
     func runSync(reason: SyncReason = .userInitiated) async {
         guard !isErasingAllData else { return }
         guard pendingTraktAccountKey == nil else { return }
-        guard TraktLinkStore.activeAccountKey != nil else { return }
+        guard let expectedAccount = TraktLinkStore.activeAccountKey else { return }
         guard await refreshAuthState(), !isSyncing else { return }
         isSyncing = true
         let syncStartedAt = Date()
@@ -206,14 +232,18 @@ final class AppSession {
         }
 
         let succeeded = await syncEngine.run(reason: reason) { [weak self] progress in
+            guard TraktLinkStore.activeAccountKey == expectedAccount else { return }
             self?.syncProgress = progress
             if case .saving = progress {
                 self?.syncSaveStartedAt = Date()
             }
         }
+        guard TraktLinkStore.activeAccountKey == expectedAccount else { return }
         await refreshSyncDiagnostics()
+        guard TraktLinkStore.activeAccountKey == expectedAccount else { return }
         guard succeeded else {
             _ = await refreshAuthState()
+            guard TraktLinkStore.activeAccountKey == expectedAccount else { return }
             traktLastError = syncDiagnostics.lastErrorDescription ?? "Sync failed."
             return
         }
@@ -228,7 +258,6 @@ final class AppSession {
     func logoutTrakt() {
         scheduledSyncTask?.cancel()
         backgroundContinuationTask?.cancel()
-        cloudSyncMonitorTask?.cancel()
         endBackgroundTaskIfNeeded()
         BackgroundRefresh.cancelScheduledRefresh()
         pendingOAuthState = nil
@@ -245,7 +274,6 @@ final class AppSession {
                 self.syncMaintenanceMessage = nil
                 self.syncDiagnostics = .empty
                 self.syncProgress = .idle
-                self.cloudSyncStatus = .idle
             }
         }
     }
@@ -348,12 +376,21 @@ final class AppSession {
 
     // MARK: App Lifecycle
 
+    func scheduleLibraryInvalidation() {
+        storeInvalidationTask?.cancel()
+        storeInvalidationTask = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+            self?.markLibraryUpdated()
+        }
+    }
+
     func markLibraryUpdated(syncIfConnected: Bool = false) {
+        invalidateLibrarySnapshots()
         libraryRevision &+= 1
 
         guard syncIfConnected else { return }
 
-        scheduleDebouncedSync(reason: .userInitiated)
+        scheduleDebouncedSync(reason: .localMutation)
     }
 
     func appDidBecomeActive() {
@@ -482,6 +519,16 @@ final class AppSession {
             traktLastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             await refreshSyncDiagnostics()
         }
+    }
+
+    func recoverPendingUploads() async {
+        guard !isSyncing, !isErasingAllData else { return }
+        do {
+            let count = try await syncEngine.recoverPendingUploads()
+            syncMaintenanceMessage = "Recovered \(count) pending uploads on this device."
+            await runSync(reason: .localMutation)
+        } catch { traktLastError = error.localizedDescription }
+        await refreshSyncDiagnostics()
     }
 
     func repairLocalSyncData() async {

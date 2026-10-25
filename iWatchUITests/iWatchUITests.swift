@@ -101,6 +101,52 @@ final class iWatchUITests: XCTestCase {
     }
 
     @MainActor
+    func testSyncDiagnosticsAtStandardTextSize() throws {
+        try verifySyncDiagnostics(contentSize: "UICTContentSizeCategoryL")
+    }
+
+    @MainActor
+    func testSyncDiagnosticsAtAccessibilityTextSize() throws {
+        try verifySyncDiagnostics(contentSize: "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge")
+    }
+
+    @MainActor
+    private func verifySyncDiagnostics(contentSize: String) throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["UITEST_MODE", "-UIPreferredContentSizeCategoryName", contentSize]
+        if contentSize.contains("Accessibility") { app.launchArguments.append("UITEST_ACCESSIBILITY_TEXT") }
+        app.launch()
+        let settings = app.buttons["Settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        settings.tap()
+        let cloud = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'iCloud Sync,'")).firstMatch
+        for _ in 0..<6 {
+            if cloud.exists { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(cloud.waitForExistence(timeout: 5))
+        cloud.tap()
+        XCTAssertTrue(app.navigationBars["Sync Diagnostics"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["iCloud"].exists)
+        let status = XCTAttachment(screenshot: app.screenshot())
+        status.name = "Sync status - " + contentSize
+        status.lifetime = .keepAlways
+        add(status)
+        let recovery = app.buttons["Recover Pending Uploads on This Device"]
+        for _ in 0..<8 {
+            if recovery.exists, recovery.frame.midY > app.frame.minY + 100,
+               recovery.frame.midY < app.frame.maxY - 100 { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(recovery.exists)
+        XCTAssertFalse(recovery.isEnabled)
+        let maintenance = XCTAttachment(screenshot: app.screenshot())
+        maintenance.name = "Sync maintenance - " + contentSize
+        maintenance.lifetime = .keepAlways
+        add(maintenance)
+    }
+
+    @MainActor
     func testSettingsNavigation() throws {
         let app = XCUIApplication()
         app.launchArguments.append("UITEST_MODE")

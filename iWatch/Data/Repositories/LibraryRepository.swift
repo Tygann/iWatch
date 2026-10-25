@@ -9,23 +9,42 @@ final class LibraryRepository {
     private let tmdb: TMDbService
     private let airtimeProvider: (any EpisodeAirtimeProviding)?
     private let resetGate: AppDataResetGate
+    private let deviceIdentityStore: any DeviceIdentityStore
+    private let accountKeyProvider: @Sendable () -> String?
     private let snapshotReader: LibrarySnapshotReader
     private var cachedMovieSnapshot: (revision: Int, items: [LibraryMovieItem])?
     private var cachedShowSnapshot: (revision: Int, snapshot: ShowLibrarySnapshot)?
     private var showSnapshotTask: (revision: Int, token: UUID, task: Task<ShowLibrarySnapshot, Error>)?
+    private var detailRequests: [String: Task<MediaDetails, Error>] = [:]
+    private let metadataFreshness: MetadataFreshnessStore
     private var refreshedSeasonArtworkKeys: Set<String> = []
 
     init(
         persistence: Persistence,
         tmdb: TMDbService,
         airtimeProvider: (any EpisodeAirtimeProviding)? = nil,
-        resetGate: AppDataResetGate = AppDataResetGate()
+        resetGate: AppDataResetGate = AppDataResetGate(),
+        deviceIdentityStore: any DeviceIdentityStore = KeychainDeviceIdentityStore(),
+        accountKeyProvider: @escaping @Sendable () -> String? = { TraktLinkStore.activeAccountKey },
+        metadataFreshness: MetadataFreshnessStore? = nil
     ) {
         self.persistence = persistence
         self.tmdb = tmdb
         self.airtimeProvider = airtimeProvider
         self.resetGate = resetGate
+        self.deviceIdentityStore = deviceIdentityStore
+        self.accountKeyProvider = accountKeyProvider
+        self.metadataFreshness = metadataFreshness ?? MetadataFreshnessStore()
         self.snapshotReader = LibrarySnapshotReader(persistence: persistence)
+    }
+
+    var onMetadataChanged: (@MainActor () -> Void)?
+
+    func invalidateSnapshots() {
+        cachedMovieSnapshot = nil
+        cachedShowSnapshot = nil
+        showSnapshotTask?.task.cancel()
+        showSnapshotTask = nil
     }
 
     // MARK: Discovery
@@ -83,9 +102,31 @@ final class LibraryRepository {
     func mediaDetails(for id: MediaID, forceRefresh: Bool = false) async throws -> MediaDetails {
         let context = persistence.makeContext()
         if !forceRefresh, let record = mediaRecord(for: id, context: context), isMediaRecordComplete(record) {
-            return try mapMediaRecord(record)
+            let cached = try mapMediaRecord(record)
+            let upcoming = record.releaseDate.map { $0 > Date() } ?? false
+            let ended = ["ended", "canceled", "cancelled"].contains(record.statusRaw?.lowercased() ?? "")
+            let interval: TimeInterval = upcoming ? 6 * 3600 : (id.kind == .show && !ended ? 12 * 3600 : 7 * 86400)
+            if metadataFreshness.needsRefresh(id.stableKey, after: interval) {
+                Task { [weak self] in _ = try? await self?.refreshMediaDetails(for: id) }
+            }
+            return cached
         }
+        return try await refreshMediaDetails(for: id)
+    }
 
+    private func refreshMediaDetails(for id: MediaID) async throws -> MediaDetails {
+        if let request = detailRequests[id.stableKey] { return try await request.value }
+        metadataFreshness.markAttempt(id.stableKey)
+        let request = Task { try await self.fetchMediaDetails(for: id) }
+        detailRequests[id.stableKey] = request
+        defer { detailRequests[id.stableKey] = nil }
+        let details = try await request.value
+        metadataFreshness.markFetched(id.stableKey)
+        onMetadataChanged?()
+        return details
+    }
+
+    private func fetchMediaDetails(for id: MediaID) async throws -> MediaDetails {
         switch id.kind {
         case .movie:
             let fresh = try await tmdb.movieDetails(id: id.tmdbID)
@@ -124,14 +165,20 @@ final class LibraryRepository {
             attemptedArtworkRefresh: refreshedSeasonArtworkKeys.contains(seasonKey)
         )
 
-        if !forceRefresh, !shouldRefresh {
+        if !forceRefresh, !shouldRefresh, !metadataFreshness.needsRefresh("season:\(seasonKey)", after: 12 * 3600) {
             return cached.map(mapEpisodeRecord(_:))
         }
 
-        let fresh = try await tmdb.seasonEpisodes(showId: showID.tmdbID, seasonNumber: seasonNumber)
+        let fresh: [EpisodeDetails]
+        do { fresh = try await tmdb.seasonEpisodes(showId: showID.tmdbID, seasonNumber: seasonNumber) }
+        catch {
+            if !forceRefresh, !cached.isEmpty { return cached.map(mapEpisodeRecord(_:)) }
+            throw error
+        }
         let enriched = await enrichingEpisodesWithAirtimes(fresh, showID: showID, seasonNumber: seasonNumber)
         try upsertEpisodes(enriched, for: showID)
         refreshedSeasonArtworkKeys.insert(seasonKey)
+        metadataFreshness.markFetched("season:\(seasonKey)")
 
         let refreshedContext = persistence.makeContext()
         return episodeRecords(forShowID: showID.tmdbID, seasonNumber: seasonNumber, context: refreshedContext)
@@ -144,6 +191,11 @@ final class LibraryRepository {
            let record = episodeRecord(for: ref, context: context) {
             let cached = mapEpisodeRecord(record)
             if hasRichEpisodeDetails(cached) {
+                let resource = "episode:\(ref.showId):\(ref.season):\(ref.episode)"
+                if metadataFreshness.needsRefresh(resource, after: 12 * 3600) {
+                    metadataFreshness.markAttempt(resource)
+                    Task { [weak self] in _ = try? await self?.episodeDetails(for: ref, forceRefresh: true) }
+                }
                 guard cached.airedAt == nil else { return cached }
                 let enriched = await enrichingEpisodeWithAirtime(cached, ref: ref)
                 if enriched != cached {
@@ -163,6 +215,8 @@ final class LibraryRepository {
         )
         fresh = await enrichingEpisodeWithAirtime(fresh, ref: ref)
         try upsertEpisodes([fresh], for: MediaID(kind: .show, id: ref.showId, traktID: ref.showTraktID))
+        metadataFreshness.markFetched("episode:\(ref.showId):\(ref.season):\(ref.episode)")
+        onMetadataChanged?()
 
         let refreshedContext = persistence.makeContext()
         guard let record = episodeRecord(for: ref, context: refreshedContext) else {
@@ -214,6 +268,7 @@ final class LibraryRepository {
     // MARK: Library Mutations
 
     func setWatchlist(_ inWatchlist: Bool, for id: MediaID) async throws {
+        let deviceID = await deviceIdentityStore.currentDeviceID()
         guard await resetGate.allowsLibraryWork() else {
             throw AppError.unknown("Wait for the library reset to finish before making changes.")
         }
@@ -251,7 +306,7 @@ final class LibraryRepository {
             kind: inWatchlist ? .addWatchlist : .removeWatchlist,
             payload: payload,
             dedupeKey: "watchlist:\(id.stableKey)",
-            context: context, accountKey: TraktLinkStore.activeAccountKey ?? ""
+            context: context, accountKey: accountKeyProvider() ?? "", deviceID: deviceID
         )
 
         if inWatchlist, id.kind == .show {
@@ -266,6 +321,7 @@ final class LibraryRepository {
     }
 
     func addWatchEvents(for ids: [MediaID], watchedAt: Date) async throws {
+        let deviceID = await deviceIdentityStore.currentDeviceID()
         guard await resetGate.allowsLibraryWork() else {
             throw AppError.unknown("Wait for the library reset to finish before making changes.")
         }
@@ -317,7 +373,7 @@ final class LibraryRepository {
                 kind: .addHistory,
                 payload: payload,
                 dedupeKey: "history:add:\(eventKey)",
-                context: context, accountKey: TraktLinkStore.activeAccountKey ?? ""
+                context: context, accountKey: accountKeyProvider() ?? "", deviceID: deviceID
             )
 
             let planToWatchID: MediaID? = switch id.kind {
@@ -353,7 +409,7 @@ final class LibraryRepository {
                     payload: watchlistPayload,
                     dedupeKey: "watchlist:\(planToWatchID.stableKey)",
                     context: context,
-                    accountKey: TraktLinkStore.activeAccountKey ?? ""
+                    accountKey: accountKeyProvider() ?? "", deviceID: deviceID
                 )
             }
 
@@ -411,6 +467,7 @@ final class LibraryRepository {
     }
 
     func removeWatchEvent(eventID: UUID) async throws {
+        let deviceID = await deviceIdentityStore.currentDeviceID()
         guard await resetGate.allowsLibraryWork() else {
             throw AppError.unknown("Wait for the library reset to finish before making changes.")
         }
@@ -437,10 +494,10 @@ final class LibraryRepository {
                 kind: .removeHistory,
                 payload: payload,
                 dedupeKey: "history:remove:\(historyID)",
-                context: context, accountKey: TraktLinkStore.activeAccountKey ?? ""
+                context: context, accountKey: accountKeyProvider() ?? "", deviceID: deviceID
             )
         } else {
-            removePendingAddHistory(for: event.eventKey, context: context)
+            removePendingAddHistory(for: event.eventKey, deviceID: deviceID, context: context)
             context.delete(event)
         }
 
@@ -933,16 +990,21 @@ final class LibraryRepository {
     private func upsertSyncOperation(kind: SyncOperationKind,
                                      payload: SyncOperationPayload,
                                      dedupeKey: String,
-                                     context: ModelContext, accountKey: String) throws {
+                                     context: ModelContext, accountKey: String, deviceID: String) throws {
+        var payload = payload
+        payload.originDeviceID = deviceID
+        payload.mutationAt = Date()
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
-        if let existing = syncOperation(forDedupeKey: dedupeKey, context: context), existing.status == .pending {
+        if let existing = syncOperation(forDedupeKey: dedupeKey, accountKey: accountKey, deviceID: deviceID, context: context), existing.status == .pending {
             existing.kindRaw = kind.rawValue
             existing.payload = try SyncPayloadCodec.encoder.encode(payload)
             existing.status = .pending
             existing.claimedAt = nil
             existing.claimedByDeviceID = nil
-            existing.accountKey = accountKey
             existing.generationID = generationID
+            existing.createdAt = payload.mutationAt ?? Date()
+            existing.nextAttemptAt = nil
+            existing.attemptCount = 0
             return
         }
 
@@ -956,9 +1018,9 @@ final class LibraryRepository {
         context.insert(operation)
     }
 
-    private func removePendingAddHistory(for eventKey: String, context: ModelContext) {
+    private func removePendingAddHistory(for eventKey: String, deviceID: String, context: ModelContext) {
         let key = "history:add:\(eventKey)"
-        if let existing = syncOperation(forDedupeKey: key, context: context) {
+        if let existing = syncOperation(forDedupeKey: key, accountKey: accountKeyProvider() ?? "", deviceID: deviceID, context: context), existing.status == .pending {
             context.delete(existing)
         }
     }
@@ -1188,8 +1250,11 @@ final class LibraryRepository {
         allWatchedEventRecords(context: context).first { $0.eventKey == key }
     }
 
-    private func syncOperation(forDedupeKey key: String, context: ModelContext) -> SyncOperationRecord? {
-        allSyncOperations(context: context).first { $0.dedupeKey == key }
+    private func syncOperation(forDedupeKey key: String, accountKey: String, deviceID: String, context: ModelContext) -> SyncOperationRecord? {
+        allSyncOperations(context: context).first {
+            $0.dedupeKey == key && $0.accountKey == accountKey && $0.status == .pending
+                && (try? SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: $0.payload).originDeviceID) == deviceID
+        }
     }
 
     private func allMediaRecords(context: ModelContext) -> [MediaRecord] {

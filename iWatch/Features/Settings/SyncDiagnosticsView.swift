@@ -6,6 +6,7 @@ struct SyncDiagnosticsView: View {
     @Environment(AppSession.self) private var session
 
     @State private var showResetConfirmation = false
+    @State private var showRecoveryConfirmation = false
 
     var body: some View {
         Form {
@@ -28,19 +29,25 @@ struct SyncDiagnosticsView: View {
                 }
             }
         }
-        .navigationTitle("Trakt Diagnostics")
+        .navigationTitle("Sync Diagnostics")
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog(
-            "Reset local Trakt sync data?",
+            "Reset Trakt library data?",
             isPresented: $showResetConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Reset Local Sync Data", role: .destructive) {
+            Button("Reset Trakt Library Data", role: .destructive) {
                 Task { await session.resetLocalTraktSyncCache() }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This removes Trakt-derived Watchlist and history data plus pending Trakt operations from this device, then rebuilds from Trakt. Unsynced local Trakt changes will be lost.")
+            Text("This removes Trakt-derived Watchlist and history data plus pending uploads, then imports Trakt again. These deletions can sync to your other devices through iCloud. Unsynced changes will be lost.")
+        }
+        .confirmationDialog("Recover uploads on this device?", isPresented: $showRecoveryConfirmation, titleVisibility: .visible) {
+            Button("Recover Pending Uploads") { Task { await session.recoverPendingUploads() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("First stop Trakt syncing on your other devices. This transfers unfinished uploads for this account to this device. A request that reached Trakt before its response was lost may be repeated, including a watched play.")
         }
         .task {
             await session.refreshSyncDiagnostics()
@@ -69,6 +76,13 @@ struct SyncDiagnosticsView: View {
                     }
                 }
                 .foregroundStyle(.secondary)
+            }
+
+            if let date = session.lastCloudImportAt {
+                LabeledContent("Last iCloud Download", value: date.formatted(date: .abbreviated, time: .shortened))
+            }
+            if let date = session.lastCloudExportAt {
+                LabeledContent("Last iCloud Upload", value: date.formatted(date: .abbreviated, time: .shortened))
             }
 
             LabeledContent("Library Import") {
@@ -135,12 +149,15 @@ struct SyncDiagnosticsView: View {
         } header: {
             Text("Pending Uploads")
         } footer: {
-            Text("Zero means iWatch has no local changes waiting to be sent to Trakt.")
+            Text("Uploads are sent by the device that created them. Recover pending uploads here only after stopping sync on the other device.")
         }
     }
 
     private var maintenanceSection: some View {
         Section("Repair") {
+            Button("Recover Pending Uploads on This Device") { showRecoveryConfirmation = true }
+                .disabled(!session.traktConnected || session.isSyncing || session.isErasingAllData)
+
             if session.syncDiagnostics.deadletterOperationCount > 0 {
                 Button {
                     Task { await session.retryFailedSyncOperations() }
@@ -161,7 +178,7 @@ struct SyncDiagnosticsView: View {
 
     private var resetSection: some View {
         Section {
-            Button("Reset Local Trakt Sync Data", role: .destructive) {
+            Button("Reset Trakt Library Data", role: .destructive) {
                 showResetConfirmation = true
             }
             .disabled(!session.traktConnected || session.isSyncing || session.isErasingAllData)

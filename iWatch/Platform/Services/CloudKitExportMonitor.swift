@@ -11,11 +11,24 @@ enum CloudExportConfirmation: Sendable, Equatable {
     case timedOut
 }
 
+enum CloudStoreActivity: Sendable {
+    case importing
+    case imported(Date)
+    case exporting
+    case exported(Date)
+    case failed(String)
+}
+
 // MARK: - CloudKit Export Monitor
 
 @MainActor
 protocol CloudExportMonitoring: AnyObject {
     func waitForExport(startingAfter date: Date, timeout: Duration) async -> CloudExportConfirmation
+    func observeActivity(_ handler: @escaping @MainActor (CloudStoreActivity) -> Void)
+}
+
+extension CloudExportMonitoring {
+    func observeActivity(_ handler: @escaping @MainActor (CloudStoreActivity) -> Void) {}
 }
 
 @MainActor
@@ -34,6 +47,7 @@ final class CloudKitExportMonitor: CloudExportMonitoring {
 
     private let container: CKContainer
     private var observer: NSObjectProtocol?
+    private var activityHandler: (@MainActor (CloudStoreActivity) -> Void)?
     private var recentEvents: [ExportEvent] = []
     private var waiters: [UUID: Waiter] = [:]
 
@@ -56,19 +70,23 @@ final class CloudKitExportMonitor: CloudExportMonitoring {
         }
     }
 
+    func observeActivity(_ handler: @escaping @MainActor (CloudStoreActivity) -> Void) {
+        activityHandler = handler
+    }
+
     func waitForExport(startingAfter date: Date, timeout: Duration) async -> CloudExportConfirmation {
         let accountStatus: CKAccountStatus
         do {
             accountStatus = try await container.accountStatus()
         } catch {
-            return .unavailable(error.localizedDescription)
+            return .unavailable(Self.errorSummary(error))
         }
 
         guard accountStatus == .available else {
             return .unavailable(Self.accountMessage(for: accountStatus))
         }
 
-        if let event = recentEvents.first(where: { $0.startDate >= date }) {
+        if let event = recentEvents.last(where: { $0.startDate >= date }) {
             return confirmation(for: event)
         }
 
@@ -90,17 +108,24 @@ final class CloudKitExportMonitor: CloudExportMonitoring {
 
     private func record(_ notification: Notification) {
         guard let event = notification.userInfo?[NSPersistentCloudKitContainer.eventNotificationUserInfoKey]
-                as? NSPersistentCloudKitContainer.Event,
-              event.type == .export,
-              let endDate = event.endDate else {
+                as? NSPersistentCloudKitContainer.Event else { return }
+        guard event.type == .import || event.type == .export else { return }
+        guard let endDate = event.endDate else {
+            activityHandler?(event.type == .import ? .importing : .exporting)
             return
         }
+        if event.succeeded {
+            activityHandler?(event.type == .import ? .imported(endDate) : .exported(endDate))
+        } else {
+            activityHandler?(.failed(Self.errorSummary(event.error)))
+        }
+        guard event.type == .export else { return }
 
         let export = ExportEvent(
             startDate: event.startDate,
             endDate: endDate,
             succeeded: event.succeeded,
-            errorDescription: event.error?.localizedDescription
+            errorDescription: event.succeeded ? nil : Self.errorSummary(event.error)
         )
         recentEvents.append(export)
         recentEvents = Array(recentEvents.suffix(20))
@@ -120,6 +145,31 @@ final class CloudKitExportMonitor: CloudExportMonitoring {
             return .completed(event.endDate)
         }
         return .failed(event.errorDescription ?? "iCloud couldn’t finish updating your data.")
+    }
+
+    static func errorSummary(_ error: Error?, depth: Int = 0) -> String {
+        guard let error, depth < 4 else { return "iCloud couldn’t finish updating your data." }
+        let nsError = error as NSError
+        if let partial = nsError.userInfo[CKPartialErrorsByItemIDKey] as? [AnyHashable: Error], !partial.isEmpty {
+            return Set(partial.values.map { errorSummary($0, depth: depth + 1) }).sorted().joined(separator: " ")
+        }
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? Error {
+            return errorSummary(underlying, depth: depth + 1)
+        }
+        // Never include record IDs, payloads, server descriptions, or userInfo.
+        if let cloud = error as? CKError {
+            switch cloud.code {
+            case .networkUnavailable, .networkFailure: return "iCloud is waiting for a network connection."
+            case .notAuthenticated: return "Sign in to iCloud in Settings, then reopen iWatch."
+            case .quotaExceeded: return "Your iCloud storage is full. Free some space and try again."
+            case .serverRejectedRequest, .invalidArguments, .unknownItem:
+                return "iCloud couldn’t accept the library update. Check that the app’s cloud schema is up to date."
+            case .serviceUnavailable, .requestRateLimited, .zoneBusy:
+                return "iCloud is temporarily busy and will retry."
+            default: return "iCloud update failed (code \(cloud.code.rawValue)). Try again later."
+            }
+        }
+        return "iCloud couldn’t finish updating your data. Try again later."
     }
 
     private static func accountMessage(for status: CKAccountStatus) -> String {

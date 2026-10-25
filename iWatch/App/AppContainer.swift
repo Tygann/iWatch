@@ -93,7 +93,8 @@ final class AppContainer {
             persistence: persistence,
             tmdb: tmdb,
             airtimeProvider: trakt,
-            resetGate: resetGate
+            resetGate: resetGate,
+            deviceIdentityStore: deviceIdentityStore
         )
         let contentRepository = ContentRepository(library: libraryRepository)
         let peopleRepository = PeopleRepository(tmdb: tmdb)
@@ -104,8 +105,10 @@ final class AppContainer {
             syncEngine: syncEngine,
             traktRedirectURI: config.traktRedirectURI,
             cacheService: cacheService,
-            cloudExportMonitor: cloudExportMonitor
+            cloudExportMonitor: cloudExportMonitor,
+            invalidateLibrarySnapshots: { libraryRepository.invalidateSnapshots() }
         )
+        libraryRepository.onMetadataChanged = { [weak session] in session?.scheduleLibraryInvalidation() }
         let router = AppRouter()
 
         return AppContainer(
@@ -151,7 +154,8 @@ final class AppContainer {
             persistence: persistence,
             tmdb: tmdb,
             airtimeProvider: trakt,
-            resetGate: resetGate
+            resetGate: resetGate,
+            deviceIdentityStore: deviceIdentityStore
         )
         let contentRepository = ContentRepository(library: libraryRepository)
         let peopleRepository = PeopleRepository(tmdb: tmdb)
@@ -162,7 +166,8 @@ final class AppContainer {
             syncEngine: syncEngine,
             traktRedirectURI: config.traktRedirectURI,
             cacheService: cacheService,
-            cloudExportMonitor: cloudExportMonitor
+            cloudExportMonitor: cloudExportMonitor,
+            invalidateLibrarySnapshots: { libraryRepository.invalidateSnapshots() }
         )
         let router = AppRouter(defaultTab: 0)
 
@@ -203,7 +208,7 @@ final class AppContainer {
         )
         let deviceIdentityStore = PreviewDeviceIdentityStore()
         let resetGate = AppDataResetGate()
-        let libraryRepository = LibraryRepository(persistence: persistence, tmdb: tmdb, resetGate: resetGate)
+        let libraryRepository = LibraryRepository(persistence: persistence, tmdb: tmdb, resetGate: resetGate, deviceIdentityStore: deviceIdentityStore)
         let contentRepository = ContentRepository(library: libraryRepository)
         let peopleRepository = PeopleRepository(tmdb: tmdb)
         let syncEngine = SyncEngine(persistence: persistence, trakt: trakt, deviceIdentityStore: deviceIdentityStore, resetGate: resetGate)
@@ -213,7 +218,8 @@ final class AppContainer {
             syncEngine: syncEngine,
             traktRedirectURI: config.traktRedirectURI,
             cacheService: cacheService,
-            cloudExportMonitor: cloudExportMonitor
+            cloudExportMonitor: cloudExportMonitor,
+            invalidateLibrarySnapshots: { libraryRepository.invalidateSnapshots() }
         )
         let router = AppRouter(defaultTab: 0)
 
@@ -256,7 +262,7 @@ final class AppContainer {
         )
         let deviceIdentityStore = PreviewDeviceIdentityStore()
         let resetGate = AppDataResetGate()
-        let libraryRepository = LibraryRepository(persistence: persistence, tmdb: tmdb, resetGate: resetGate)
+        let libraryRepository = LibraryRepository(persistence: persistence, tmdb: tmdb, resetGate: resetGate, deviceIdentityStore: deviceIdentityStore)
         let contentRepository = ContentRepository(library: libraryRepository)
         let peopleRepository = PeopleRepository(tmdb: tmdb)
         let syncEngine = SyncEngine(persistence: persistence, trakt: trakt, deviceIdentityStore: deviceIdentityStore, resetGate: resetGate)
@@ -266,7 +272,8 @@ final class AppContainer {
             syncEngine: syncEngine,
             traktRedirectURI: config.traktRedirectURI,
             cacheService: cacheService,
-            cloudExportMonitor: cloudExportMonitor
+            cloudExportMonitor: cloudExportMonitor,
+            invalidateLibrarySnapshots: { libraryRepository.invalidateSnapshots() }
         )
         let router = AppRouter(defaultTab: 0)
 

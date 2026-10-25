@@ -25,6 +25,7 @@ struct iWatchApp: App {
                  .environment(container.router)
                  .modelContainer(container.persistence.modelContainer)
                  .appTheme(appTheme)
+                 .modifier(UITestDynamicType())
                  .onChange(of: scenePhase) { _, phase in
                      switch phase {
                      case .active:
@@ -41,4 +42,15 @@ struct iWatchApp: App {
              await container.releaseNotificationCoordinator.reconcile()
          }
      }
+}
+
+private struct UITestDynamicType: ViewModifier {
+    func body(content: Content) -> some View {
+        if ProcessInfo.processInfo.arguments.contains("UITEST_MODE"),
+           ProcessInfo.processInfo.arguments.contains("UITEST_ACCESSIBILITY_TEXT") {
+            content.environment(\.dynamicTypeSize, .accessibility5)
+        } else {
+            content
+        }
+    }
 }

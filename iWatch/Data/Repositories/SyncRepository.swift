@@ -4,6 +4,7 @@ import SwiftData
 // MARK: - Sync State
 
 enum SyncReason: String, Sendable {
+    case localMutation
     case appLaunch
     case foreground
     case userInitiated
@@ -28,6 +29,7 @@ actor SyncEngine {
     private let deviceIdentityStore: DeviceIdentityStore
     private let resetGate: AppDataResetGate
     private let accountKeyProvider: @Sendable () -> String?
+    private let reconciliationSchedule: HistoryReconciliationSchedule
 
     private let suspiciousWatchlistRemovalThreshold = 25
     private let completedOperationRetention: TimeInterval = 24 * 60 * 60
@@ -36,17 +38,20 @@ actor SyncEngine {
     private static let claimCoordinator = SyncClaimCoordinator()
 
     private var lastRunErrorDescription: String?
+    private var isRunning = false
 
     init(persistence: Persistence,
          trakt: any TraktSyncing,
          deviceIdentityStore: DeviceIdentityStore,
          resetGate: AppDataResetGate = AppDataResetGate(),
-         accountKeyProvider: @escaping @Sendable () -> String? = { TraktLinkStore.activeAccountKey }) {
+         accountKeyProvider: @escaping @Sendable () -> String? = { TraktLinkStore.activeAccountKey },
+         reconciliationSchedule: HistoryReconciliationSchedule? = nil) {
         self.persistence = persistence
         self.trakt = trakt
         self.deviceIdentityStore = deviceIdentityStore
         self.resetGate = resetGate
         self.accountKeyProvider = accountKeyProvider
+        self.reconciliationSchedule = reconciliationSchedule ?? HistoryReconciliationSchedule(defaults: persistence.modelContainer.configurations.first?.isStoredInMemoryOnly == true ? nil : .standard)
     }
 
     // MARK: Sync Lifecycle
@@ -69,11 +74,15 @@ actor SyncEngine {
         )
         state.initialBaselineComplete = true
         try context.save()
+        reconciliationSchedule.recordFullSync(account: state.accountKey)
     }
 
     @discardableResult
     func run(reason: SyncReason,
              progress: (@MainActor @Sendable (SyncProgress) async -> Void)? = nil) async -> Bool {
+        guard !isRunning else { return false }
+        isRunning = true
+        defer { isRunning = false }
         guard await resetGate.allowsLibraryWork() else { return false }
         do {
             lastRunErrorDescription = nil
@@ -88,14 +97,16 @@ actor SyncEngine {
 
             let pullContext = persistence.makeContext()
             let state = syncState(context: pullContext)
+            let reconcileHistory = reconciliationSchedule.shouldReconcile(account: state.accountKey, reason: reason, previousPull: state.lastSuccessfulPullAt)
             try await pullAndMerge(
                 into: pullContext,
                 state: state,
                 initialBaseline: false,
-                reconcileRemoteHistory: reason == .userInitiated,
+                reconcileRemoteHistory: reconcileHistory,
                 progress: progress
             )
             try pullContext.save()
+            if reconcileHistory { reconciliationSchedule.recordFullSync(account: state.accountKey) }
 
             let pendingCount = allOperations(context: persistence.makeContext())
                 .filter { $0.status == .pending || $0.status == .processing }
@@ -194,18 +205,26 @@ actor SyncEngine {
         default:
             kind = .addWatchlist
         }
+        var operation = operation
+        operation.originDeviceID = await deviceIdentityStore.currentDeviceID()
+        operation.mutationAt = Date()
         let data = try SyncPayloadCodec.encoder.encode(operation)
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
-        context.insert(SyncOperationRecord(kind: kind, payload: data, generationID: generationID))
+        context.insert(SyncOperationRecord(kind: kind, payload: data, accountKey: accountKeyProvider() ?? "", generationID: generationID))
         try context.save()
     }
 
     @discardableResult
     // MARK: Maintenance
 
-    func retryDeadletterOperations() throws -> Int {
+    func retryDeadletterOperations() async throws -> Int {
+        guard let account = accountKeyProvider() else { return 0 }
+        let device = await deviceIdentityStore.currentDeviceID()
         let context = persistence.makeContext()
-        let deadletters = allOperations(context: context).filter { $0.status == .deadletter }
+        let deadletters = allOperations(context: context).filter {
+            $0.status == .deadletter && $0.accountKey == account
+                && (try? SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: $0.payload).originDeviceID) == device
+        }
 
         for operation in deadletters {
             operation.status = .pending
@@ -256,9 +275,40 @@ actor SyncEngine {
         try context.save()
     }
 
-    func assignUnlinkedOperations(to accountKey: String) throws {
+    /// Explicit recovery only: the user must stop syncing on the previous device.
+    func recoverPendingUploads() async throws -> Int {
+        guard !isRunning, let account = accountKeyProvider() else { return 0 }
+        let device = await deviceIdentityStore.currentDeviceID()
+        let context = persistence.makeContext()
+        let operations = allOperations(context: context).filter {
+            $0.accountKey == account || $0.accountKey.isEmpty
+        }
+        guard !operations.contains(where: {
+            $0.status == .processing && Date().timeIntervalSince($0.claimedAt ?? .now) < 300
+        }) else { throw AppError.unknown("An upload may still be running. Stop syncing on the other device and try again later.") }
+        var count = 0
+        for operation in operations where operation.status != .succeeded {
+            var payload = try SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: operation.payload)
+            payload.originDeviceID = device
+            operation.payload = try SyncPayloadCodec.encoder.encode(payload)
+            operation.accountKey = account
+            operation.status = .pending
+            operation.claimedAt = nil
+            operation.claimedByDeviceID = nil
+            operation.nextAttemptAt = nil
+            operation.attemptCount = 0
+            count += 1
+        }
+        try context.save()
+        return count
+    }
+
+    func assignUnlinkedOperations(to accountKey: String) async throws {
+        let deviceID = await deviceIdentityStore.currentDeviceID()
         let context = persistence.makeContext()
         for operation in allOperations(context: context) where operation.accountKey.isEmpty {
+            guard let payload = try? SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: operation.payload),
+                  payload.originDeviceID == deviceID else { continue }
             operation.accountKey = accountKey
         }
         try context.save()
@@ -324,6 +374,8 @@ actor SyncEngine {
                               initialBaseline: Bool,
                               reconcileRemoteHistory: Bool,
                               progress: (@MainActor @Sendable (SyncProgress) async -> Void)? = nil) async throws {
+        let expectedAccount = accountKeyProvider()
+        let expectedGeneration = LibraryGenerationPolicy.currentGeneration(in: context)
         let previousRelevantActivityAt = state.lastSeenRemoteActivityAt
         let remoteActivities = try? await trakt.getLastActivities()
         let shouldPullWatchlist = initialBaseline || shouldPullWatchlist(remoteActivities, previousRelevantActivityAt: previousRelevantActivityAt)
@@ -347,6 +399,8 @@ actor SyncEngine {
         if shouldPullWatchlist || shouldPullHistory {
             await progress?(.saving(watchlistItems: remoteWatchlist.count, historyItems: remoteHistory.count))
         }
+        guard await resetGate.allowsLibraryWork(), accountKeyProvider() == expectedAccount,
+              LibraryGenerationPolicy.currentGeneration(in: persistence.makeContext()) == expectedGeneration else { throw CancellationError() }
         let now = Date()
 
         if shouldPullHistory {
@@ -395,6 +449,7 @@ actor SyncEngine {
         let deviceID = await deviceIdentityStore.currentDeviceID()
         let now = Date()
         while let operationID = try await claimNextOperation(deviceID: deviceID, accountKey: accountKey) {
+            guard accountKeyProvider() == accountKey else { throw CancellationError() }
             let processContext = persistence.makeContext()
             guard let operation = operationRecord(id: operationID, context: processContext),
                   operation.claimedByDeviceID == deviceID,
@@ -409,6 +464,14 @@ actor SyncEngine {
                 operation.claimedAt = nil
                 try processContext.save()
             } catch {
+                guard await resetGate.allowsLibraryWork() else { throw CancellationError() }
+                if error is CancellationError {
+                    operation.status = .pending
+                    operation.claimedByDeviceID = nil
+                    operation.claimedAt = nil
+                    try processContext.save()
+                    throw error
+                }
                 operation.attemptCount += 1
                 let attemptedAt = Date()
                 operation.lastAttemptAt = attemptedAt
@@ -463,39 +526,62 @@ actor SyncEngine {
         return min(pow(2, Double(max(attempt - 1, 0))) * 30, 30 * 60)
     }
 
+    private func canAcknowledge(_ operation: SyncOperationRecord, in context: ModelContext) -> Bool {
+        let generation = LibraryGenerationPolicy.currentGeneration(in: context)
+        guard LibraryGenerationPolicy.belongsToCurrentGeneration(operation.generationID, current: generation) else { return false }
+        guard let key = operation.dedupeKey else { return true }
+        return !allOperations(context: context).contains {
+            $0.id != operation.id && $0.dedupeKey == key && $0.status != .succeeded
+        }
+    }
+
     private func process(operation: SyncOperationRecord, context: ModelContext) async throws {
         let payload = try SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: operation.payload)
+        let sentAt = payload.mutationAt ?? operation.createdAt
+        guard accountKeyProvider() == operation.accountKey else { throw CancellationError() }
 
         switch operation.kind {
         case .addWatchlist:
             if let mediaID = payload.mediaKind.flatMap({ kind in payload.tmdbID.map { MediaID(kind: kind, id: $0, traktID: payload.traktID) } }) {
                 try await trakt.addToWatchlist([mediaID])
-                if let row = watchlistRecord(for: mediaID, context: context) {
+                guard await resetGate.allowsLibraryWork(), accountKeyProvider() == operation.accountKey else { throw CancellationError() }
+                let acknowledgement = persistence.makeContext()
+                if let row = watchlistRecord(for: mediaID, context: acknowledgement), row.localUpdatedAt <= sentAt, canAcknowledge(operation, in: acknowledgement) {
                     row.dirty = false
                     row.isInWatchlist = true
                     row.remoteUpdatedAt = Date()
+                    try acknowledgement.save()
                 }
             }
         case .removeWatchlist:
             if let mediaID = payload.mediaKind.flatMap({ kind in payload.tmdbID.map { MediaID(kind: kind, id: $0, traktID: payload.traktID) } }) {
                 try await trakt.removeFromWatchlist([mediaID])
-                if let row = watchlistRecord(for: mediaID, context: context) {
+                guard await resetGate.allowsLibraryWork(), accountKeyProvider() == operation.accountKey else { throw CancellationError() }
+                let acknowledgement = persistence.makeContext()
+                if let row = watchlistRecord(for: mediaID, context: acknowledgement), row.localUpdatedAt <= sentAt, canAcknowledge(operation, in: acknowledgement) {
                     row.dirty = false
                     row.isInWatchlist = false
                     row.remoteUpdatedAt = Date()
+                    try acknowledgement.save()
                 }
             }
         case .addHistory:
             try await trakt.addToHistory([payload])
-            if let event = payload.mediaKind.flatMap({ kind in payload.tmdbID.flatMap { eventRecord(kind: kind, tmdbID: $0, watchedAt: payload.watchedAt, context: context) } }) {
+            guard await resetGate.allowsLibraryWork(), accountKeyProvider() == operation.accountKey else { throw CancellationError() }
+            let acknowledgement = persistence.makeContext()
+            if let event = payload.mediaKind.flatMap({ kind in payload.tmdbID.flatMap { eventRecord(kind: kind, tmdbID: $0, watchedAt: payload.watchedAt, context: acknowledgement) } }), event.updatedAt <= sentAt, canAcknowledge(operation, in: acknowledgement) {
                 event.dirty = false
                 event.updatedAt = Date()
+                try acknowledgement.save()
             }
         case .removeHistory:
             if let historyID = payload.historyID {
                 try await trakt.removeFromHistory(historyIDs: [historyID])
-                if let event = eventRecord(historyID: historyID, context: context) {
-                    context.delete(event)
+                guard await resetGate.allowsLibraryWork(), accountKeyProvider() == operation.accountKey else { throw CancellationError() }
+                let acknowledgement = persistence.makeContext()
+                if let event = eventRecord(historyID: historyID, context: acknowledgement), event.updatedAt <= sentAt, canAcknowledge(operation, in: acknowledgement) {
+                    acknowledgement.delete(event)
+                    try acknowledgement.save()
                 }
             }
         }
@@ -907,10 +993,15 @@ actor SyncEngine {
         return merged
     }
 
+    private func operationIdentity(_ operation: SyncOperationRecord) -> String {
+        let owner = (try? SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: operation.payload).originDeviceID) ?? "unowned"
+        return "\(operation.id)|\(operation.accountKey)|\(operation.generationID)|\(owner)"
+    }
+
     private func repairSyncOperationDuplicates(context: ModelContext, now: Date) -> Int {
-        let groups = Dictionary(grouping: allOperations(context: context).filter { !($0.dedupeKey?.isEmpty ?? true) }) {
-            $0.dedupeKey ?? UUID().uuidString
-        }
+        // Different operations may express successive edits to the same title.
+        // Only replicas of the same immutable operation are duplicates.
+        let groups = Dictionary(grouping: allOperations(context: context), by: operationIdentity)
         var merged = 0
 
         for group in groups.values where group.count > 1 {
@@ -980,7 +1071,7 @@ actor SyncEngine {
         + duplicateOverflowCount(for: allWatchlist(context: context).map { $0.mediaKey.isEmpty ? "\($0.kindRaw):\($0.tmdbID)" : $0.mediaKey })
         + duplicateOverflowCount(for: allEvents(context: context).map { eventDeduplicationKey($0) })
         + duplicateOverflowCount(for: allShowDispositions(context: context).map { $0.mediaKey.isEmpty ? "show:\($0.tmdbID)" : $0.mediaKey })
-        + duplicateOverflowCount(for: allOperations(context: context).compactMap(\.dedupeKey))
+        + duplicateOverflowCount(for: allOperations(context: context).map(operationIdentity))
         + duplicateOverflowCount(for: allSyncStates(context: context).map { $0.accountKey.isEmpty ? "default" : $0.accountKey })
     }
 
@@ -1116,6 +1207,7 @@ actor SyncEngine {
     }
 
     private func syncOperationPreferredOver(_ lhs: SyncOperationRecord, _ rhs: SyncOperationRecord) -> Bool {
+        if lhs.status == .succeeded || rhs.status == .succeeded { return lhs.status == .succeeded && rhs.status != .succeeded }
         if lhs.createdAt != rhs.createdAt { return lhs.createdAt > rhs.createdAt }
         let lhsPriority = syncOperationPriority(lhs.status)
         let rhsPriority = syncOperationPriority(rhs.status)
@@ -1369,9 +1461,13 @@ private actor SyncClaimCoordinator {
         while true {
             let claimContext = persistence.makeContext()
             let claimTimestamp = Date()
+            let generation = LibraryGenerationPolicy.currentGeneration(in: claimContext)
             let operations = ((try? claimContext.fetch(FetchDescriptor<SyncOperationRecord>())) ?? [])
                 .filter { operation in
-                    guard operation.accountKey == accountKey else { return false }
+                    guard operation.accountKey == accountKey,
+                          LibraryGenerationPolicy.belongsToCurrentGeneration(operation.generationID, current: generation),
+                          let payload = try? SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: operation.payload),
+                          payload.originDeviceID == deviceID else { return false }
                     if let nextAttemptAt = operation.nextAttemptAt, nextAttemptAt > claimTimestamp { return false }
                     switch operation.status {
                     case .pending:
@@ -1404,5 +1500,36 @@ private actor SyncClaimCoordinator {
                 return verified.id
             }
         }
+    }
+}
+
+// Device-local scheduling: CloudKit replication must not suppress another device's reconciliation.
+nonisolated final class HistoryReconciliationSchedule: @unchecked Sendable {
+    private let defaults: UserDefaults?
+    private let lock = NSLock()
+    private var dates: [String: Date] = [:]
+    init(defaults: UserDefaults? = nil) { self.defaults = defaults }
+
+    func shouldReconcile(account: String, reason: SyncReason, previousPull: Date?, now: Date = .now) -> Bool {
+        if reason == .userInitiated { return true }
+        if reason == .localMutation { return false }
+        lock.lock()
+        defer { lock.unlock() }
+        let key = "iWatch.fullHistorySync." + account
+        let previous = dates[account] ?? defaults?.object(forKey: key) as? Date ?? previousPull
+        guard let previous else { return true }
+        // Establish a stable checkpoint rather than moving it on every incremental pull.
+        if dates[account] == nil {
+            dates[account] = previous
+            defaults?.set(previous, forKey: key)
+        }
+        return now < previous || now.timeIntervalSince(previous) >= 86400
+    }
+
+    func recordFullSync(account: String, now: Date = .now) {
+        lock.lock()
+        defer { lock.unlock() }
+        dates[account] = now
+        defaults?.set(now, forKey: "iWatch.fullHistorySync." + account)
     }
 }

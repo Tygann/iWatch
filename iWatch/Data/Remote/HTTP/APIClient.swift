@@ -2,6 +2,7 @@ import Foundation
 
 final class APIClient {
     private let session: URLSession
+    private let dataLoader = HTTPRequestCoalescer()
 
     init(session: URLSession) {
         self.session = session
@@ -18,7 +19,7 @@ final class APIClient {
 
     // MARK: - JSON
     func fetch<T: Decodable>(_ route: APIRoute, as type: T.Type) async throws -> T {
-        let (data, resp) = try await session.data(for: route.urlRequest())
+        let (data, resp) = try await dataLoader.data(for: route.urlRequest(), session: session)
         guard let http = resp as? HTTPURLResponse else { throw AppError.network("No response") }
         guard (200..<300).contains(http.statusCode) else {
             if http.statusCode == 429 {
@@ -40,7 +41,7 @@ final class APIClient {
 
     // MARK: - Raw Data
     func data(_ route: APIRoute) async throws -> Data {
-        let (data, resp) = try await session.data(for: route.urlRequest())
+        let (data, resp) = try await dataLoader.data(for: route.urlRequest(), session: session)
         guard let http = resp as? HTTPURLResponse else { throw AppError.network("No response") }
         guard (200..<300).contains(http.statusCode) else {
             if http.statusCode == 429 {
@@ -58,7 +59,7 @@ final class APIClient {
         decode: T.Type,
         decoder: JSONDecoder? = nil
     ) async throws -> T {
-        let (data, resp) = try await session.data(for: request)
+        let (data, resp) = try await dataLoader.data(for: request, session: session)
         guard let http = resp as? HTTPURLResponse else { throw AppError.network("No response") }
         guard (200..<300).contains(http.statusCode) else {
             if http.statusCode == 429 {
@@ -111,7 +112,7 @@ extension JSONDecoder {
 
 #if DEBUG
 private func debugPrintDecodeError<T>(_ error: Error, data: Data, route: APIRoute, type: T.Type) {
-    let urlString = route.urlRequest().url?.absoluteString ?? "<unknown>"
+    let urlString = redactedRequestURL(route.urlRequest().url)
 
     func printJSONSnippet(_ data: Data) {
         if let raw = String(data: data, encoding: .utf8) {
@@ -147,3 +148,27 @@ private func debugPrintDecodeError<T>(_ error: Error, data: Data, route: APIRout
     }
 }
 #endif
+
+nonisolated func redactedRequestURL(_ url: URL?) -> String {
+    guard let url, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return "<unknown>" }
+    // Query values can contain API keys, authorization codes, and personal search terms.
+    components.query = nil
+    components.fragment = nil
+    components.user = nil
+    components.password = nil
+    return components.string ?? "<unknown>"
+}
+
+// Share only identical reads. Authorization headers participate in URLRequest equality.
+private actor HTTPRequestCoalescer {
+    private var reads: [URLRequest: Task<(Data, URLResponse), Error>] = [:]
+
+    func data(for request: URLRequest, session: URLSession) async throws -> (Data, URLResponse) {
+        guard (request.httpMethod ?? "GET") == "GET" else { return try await session.data(for: request) }
+        if let read = reads[request] { return try await read.value }
+        let read = Task { try await session.data(for: request) }
+        reads[request] = read
+        defer { reads[request] = nil }
+        return try await read.value
+    }
+}

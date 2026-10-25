@@ -10,6 +10,7 @@ final class TraktService: TraktSyncing, EpisodeAirtimeProviding {
     private let base = URL(string: "https://api.trakt.tv")!
     private let authBase = URL(string: "https://auth.trakt.tv")!
     private let encoder: JSONEncoder
+    private let refreshCoordinator = TokenRefreshCoordinator()
 
     init(apiClient: APIClient, clientId: String, clientSecret: String, authStore: TraktAuthStore = KeychainTraktAuthStore()) {
         self.api = apiClient
@@ -49,7 +50,8 @@ final class TraktService: TraktSyncing, EpisodeAirtimeProviding {
     }
 
     func clearAuth() async {
-        await authStore.clear()
+        _ = await refreshCoordinator.invalidate()
+        await refreshCoordinator.clear(authStore)
     }
 
     // MARK: Public Episode Metadata
@@ -153,6 +155,7 @@ final class TraktService: TraktSyncing, EpisodeAirtimeProviding {
     }
 
     func exchangeCodeForToken(code: String, redirectURI: String) async throws -> TokenResponse {
+        let generation = await refreshCoordinator.invalidate()
         try validateConfiguration(requiresClientSecret: true)
 
         let body: [String: Any] = [
@@ -164,11 +167,18 @@ final class TraktService: TraktSyncing, EpisodeAirtimeProviding {
         ]
 
         let token = try await sendTokenRequest(body: body)
-        await authStore.save(token: token)
+        guard await refreshCoordinator.isCurrent(generation) else { throw CancellationError() }
+        try await refreshCoordinator.save(token, generation: generation, in: authStore)
         return token
     }
 
     func refreshTokenIfNeeded() async throws {
+        try await refreshCoordinator.run { generation in
+            try await self.performTokenRefresh(generation: generation)
+        }
+    }
+
+    private func performTokenRefresh(generation: UUID) async throws {
         guard let current = await authStore.currentToken() else { return }
         guard current.requiresRefresh() else { return }
         try validateConfiguration(requiresClientSecret: true)
@@ -182,9 +192,12 @@ final class TraktService: TraktSyncing, EpisodeAirtimeProviding {
 
         do {
             let newToken = try await sendTokenRequest(body: body)
-            await authStore.save(token: newToken)
+            try Task.checkCancellation()
+            guard await refreshCoordinator.isCurrent(generation) else { throw CancellationError() }
+            try await refreshCoordinator.save(newToken, generation: generation, in: authStore)
         } catch let error as TraktAuthError where error.requiresReconnect {
-            await authStore.clear()
+            guard await refreshCoordinator.isCurrent(generation) else { throw CancellationError() }
+            await refreshCoordinator.clear(authStore)
             throw error
         } catch {
             throw error
@@ -350,7 +363,8 @@ final class TraktService: TraktSyncing, EpisodeAirtimeProviding {
             return try await api.send(request, decode: decode, decoder: .trakt)
         } catch let error as AppError {
             if case let .httpStatus(code, _) = error, code == 401 {
-                await authStore.clear()
+                let cleared = await refreshCoordinator.clear(authStore, matching: request.value(forHTTPHeaderField: "Authorization"))
+                guard cleared else { throw CancellationError() }
                 throw TraktAuthError.sessionExpired(description: nil)
             }
             throw error
@@ -394,3 +408,50 @@ final class TraktService: TraktSyncing, EpisodeAirtimeProviding {
 }
 
 typealias TraktClient = TraktService
+
+private actor TokenRefreshCoordinator {
+    private var generation = UUID()
+    private var task: Task<Void, Error>?
+    private var lastWrite: Task<Void, Never>?
+
+    func isCurrent(_ value: UUID) -> Bool { value == generation }
+
+    func invalidate() -> UUID {
+        generation = UUID()
+        task?.cancel()
+        task = nil
+        return generation
+    }
+
+    func save(_ token: TokenResponse, generation expected: UUID, in store: any TraktAuthStore) async throws {
+        guard expected == generation else { throw CancellationError() }
+        let previous = lastWrite
+        let write = Task { await previous?.value; await store.save(token: token) }
+        lastWrite = write
+        await write.value
+    }
+
+    @discardableResult
+    func clear(_ store: any TraktAuthStore, matching authorization: String? = nil) async -> Bool {
+        let previous = lastWrite
+        let result = Task { () -> Bool in
+            await previous?.value
+            if let authorization {
+                guard let token = await store.currentToken(), authorization == "Bearer " + token.accessToken else { return false }
+            }
+            await store.clear()
+            return true
+        }
+        lastWrite = Task { _ = await result.value }
+        return await result.value
+    }
+
+    func run(_ refresh: @escaping @Sendable (UUID) async throws -> Void) async throws {
+        if let task { return try await task.value }
+        let current = generation
+        let work = Task { try await refresh(current) }
+        task = work
+        defer { if generation == current { task = nil } }
+        try await work.value
+    }
+}

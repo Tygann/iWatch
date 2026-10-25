@@ -82,11 +82,10 @@ struct SettingsView: View {
                 )
             }
 
-            LabeledContent {
-                Text("Automatic")
-                    .foregroundStyle(.secondary)
+            NavigationLink {
+                SyncDiagnosticsView()
             } label: {
-                Label("iCloud Sync", systemImage: "icloud")
+                SettingsNavigationLabel(title: "iCloud Sync", systemImage: "icloud", detail: session.cloudSyncStatus.title)
             }
         } header: {
             Text(SettingsHomeSection.sync.rawValue)
