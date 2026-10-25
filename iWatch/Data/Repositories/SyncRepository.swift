@@ -27,6 +27,7 @@ actor SyncEngine {
     private let trakt: any TraktSyncing
     private let deviceIdentityStore: DeviceIdentityStore
     private let resetGate: AppDataResetGate
+    private let accountKeyProvider: @Sendable () -> String?
 
     private let suspiciousWatchlistRemovalThreshold = 25
     private let completedOperationRetention: TimeInterval = 24 * 60 * 60
@@ -39,11 +40,13 @@ actor SyncEngine {
     init(persistence: Persistence,
          trakt: any TraktSyncing,
          deviceIdentityStore: DeviceIdentityStore,
-         resetGate: AppDataResetGate = AppDataResetGate()) {
+         resetGate: AppDataResetGate = AppDataResetGate(),
+         accountKeyProvider: @escaping @Sendable () -> String? = { TraktLinkStore.activeAccountKey }) {
         self.persistence = persistence
         self.trakt = trakt
         self.deviceIdentityStore = deviceIdentityStore
         self.resetGate = resetGate
+        self.accountKeyProvider = accountKeyProvider
     }
 
     // MARK: Sync Lifecycle
@@ -388,7 +391,7 @@ actor SyncEngine {
     }
 
     private func pushPendingOperations() async throws {
-        guard let accountKey = TraktLinkStore.activeAccountKey else { return }
+        guard let accountKey = accountKeyProvider() else { return }
         let deviceID = await deviceIdentityStore.currentDeviceID()
         let now = Date()
         while let operationID = try await claimNextOperation(deviceID: deviceID, accountKey: accountKey) {
@@ -1166,7 +1169,7 @@ actor SyncEngine {
     // MARK: Persistence Helpers
 
     private func syncState(context: ModelContext) -> SyncStateRecord {
-        let accountKey = TraktLinkStore.activeAccountKey ?? "default"
+        let accountKey = accountKeyProvider() ?? "default"
         if let existing = allSyncStates(context: context).first(where: { $0.accountKey == accountKey }) {
             return existing
         }

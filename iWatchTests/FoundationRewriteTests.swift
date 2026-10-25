@@ -21,7 +21,8 @@ struct FoundationRewriteTests {
         let engine = SyncEngine(
             persistence: persistence,
             trakt: remote,
-            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"),
+            accountKeyProvider: { "default" }
         )
         let progress = SyncProgressCollector()
 
@@ -75,7 +76,8 @@ struct FoundationRewriteTests {
         let engine = SyncEngine(
             persistence: persistence,
             trakt: remote,
-            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"),
+            accountKeyProvider: { "default" }
         )
 
         try await engine.ensureInitialBaseline()
@@ -104,7 +106,8 @@ struct FoundationRewriteTests {
         let engine = SyncEngine(
             persistence: persistence,
             trakt: remote,
-            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"),
+            accountKeyProvider: { "default" }
         )
 
         try await engine.ensureInitialBaseline()
@@ -143,7 +146,8 @@ struct FoundationRewriteTests {
         let engine = SyncEngine(
             persistence: persistence,
             trakt: remote,
-            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"),
+            accountKeyProvider: { "default" }
         )
 
         try await engine.ensureInitialBaseline()
@@ -183,7 +187,8 @@ struct FoundationRewriteTests {
         let engine = SyncEngine(
             persistence: persistence,
             trakt: remote,
-            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"),
+            accountKeyProvider: { "default" }
         )
 
         try await engine.ensureInitialBaseline()
@@ -690,8 +695,6 @@ struct FoundationRewriteTests {
 
     @Test
     func outboxClaimPreventsDoublePushAcrossEngines() async throws {
-        TraktLinkStore.activeAccountKey = "default"
-        defer { TraktLinkStore.clear() }
         let persistence = makePersistence()
         let context = persistence.makeContext()
         let mediaID = MediaID(kind: .movie, id: 11, traktID: 111)
@@ -720,12 +723,14 @@ struct FoundationRewriteTests {
         let engineA = SyncEngine(
             persistence: persistence,
             trakt: remote,
-            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"),
+            accountKeyProvider: { "default" }
         )
         let engineB = SyncEngine(
             persistence: persistence,
             trakt: remote,
-            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-b")
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-b"),
+            accountKeyProvider: { "default" }
         )
 
         async let runA = engineA.run(reason: .background)
@@ -739,6 +744,73 @@ struct FoundationRewriteTests {
         #expect(snapshot.addWatchlistCalls == 1)
         #expect(operations.first?.status == .succeeded)
         #expect(watchlistRows.first?.dirty == false)
+    }
+
+    @Test
+    func syncStateIsSelectedForEachAccount() async throws {
+        let persistence = makePersistence()
+        let context = persistence.makeContext()
+        let recent = Date()
+        context.insert(SyncStateRecord(
+            accountKey: "account-a", initialBaselineComplete: true,
+            lastSuccessfulPullAt: recent, lastSuccessfulPushAt: recent
+        ))
+        try context.save()
+        let remote = FakeTraktSyncRemote(
+            token: makeToken(), lastActivities: makeLastActivities(watchlistAt: recent, historyAt: recent),
+            watchlist: [], history: []
+        )
+        let engineA = SyncEngine(
+            persistence: persistence, trakt: remote,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"),
+            accountKeyProvider: { "account-a" }
+        )
+        let engineB = SyncEngine(
+            persistence: persistence, trakt: remote,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"),
+            accountKeyProvider: { "account-b" }
+        )
+        let snapshotA = await engineA.snapshot()
+        let snapshotB = await engineB.snapshot()
+        #expect(snapshotA.initialBaselineComplete)
+        #expect(snapshotA.lastSuccessfulPullAt == recent)
+        #expect(!snapshotB.initialBaselineComplete)
+        #expect(snapshotB.lastSuccessfulPullAt == nil)
+        #expect(await engineA.shouldRefreshOnForeground(maxStaleness: 3600) == false)
+        #expect(await engineB.shouldRefreshOnForeground(maxStaleness: 3600))
+    }
+
+    @Test(arguments: [nil, "account-b"] as [String?])
+    func outboxUploadsOnlyForSelectedAccount(accountKey: String?) async throws {
+        let persistence = makePersistence()
+        let context = persistence.makeContext()
+        for (index, owner) in ["account-a", "account-b", ""].enumerated() {
+            context.insert(SyncOperationRecord(
+                kind: .addWatchlist,
+                payload: try SyncPayloadCodec.encoder.encode(
+                    SyncOperationPayload(mediaKind: .movie, tmdbID: index + 1, traktID: index + 1)
+                ),
+                dedupeKey: "watchlist:movie:\(index + 1)", accountKey: owner
+            ))
+        }
+        try context.save()
+        let remote = FakeTraktSyncRemote(
+            token: makeToken(), lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now),
+            watchlist: [], history: []
+        )
+        let engine = SyncEngine(
+            persistence: persistence, trakt: remote,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"),
+            accountKeyProvider: { accountKey }
+        )
+        #expect(await engine.run(reason: .background))
+        let snapshot = await remote.snapshot()
+        let operations = try fetchAll(SyncOperationRecord.self, from: persistence)
+        #expect(operations.count == 3)
+        #expect(snapshot.addWatchlistCalls == (accountKey == nil ? 0 : 1))
+        for operation in operations {
+            #expect(operation.status == (operation.accountKey == accountKey ? .succeeded : .pending))
+        }
     }
 
     @Test
@@ -765,7 +837,8 @@ struct FoundationRewriteTests {
                 watchlist: [],
                 history: []
             ),
-            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"),
+            accountKeyProvider: { "default" }
         )
 
         let shouldRefresh = await engine.shouldRefreshOnForeground(maxStaleness: 60 * 60)
@@ -798,7 +871,8 @@ struct FoundationRewriteTests {
                 watchlist: [],
                 history: []
             ),
-            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"),
+            accountKeyProvider: { "default" }
         )
 
         let shouldRefresh = await engine.shouldRefreshOnForeground(maxStaleness: 60 * 60)
@@ -834,7 +908,8 @@ struct FoundationRewriteTests {
         let engine = SyncEngine(
             persistence: persistence,
             trakt: remote,
-            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"),
+            accountKeyProvider: { "default" }
         )
 
         let succeeded = await engine.run(reason: .foreground)
@@ -883,7 +958,8 @@ struct FoundationRewriteTests {
         let engine = SyncEngine(
             persistence: persistence,
             trakt: remote,
-            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"),
+            accountKeyProvider: { "default" }
         )
 
         let succeeded = await engine.run(reason: .foreground)
@@ -944,7 +1020,8 @@ struct FoundationRewriteTests {
                     watchedAt: oldActivity.addingTimeInterval(-60)
                 )]
             ),
-            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"),
+            accountKeyProvider: { "default" }
         )
 
         #expect(await engine.run(reason: .userInitiated) == true)
@@ -983,7 +1060,8 @@ struct FoundationRewriteTests {
                 watchlist: [],
                 history: []
             ),
-            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"),
+            accountKeyProvider: { "default" }
         )
 
         #expect(await engine.run(reason: .userInitiated) == true)
@@ -1002,7 +1080,8 @@ struct FoundationRewriteTests {
         let engine = SyncEngine(
             persistence: persistence,
             trakt: remote,
-            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"),
+            accountKeyProvider: { "default" }
         )
 
         try await engine.ensureInitialBaseline()
@@ -1034,7 +1113,8 @@ struct FoundationRewriteTests {
                 watchlist: [],
                 history: [makeEpisodeHistoryItem(historyID: 8001, watchedAt: .now)]
             ),
-            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"),
+            accountKeyProvider: { "default" }
         )
 
         try await engine.ensureInitialBaseline()
@@ -1077,7 +1157,8 @@ struct FoundationRewriteTests {
                 watchlist: [],
                 history: [makeMovieHistoryItem(historyID: 7001, watchedAt: .now)]
             ),
-            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"),
+            accountKeyProvider: { "default" }
         )
 
         #expect(await engine.run(reason: .foreground) == true)
@@ -1113,7 +1194,8 @@ struct FoundationRewriteTests {
                 watchlist: [],
                 history: []
             ),
-            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"),
+            accountKeyProvider: { "default" }
         )
 
         let retried = try await engine.retryDeadletterOperations()
@@ -1146,7 +1228,8 @@ struct FoundationRewriteTests {
                 watchlist: [],
                 history: []
             ),
-            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"),
+            accountKeyProvider: { "default" }
         )
 
         let summary = try await engine.repairIntegrity()
@@ -1317,7 +1400,8 @@ struct FoundationRewriteTests {
                 watchlist: [],
                 history: []
             ),
-            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"),
+            accountKeyProvider: { "default" }
         )
 
         try await engine.eraseAllAppData()
@@ -1353,7 +1437,8 @@ struct FoundationRewriteTests {
                 watchlist: [],
                 history: []
             ),
-            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a")
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"),
+            accountKeyProvider: { "default" }
         )
         try await engine.eraseAllAppData()
 
