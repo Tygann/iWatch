@@ -516,6 +516,7 @@ actor SyncEngine {
             return code == 408 || code == 425 || code == 429 || (500...599).contains(code)
         }
         if case .rateLimited = error as? AppError { return true }
+        if let reconciliation = error as? HistoryReconciliationError { return reconciliation != .ambiguous }
         return true
     }
 
@@ -566,27 +567,126 @@ actor SyncEngine {
                 }
             }
         case .addHistory:
-            try await trakt.addToHistory([payload])
-            guard await resetGate.allowsLibraryWork(), accountKeyProvider() == operation.accountKey else { throw CancellationError() }
-            let acknowledgement = persistence.makeContext()
-            if let event = payload.mediaKind.flatMap({ kind in payload.tmdbID.flatMap { eventRecord(kind: kind, tmdbID: $0, watchedAt: payload.watchedAt, context: acknowledgement) } }), event.updatedAt <= sentAt, canAcknowledge(operation, in: acknowledgement) {
-                event.dirty = false
-                event.updatedAt = Date()
-                try acknowledgement.save()
-            }
+            try await processHistoryAddition(operation: operation, payload: payload, context: context)
         case .removeHistory:
-            if let historyID = payload.historyID {
-                try await trakt.removeFromHistory(historyIDs: [historyID])
-                guard await resetGate.allowsLibraryWork(), accountKeyProvider() == operation.accountKey else { throw CancellationError() }
-                let acknowledgement = persistence.makeContext()
-                if let event = eventRecord(historyID: historyID, context: acknowledgement), event.updatedAt <= sentAt, canAcknowledge(operation, in: acknowledgement) {
-                    acknowledgement.delete(event)
-                    try acknowledgement.save()
-                }
-            }
+            try await processHistoryRemoval(operation: operation, payload: payload)
+
         }
 
         try context.save()
+    }
+
+    private func validateHistoryContext(_ operation: SyncOperationRecord) async throws {
+        guard await resetGate.allowsLibraryWork(), accountKeyProvider() == operation.accountKey,
+              LibraryGenerationPolicy.belongsToCurrentGeneration(operation.generationID,
+                current: LibraryGenerationPolicy.currentGeneration(in: persistence.makeContext())) else { throw CancellationError() }
+    }
+
+    private func matchingRemoteHistory(_ payload: SyncOperationPayload, operation: SyncOperationRecord) async throws -> [TraktHistoryItemDTO] {
+        guard let date = payload.watchedAt, payload.tmdbID != nil else { throw HistoryReconciliationError.ambiguous }
+        let second = Date(timeIntervalSince1970: floor(date.timeIntervalSince1970))
+        let history = try await trakt.getHistory(startAt: second.addingTimeInterval(-1), endAt: second.addingTimeInterval(1))
+        try await validateHistoryContext(operation)
+        return history.filter { HistoryMatchPolicy.matches(payload, remote: $0) }
+    }
+
+    private func processHistoryAddition(operation: SyncOperationRecord, payload original: SyncOperationPayload, context: ModelContext) async throws {
+        var payload = original
+        guard let kind = payload.mediaKind, let id = payload.tmdbID else { throw HistoryReconciliationError.ambiguous }
+        let initial = eventRecord(kind: kind, tmdbID: id, watchedAt: payload.watchedAt, context: persistence.makeContext())
+        let uncertain = payload.historyRequestStartedAt != nil || (operation.attemptCount > 0 && payload.historyRequestRejected != true)
+        if !uncertain {
+            // A removal queued before this request started cancels the add safely.
+            guard let initial, !initial.tombstoned else {
+                payload.historyKnownIDs = []
+                payload.historyRequestRejected = true
+                operation.payload = try SyncPayloadCodec.encoder.encode(payload)
+                try context.save()
+                return
+            }
+            // Establish which plays existed before this particular upload.
+            payload.historyRequestRejected = true
+            operation.payload = try SyncPayloadCodec.encoder.encode(payload)
+            try context.save()
+            payload.historyKnownIDs = try await matchingRemoteHistory(payload, operation: operation).map(\.id)
+            payload.historyRequestStartedAt = Date()
+            payload.historyRequestRejected = false
+            operation.payload = try SyncPayloadCodec.encoder.encode(payload)
+            try context.save() // Persist intent before sending a non-idempotent request.
+            do { try await trakt.addToHistory([payload]) }
+            catch {
+                // An explicit rejection is safe to retry; timeouts/5xx/decoding failures are not.
+                if case let .httpStatus(code, _) = error as? AppError, (400..<500).contains(code), code != 408 {
+                    payload.historyRequestStartedAt = nil
+                    payload.historyRequestRejected = true
+                    operation.payload = try SyncPayloadCodec.encoder.encode(payload)
+                    try context.save()
+                } else if case .rateLimited = error as? AppError {
+                    payload.historyRequestStartedAt = nil
+                    payload.historyRequestRejected = true
+                    operation.payload = try SyncPayloadCodec.encoder.encode(payload)
+                    try context.save()
+                }
+                throw error
+            }
+        }
+        guard let knownIDs = payload.historyKnownIDs else { throw HistoryReconciliationError.ambiguous }
+        let matches = try await matchingRemoteHistory(payload, operation: operation).filter { !knownIDs.contains($0.id) }
+        guard matches.count == 1, let remote = matches.first else {
+            throw matches.isEmpty ? HistoryReconciliationError.unconfirmed : .ambiguous
+        }
+        let acknowledgement = persistence.makeContext()
+        if let event = eventRecord(kind: kind, tmdbID: id, watchedAt: payload.watchedAt, context: acknowledgement) {
+            guard event.traktHistoryID == nil || event.traktHistoryID == remote.id else { throw HistoryReconciliationError.ambiguous }
+            event.traktHistoryID = remote.id
+            for duplicate in allEvents(context: acknowledgement) where duplicate !== event && duplicate.traktHistoryID == remote.id {
+                mergeWatchedEvent(event, with: duplicate)
+                acknowledgement.delete(duplicate)
+            }
+            if !event.tombstoned, event.updatedAt <= (payload.mutationAt ?? operation.createdAt), canAcknowledge(operation, in: acknowledgement) {
+                event.dirty = false
+            }
+            try acknowledgement.save()
+        }
+    }
+
+    private func processHistoryRemoval(operation: SyncOperationRecord, payload: SyncOperationPayload) async throws {
+        let read = persistence.makeContext()
+        let event = payload.mediaKind.flatMap { kind in
+            payload.tmdbID.flatMap { eventRecord(kind: kind, tmdbID: $0, watchedAt: payload.watchedAt, context: read) }
+        }
+        var historyID = payload.historyID ?? event?.traktHistoryID
+        if historyID == nil {
+            let relatedAdds = allOperations(context: read).filter {
+                guard $0.kind == .addHistory, $0.accountKey == operation.accountKey,
+                      let add = try? SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: $0.payload) else { return false }
+                return HistoryMatchPolicy.samePlay(payload, add)
+            }
+            guard relatedAdds.allSatisfy({ $0.status == .succeeded }) else { throw HistoryReconciliationError.waitingForAddition }
+            let additions = try relatedAdds.map { try SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: $0.payload) }
+            guard !additions.isEmpty else { throw HistoryReconciliationError.ambiguous }
+            let neverSent = additions.allSatisfy { $0.historyRequestRejected == true && $0.historyRequestStartedAt == nil }
+            if !neverSent {
+                guard additions.allSatisfy({ $0.historyKnownIDs != nil }) else { throw HistoryReconciliationError.ambiguous }
+                let knownIDs = Set(additions.flatMap { $0.historyKnownIDs ?? [] })
+                let matches = try await matchingRemoteHistory(payload, operation: operation).filter { !knownIDs.contains($0.id) }
+                guard matches.count <= 1 else { throw HistoryReconciliationError.ambiguous }
+                historyID = matches.first?.id
+            }
+        }
+        if let historyID {
+            try await validateHistoryContext(operation)
+            try await trakt.removeFromHistory(historyIDs: [historyID])
+        }
+        try await validateHistoryContext(operation)
+        let acknowledgement = persistence.makeContext()
+        let removed = payload.mediaKind.flatMap { kind in
+            payload.tmdbID.flatMap { eventRecord(kind: kind, tmdbID: $0, watchedAt: payload.watchedAt, context: acknowledgement) }
+        } ?? historyID.flatMap { eventRecord(historyID: $0, context: acknowledgement) }
+        if let removed, removed.tombstoned, removed.updatedAt <= (payload.mutationAt ?? operation.createdAt) {
+            acknowledgement.delete(removed)
+            try acknowledgement.save()
+        }
     }
 
     // MARK: Remote Merge
@@ -716,7 +816,8 @@ actor SyncEngine {
             case .movie:
                 guard let movie = item.movie, let tmdbID = movie.ids.tmdb else { continue }
                 let naturalKey = historyNaturalKey(kind: .movie, tmdbID: tmdbID, watchedAt: watchedAt)
-                let existing = eventsByNaturalKey[naturalKey] ?? eventsByHistoryID[item.id]
+                let local = eventsByNaturalKey[naturalKey]
+                let existing = eventsByHistoryID[item.id] ?? (local?.traktHistoryID == nil ? local : nil)
                 let event = existing ?? WatchedEventRecord(
                     kind: .movie,
                     tmdbID: tmdbID,
@@ -754,7 +855,8 @@ actor SyncEngine {
                 guard let episode = item.episode, let tmdbID = episode.ids.tmdb else { continue }
                 let showTMDbID = item.show?.ids.tmdb
                 let naturalKey = historyNaturalKey(kind: .episode, tmdbID: tmdbID, watchedAt: watchedAt)
-                let existing = eventsByNaturalKey[naturalKey] ?? eventsByHistoryID[item.id]
+                let local = eventsByNaturalKey[naturalKey]
+                let existing = eventsByHistoryID[item.id] ?? (local?.traktHistoryID == nil ? local : nil)
                 let event = existing ?? WatchedEventRecord(
                     kind: .episode,
                     tmdbID: tmdbID,
@@ -1531,5 +1633,36 @@ nonisolated final class HistoryReconciliationSchedule: @unchecked Sendable {
         defer { lock.unlock() }
         dates[account] = now
         defaults?.set(now, forKey: "iWatch.fullHistorySync." + account)
+    }
+}
+
+nonisolated enum HistoryReconciliationError: Error, LocalizedError {
+    case unconfirmed, ambiguous, waitingForAddition
+    var errorDescription: String? {
+        switch self {
+        case .unconfirmed: return "A watched-play upload is unconfirmed. iWatch will not send it again automatically. Check Trakt before retrying."
+        case .ambiguous: return "More than one watched play could match this change. Review the play in Trakt before recovering this upload."
+        case .waitingForAddition: return "The watched play is still being uploaded. Its removal will wait for that upload to finish."
+        }
+    }
+}
+
+nonisolated enum HistoryMatchPolicy {
+    static func samePlay(_ lhs: SyncOperationPayload, _ rhs: SyncOperationPayload) -> Bool {
+        guard let a = lhs.watchedAt, let b = rhs.watchedAt else { return false }
+        return lhs.mediaKind == rhs.mediaKind && lhs.tmdbID == rhs.tmdbID
+            && a == b
+    }
+    static func matches(_ payload: SyncOperationPayload, remote: TraktHistoryItemDTO) -> Bool {
+        let kind: MediaKind
+        let id: Int?
+        switch remote.type {
+        case .movie: kind = .movie; id = remote.movie?.ids.tmdb
+        case .episode: kind = .episode; id = remote.episode?.ids.tmdb
+        default: return false
+        }
+        guard let localDate = payload.watchedAt, let remoteDate = remote.watchedAt else { return false }
+        return payload.mediaKind == kind && payload.tmdbID == id
+            && floor(localDate.timeIntervalSince1970) == floor(remoteDate.timeIntervalSince1970)
     }
 }

@@ -228,7 +228,15 @@ final class TraktService: TraktSyncing, EpisodeAirtimeProviding {
         try await getHistory(startAt: startAt, progress: nil)
     }
 
+    func getHistory(startAt: Date?, endAt: Date?) async throws -> [TraktHistoryItemDTO] {
+        try await history(startAt: startAt, endAt: endAt, progress: nil)
+    }
+
     func getHistory(startAt: Date?, progress: (@Sendable (Int) async -> Void)?) async throws -> [TraktHistoryItemDTO] {
+        try await history(startAt: startAt, endAt: nil, progress: progress)
+    }
+
+    private func history(startAt: Date?, endAt: Date?, progress: (@Sendable (Int) async -> Void)?) async throws -> [TraktHistoryItemDTO] {
         try await refreshTokenIfNeeded()
         var query: [URLQueryItem] = []
         query.append(URLQueryItem(name: "extended", value: "full"))
@@ -237,11 +245,16 @@ final class TraktService: TraktSyncing, EpisodeAirtimeProviding {
             let dateString = formatter.string(from: startAt)
             query.append(URLQueryItem(name: "start_at", value: dateString))
         }
+        if let endAt {
+            query.append(URLQueryItem(name: "end_at", value: ISO8601DateFormatter().string(from: endAt)))
+        }
         return try await paginatedSyncItems(progress: progress) { page in
             var pageQuery = query
             pageQuery.append(URLQueryItem(name: "page", value: String(page)))
             pageQuery.append(URLQueryItem(name: "limit", value: String(Self.syncPageSize)))
-            return try await request(path: "sync/history", query: pageQuery)
+            var request = try await request(path: "sync/history", query: pageQuery)
+            if endAt != nil { request.cachePolicy = .reloadIgnoringLocalCacheData }
+            return request
         }
     }
 

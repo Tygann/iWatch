@@ -80,3 +80,8 @@ for key in TMDB_API_KEY TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET TRAKT_REDIRECT_URI; 
     fi
 done
 echo "TMDb and Trakt release configuration validated."
+
+# A cloud archive must not ship a model that Production cannot store.
+case "${CI_XCODE_CLOUD:-}" in
+    TRUE|true|YES|1) /usr/bin/env python3 "$SRCROOT/scripts/check-cloudkit-schema.py" --live ;;
+esac

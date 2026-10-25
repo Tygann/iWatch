@@ -39,6 +39,8 @@ jobs:
         run: python3 scripts/check-view-boundaries.py
       - name: Check Trakt configuration validation
         run: python3 scripts/test-trakt-configuration.py
+      - name: Check CloudKit schema preflight
+        run: python3 scripts/check-cloudkit-schema.py --self-test
       - name: Build
         run: xcodebuild -project iWatch.xcodeproj -scheme iWatch -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build
       - name: Unit tests

@@ -693,6 +693,148 @@ struct FoundationRewriteTests {
     }
 
     @Test
+    func acceptedHistoryUploadWithLostResponseIsNotPostedTwice() async throws {
+        let persistence = makePersistence()
+        let repository = makeLibraryRepository(persistence: persistence)
+        let watched = Date(timeIntervalSince1970: 1700000000.75)
+        try await repository.addWatchEvent(for: MediaID(kind: .movie, id: 11, traktID: 111), watchedAt: watched)
+        let remote = FakeTraktSyncRemote(token: makeToken(), lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now),
+            watchlist: [], history: [], historyAfterUpload: [makeMovieHistoryItem(historyID: 999, watchedAt: Date(timeIntervalSince1970: 1700000000))], loseHistoryResponse: true)
+        let engine = SyncEngine(persistence: persistence, trakt: remote,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { "default" })
+        #expect(await engine.run(reason: .localMutation) == false)
+        _ = try await engine.recoverPendingUploads()
+        #expect(await engine.run(reason: .localMutation))
+        let snapshot = await remote.snapshot()
+        #expect(snapshot.addHistoryCalls == 1)
+        let events = try fetchAll(WatchedEventRecord.self, from: persistence)
+        #expect(events.count == 1)
+        #expect(events.first?.traktHistoryID == 999)
+        #expect(events.first?.dirty == false)
+    }
+
+    @Test
+    func existingPlayCannotConfirmANewUncertainUploadInTheSameSecond() async throws {
+        let persistence = makePersistence()
+        let context = persistence.makeContext()
+        let previous = Date(timeIntervalSince1970: 1700000000)
+        context.insert(WatchedEventRecord(kind: .movie, tmdbID: 11, watchedAt: previous, traktHistoryID: 998))
+        try context.save()
+        let repository = makeLibraryRepository(persistence: persistence)
+        try await repository.addWatchEvent(for: MediaID(kind: .movie, id: 11), watchedAt: previous.addingTimeInterval(0.75))
+        let existing = [makeMovieHistoryItem(historyID: 998, watchedAt: previous)]
+        let remote = FakeTraktSyncRemote(token: makeToken(), lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now),
+            watchlist: [], history: existing, historyAfterUpload: existing, loseHistoryResponse: true)
+        let engine = SyncEngine(persistence: persistence, trakt: remote,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { "default" })
+        #expect(await engine.run(reason: .localMutation) == false)
+        _ = try await engine.recoverPendingUploads()
+        #expect(await engine.run(reason: .localMutation) == false)
+        let snapshot = await remote.snapshot()
+        #expect(snapshot.addHistoryCalls == 1)
+        let events = try fetchAll(WatchedEventRecord.self, from: persistence)
+        #expect(events.count == 2)
+        #expect(events.contains { $0.traktHistoryID == nil && $0.dirty })
+    }
+
+    @Test
+    func uncertainHistoryWithoutRemoteEvidenceRemainsUnresolved() async throws {
+        let persistence = makePersistence()
+        let repository = makeLibraryRepository(persistence: persistence)
+        try await repository.addWatchEvent(for: MediaID(kind: .movie, id: 11), watchedAt: .now)
+        let context = persistence.makeContext()
+        let operation = try #require(context.fetch(FetchDescriptor<SyncOperationRecord>()).first)
+        var payload = try SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: operation.payload)
+        payload.historyRequestStartedAt = .now
+        payload.historyKnownIDs = []
+        operation.payload = try SyncPayloadCodec.encoder.encode(payload)
+        try context.save()
+        let remote = FakeTraktSyncRemote(token: makeToken(), lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now), watchlist: [], history: [])
+        let engine = SyncEngine(persistence: persistence, trakt: remote,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { "default" })
+        #expect(await engine.run(reason: .localMutation) == false)
+        _ = try await engine.recoverPendingUploads()
+        #expect(await engine.run(reason: .localMutation) == false)
+        let snapshot = await remote.snapshot()
+        #expect(snapshot.addHistoryCalls == 0)
+        #expect(try fetchAll(WatchedEventRecord.self, from: persistence).first?.dirty == true)
+    }
+
+    @Test(arguments: [false, true])
+    func removingPlayDuringUploadDeletesTheRemotePlayAfterConfirmation(lostResponse: Bool) async throws {
+        let persistence = makePersistence()
+        let repository = makeLibraryRepository(persistence: persistence)
+        let watched = Date(timeIntervalSince1970: 1700000000.75)
+        try await repository.addWatchEvent(for: MediaID(kind: .movie, id: 11, traktID: 111), watchedAt: watched)
+        let eventID = try #require(fetchAll(WatchedEventRecord.self, from: persistence).first?.recordID)
+        let remote = FakeTraktSyncRemote(token: makeToken(), lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now),
+            watchlist: [], history: [], historyAfterUpload: [makeMovieHistoryItem(historyID: 999, watchedAt: Date(timeIntervalSince1970: 1700000000))],
+            loseHistoryResponse: lostResponse,
+            onAddHistory: { try await repository.removeWatchEvent(eventID: eventID) })
+        let engine = SyncEngine(persistence: persistence, trakt: remote,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { "default" })
+        let succeeded = await engine.run(reason: .localMutation)
+        #expect(succeeded == !lostResponse)
+        if lostResponse {
+            _ = try await engine.recoverPendingUploads()
+            #expect(await engine.run(reason: .localMutation))
+        }
+        let snapshot = await remote.snapshot()
+        #expect(snapshot.addHistoryCalls == 1)
+        #expect(snapshot.removeHistoryCalls == 1)
+        #expect(try fetchAll(WatchedEventRecord.self, from: persistence).isEmpty)
+        #expect(await engine.run(reason: .userInitiated))
+        #expect(try fetchAll(WatchedEventRecord.self, from: persistence).isEmpty)
+    }
+
+    @Test
+    func removingUnsentPlayCancelsItsPendingAddition() async throws {
+        let persistence = makePersistence()
+        let repository = makeLibraryRepository(persistence: persistence)
+        try await repository.addWatchEvent(for: MediaID(kind: .movie, id: 11), watchedAt: .now)
+        let eventID = try #require(fetchAll(WatchedEventRecord.self, from: persistence).first?.recordID)
+        try await repository.removeWatchEvent(eventID: eventID)
+        #expect(try fetchAll(WatchedEventRecord.self, from: persistence).isEmpty)
+        #expect(try fetchAll(SyncOperationRecord.self, from: persistence).isEmpty)
+    }
+
+    @Test
+    func ambiguousRemoteHistoryCannotTriggerAnotherPost() async throws {
+        let persistence = makePersistence()
+        let repository = makeLibraryRepository(persistence: persistence)
+        let watched = Date(timeIntervalSince1970: 1700000000)
+        try await repository.addWatchEvent(for: MediaID(kind: .movie, id: 11), watchedAt: watched)
+        let context = persistence.makeContext()
+        let operation = try #require(context.fetch(FetchDescriptor<SyncOperationRecord>()).first)
+        var payload = try SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: operation.payload)
+        payload.historyRequestStartedAt = .now
+        payload.historyKnownIDs = []
+        operation.payload = try SyncPayloadCodec.encoder.encode(payload)
+        try context.save()
+        let remote = FakeTraktSyncRemote(token: makeToken(), lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now),
+            watchlist: [], history: [makeMovieHistoryItem(historyID: 998, watchedAt: watched), makeMovieHistoryItem(historyID: 999, watchedAt: watched)])
+        let engine = SyncEngine(persistence: persistence, trakt: remote,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { "default" })
+        #expect(await engine.run(reason: .localMutation) == false)
+        let snapshot = await remote.snapshot()
+        #expect(snapshot.addHistoryCalls == 0)
+        #expect(try fetchAll(SyncOperationRecord.self, from: persistence).first?.status == .deadletter)
+        #expect(try fetchAll(WatchedEventRecord.self, from: persistence).count == 2)
+    }
+
+    @Test
+    func twoRemotePlaysInTheSameSecondArePreserved() async throws {
+        let persistence = makePersistence()
+        let watched = Date(timeIntervalSince1970: 1700000000)
+        let remote = FakeTraktSyncRemote(token: makeToken(), lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now),
+            watchlist: [], history: [makeMovieHistoryItem(historyID: 998, watchedAt: watched), makeMovieHistoryItem(historyID: 999, watchedAt: watched)])
+        let engine = SyncEngine(persistence: persistence, trakt: remote,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { "default" })
+        try await engine.ensureInitialBaseline()
+        #expect(try fetchAll(WatchedEventRecord.self, from: persistence).count == 2)
+    }
+
+    @Test
     func historyReconciliationIsPeriodicButNotTriggeredByLocalEdits() {
         let schedule = HistoryReconciliationSchedule()
         let now = Date()
@@ -1829,7 +1971,10 @@ private actor FakeTraktSyncRemote: TraktSyncing {
     private let token: TokenResponse?
     private let lastActivities: TraktLastActivitiesDTO
     private let watchlist: [TraktWatchlistItemDTO]
-    private let history: [TraktHistoryItemDTO]
+    private var history: [TraktHistoryItemDTO]
+    private let historyAfterUpload: [TraktHistoryItemDTO]?
+    private var loseHistoryResponse: Bool
+    private let onAddHistory: (@Sendable () async throws -> Void)?
     private let addWatchlistDelayNanos: UInt64
     private let onAddWatchlist: (@Sendable () async throws -> Void)?
 
@@ -1846,13 +1991,19 @@ private actor FakeTraktSyncRemote: TraktSyncing {
          watchlist: [TraktWatchlistItemDTO],
          history: [TraktHistoryItemDTO],
          addWatchlistDelayNanos: UInt64 = 0,
-         onAddWatchlist: (@Sendable () async throws -> Void)? = nil) {
+         onAddWatchlist: (@Sendable () async throws -> Void)? = nil,
+         historyAfterUpload: [TraktHistoryItemDTO]? = nil,
+         loseHistoryResponse: Bool = false,
+         onAddHistory: (@Sendable () async throws -> Void)? = nil) {
         self.token = token
         self.lastActivities = lastActivities
         self.watchlist = watchlist
         self.history = history
         self.addWatchlistDelayNanos = addWatchlistDelayNanos
         self.onAddWatchlist = onAddWatchlist
+        self.historyAfterUpload = historyAfterUpload
+        self.loseHistoryResponse = loseHistoryResponse
+        self.onAddHistory = onAddHistory
     }
 
     func currentToken() async -> TokenResponse? {
@@ -1890,11 +2041,17 @@ private actor FakeTraktSyncRemote: TraktSyncing {
 
     func addToHistory(_ payloads: [SyncOperationPayload]) async throws {
         addHistoryCalls += 1
+        if let historyAfterUpload { history = historyAfterUpload }
+        try await onAddHistory?()
+        if loseHistoryResponse { loseHistoryResponse = false; throw URLError(.timedOut) }
         #expect(payloads.isEmpty == false)
     }
 
     func removeFromHistory(historyIDs: [Int]) async throws {
         removeHistoryCalls += 1
+        let snapshot = history
+        let ids = await MainActor.run { snapshot.map(\.id) }
+        history = zip(snapshot, ids).filter { !historyIDs.contains($0.1) }.map { $0.0 }
         #expect(historyIDs.isEmpty == false)
     }
 

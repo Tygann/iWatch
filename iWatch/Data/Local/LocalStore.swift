@@ -19,6 +19,9 @@ nonisolated struct SyncOperationPayload: Codable, Sendable {
     // Kept inside the existing payload to preserve the CloudKit schema.
     var originDeviceID: String? = nil
     var mutationAt: Date? = nil
+    var historyRequestStartedAt: Date? = nil
+    var historyRequestRejected: Bool? = nil
+    var historyKnownIDs: [Int]? = nil
     var mediaKind: MediaKind?
     var tmdbID: Int?
     var traktID: Int?

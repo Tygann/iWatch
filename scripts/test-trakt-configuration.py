@@ -88,3 +88,13 @@ elif args[0] in ('-replace', '-remove'):
     local_secrets.unlink()
     run({}, False)
     print('PASS: removed local file cannot reuse stale credentials')
+
+    checks = root / 'scripts'
+    checks.mkdir()
+    (checks / 'check-cloudkit-schema.py').write_text("import os, sys\nassert sys.argv[1:] == ['--live']\nsys.exit(int(os.environ.get('FIXTURE_SCHEMA_EXIT', '0')))\n")
+    run(valid | {'CI_XCODE_CLOUD': 'TRUE'}, True)
+    print('PASS: cloud Release requires successful schema check')
+    run(valid | {'CI_XCODE_CLOUD': 'TRUE', 'FIXTURE_SCHEMA_EXIT': '1'}, False)
+    print('PASS: cloud Release rejects failed schema check')
+    run(valid | {'CI_XCODE_CLOUD': 'TRUE', 'CONFIGURATION': 'Debug', 'FIXTURE_SCHEMA_EXIT': '1'}, True)
+    print('PASS: cloud Debug skips release schema gate')

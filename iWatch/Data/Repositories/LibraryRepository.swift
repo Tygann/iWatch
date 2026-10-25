@@ -474,7 +474,17 @@ final class LibraryRepository {
         let context = persistence.makeContext()
         guard let event = watchedEventRecord(forRecordID: eventID, context: context) else { return }
 
-        if let historyID = event.traktHistoryID {
+        let addKey = "history:add:\(event.eventKey)"
+        let outstandingAdds = allSyncOperations(context: context).filter {
+            $0.dedupeKey == addKey && $0.accountKey == (accountKeyProvider() ?? "")
+        }
+        let mayHaveReachedTrakt = outstandingAdds.contains {
+            let payload = try? SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: $0.payload)
+            return $0.status != .pending || $0.attemptCount > 0 || payload?.historyRequestStartedAt != nil
+                || payload?.originDeviceID != deviceID
+        }
+        if event.traktHistoryID != nil || mayHaveReachedTrakt {
+            let historyID = event.traktHistoryID
             event.tombstoned = true
             event.dirty = true
             event.updatedAt = Date()
@@ -493,7 +503,7 @@ final class LibraryRepository {
             try upsertSyncOperation(
                 kind: .removeHistory,
                 payload: payload,
-                dedupeKey: "history:remove:\(historyID)",
+                dedupeKey: "history:remove:\(event.eventKey)",
                 context: context, accountKey: accountKeyProvider() ?? "", deviceID: deviceID
             )
         } else {

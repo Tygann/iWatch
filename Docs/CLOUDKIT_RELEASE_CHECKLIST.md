@@ -12,3 +12,26 @@ Before submitting iWatch, verify the `iCloud.com.tyler.iWatch` container in Clou
 - Reset progress reports local deletion separately from a successful CloudKit export, and an interrupted confirmation can be retried after relaunch.
 
 CloudKit is asynchronous. Do not add manual polling to replace the system's normal replication behavior; instead, make local UI observe the SwiftData store and validate the actual device-to-device result.
+
+## Automated schema preflight
+
+Xcode Cloud Release builds run `scripts/check-cloudkit-schema.py --live` from the
+configuration phase. Add `CLOUDKIT_MANAGEMENT_TOKEN` as a private workflow
+variable, generated in CloudKit Console > account Settings > CloudKit Management
+Tokens for the developer team. Track its expiration and replace it privately
+before it expires. This token is only used by cktool and is never bundled in the
+app. A failed export or missing/mistyped required field stops the build; the
+check never deploys or modifies a schema.
+
+The checker derives the eight current model types and stored fields from source.
+Extra Production fields are allowed. Changes to SwiftData mappings or unsupported
+stored types require reviewing the checker too. CI runs its portable self-test.
+For a local check without credentials, export the Production schema from the
+Console and run:
+
+```sh
+python3 scripts/check-cloudkit-schema.py --schema /path/to/production.ckdb
+```
+
+A passing schema check verifies structure, not permissions, replication, or device
+behavior. The physical-device checks above remain required.

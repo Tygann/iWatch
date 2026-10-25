@@ -17,6 +17,7 @@ nonisolated protocol TraktSyncing: Sendable {
     func currentToken() async -> TokenResponse?
     func getLastActivities() async throws -> TraktLastActivitiesDTO
     func getWatchlist() async throws -> [TraktWatchlistItemDTO]
+    func getHistory(startAt: Date?, endAt: Date?) async throws -> [TraktHistoryItemDTO]
     func getHistory(startAt: Date?) async throws -> [TraktHistoryItemDTO]
     func getWatchlist(progress: (@Sendable (Int) async -> Void)?) async throws -> [TraktWatchlistItemDTO]
     func getHistory(startAt: Date?, progress: (@Sendable (Int) async -> Void)?) async throws -> [TraktHistoryItemDTO]
@@ -27,6 +28,13 @@ nonisolated protocol TraktSyncing: Sendable {
 }
 
 extension TraktSyncing {
+    func getHistory(startAt: Date?, endAt: Date?) async throws -> [TraktHistoryItemDTO] {
+        try await getHistory(startAt: startAt).filter { item in
+            guard let date = item.watchedAt else { return false }
+            return endAt.map { date <= $0 } ?? true
+        }
+    }
+
     func getWatchlist(progress: (@Sendable (Int) async -> Void)?) async throws -> [TraktWatchlistItemDTO] {
         let items = try await getWatchlist()
         await progress?(items.count)

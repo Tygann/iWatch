@@ -47,3 +47,7 @@ build with missing configuration cannot be repaired by retrying Connect.
 
 Run `python3 scripts/test-trakt-configuration.py` to check configuration behavior.
 On macOS this exercises Apple's real plist tools; other hosts use substitutes.
+
+CloudKit schema verification uses a separate private workflow variable,
+`CLOUDKIT_MANAGEMENT_TOKEN`. See `CLOUDKIT_RELEASE_CHECKLIST.md` for setup and
+rotation. It is not an app API credential and must never go in Secrets.plist.

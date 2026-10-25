@@ -22,9 +22,17 @@ be overwritten. Account or reset changes abort work before merging responses.
 Older payloads without device ownership remain pending until explicit recovery.
 Settings > iCloud Sync > Recover Pending Uploads on This Device transfers
 unfinished work for the selected account, including unlinked work, after user
-confirmation. Stop syncing on the previous device first. Requests that reached
-Trakt before their responses were lost can still be repeated: this is not an
-exactly-once guarantee, especially for watched-history additions.
+confirmation. Stop syncing on the previous device first. Watched-history additions snapshot matching remote IDs before sending and persist
+an uncertainty marker before the POST. After a lost response, retries only read
+remote history and identify a unique new ID; they never blindly resend the play.
+Existing plays in the same second cannot confirm the new upload. Missing evidence,
+legacy requests without a baseline, or multiple matches remain unresolved for
+manual review. This favors correctness over automatic completion; Trakt does not
+provide an idempotency key, so concurrent external edits can still be ambiguous.
+
+Removing an unsent local play cancels its pending addition. Removing a play during
+an upload retains a tombstone and queues deletion until the remote history ID is
+confirmed. Separate remote history IDs remain distinct even within one second.
 
 Local edits trigger incremental sync rather than a full history reconciliation.
 Explicit Sync Now reconciles full history. Foreground/background runs also do a
@@ -74,3 +82,14 @@ iCloud account: edit on each while the other is offline, reconnect, confirm
 library convergence, and check that watched plays are not uploaded twice. Verify
 recovery with syncing stopped on the originating device. Do not delete a store
 or reset data to work around a failed verification.
+
+## Snapshot performance baseline
+
+`LibraryPerformanceTests.testRepresentativeLibrarySnapshotBaseline` seeds an
+isolated in-memory store with 49 movies, 32 shows, 640 episodes and 5,105 plays.
+On October 25, 2026, an isolated Debug run on the iPhone 18 Pro simulator measured
+movie snapshots at 17.4–17.7 ms and show snapshots at 98.4–111.4 ms across three
+runs. The test retains a timing attachment and checks result counts; it does not
+impose a machine-dependent timing threshold. These synthetic measurements are
+not real-device launch, scrolling, network, or CloudKit measurements. Profile a
+physical device with the real library before adding cache invalidation complexity.
