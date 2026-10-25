@@ -37,6 +37,8 @@ jobs:
           git diff --check "$base" HEAD
       - name: Check UI architecture boundaries
         run: python3 scripts/check-view-boundaries.py
+      - name: Check Trakt configuration validation
+        run: python3 scripts/test-trakt-configuration.py
       - name: Build
         run: xcodebuild -project iWatch.xcodeproj -scheme iWatch -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build
       - name: Unit tests

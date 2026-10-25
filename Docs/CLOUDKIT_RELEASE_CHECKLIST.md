@@ -7,6 +7,7 @@ Before submitting iWatch, verify the `iCloud.com.tyler.iWatch` container in Clou
 - A signed build on two physical devices using the same iCloud account propagates watchlist, watched-history, and deletion changes in both directions.
 - Disconnecting Trakt does not affect CloudKit replication; connecting Trakt on each device does not cross account boundaries.
 - A production TestFlight build is tested with a real Trakt account for OAuth redirect, import, upload, background retry, and reconnect flows.
+- Supply private Trakt build configuration as described in `TRAKT_CONFIGURATION.md`; confirm the clean Release archive passes the Configure Trakt phase before uploading.
 - Reset is tested while another device is offline; after that device reconnects, its older library generation does not repopulate the reset library.
 - Reset progress reports local deletion separately from a successful CloudKit export, and an interrupted confirmation can be retried after relaunch.
 
