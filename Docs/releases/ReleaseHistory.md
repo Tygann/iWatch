@@ -2,6 +2,25 @@
 
 This file records builds uploaded to App Store Connect. The source commit in the newest entry is the exclusive comparison boundary for the next build: review meaningful product changes after that commit, excluding release-history-only commits, and do not repeat previously published notes.
 
+## Version 1 (Build 24)
+
+- Uploaded: 2026-10-25
+- Channel: TestFlight
+- Source commit: `67fff5b417894cd36200a06abdc4847a262f08f3`
+
+### What to Test
+
+What's new:
+- Library screens now refresh when changes arrive through iCloud, with upload and download status available in Settings > iCloud Sync.
+- Improved Trakt sync reliability across devices and interrupted connections, including safer retries for watched history.
+- Movie, show, and episode details refresh in the background while keeping cached information available.
+
+Please test:
+- Change your Watchlist or watched history on one device and confirm the changes appear on another device using the same iCloud account.
+- With Trakt connected, add or remove watched entries, then use Sync Now and confirm your history matches without duplicate plays.
+- Make library changes while offline, reconnect, and confirm pending changes sync correctly.
+- Revisit movie, show, and episode details and check that cached information appears promptly and updates when needed.
+
 ## Version 1 (Build 19)
 
 - Uploaded: 2026-10-24
