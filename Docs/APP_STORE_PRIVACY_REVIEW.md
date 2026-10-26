@@ -191,3 +191,9 @@ This supersedes the precautionary tracking/advertising assumptions above. The ow
 - Best-supported assessment for the current integration: **No tracking; no Third-Party Advertising purpose**. This is a reasoned assessment from the implemented flows and public evidence, not an API-specific backend guarantee from either provider. Do not add ATT solely because the app uses these APIs. Reassess if providers or integration behavior change.
 - Revised and saved all four existing App Store Connect categories (Other User Content, Search History, User ID, Product Interaction): removed Third-Party Advertising; set tracking No; preserved identity linkage and App Functionality, Analytics, Product Personalization. Retaining collection/linkage is conservative; it does not claim that every catalog request identifies a signed-in person.
 - App Privacy remains an **unpublished draft**. No Publish or Add for Review action was taken in this revision. The current preview no longer has a Data Used to Track You section. Screenshot: `~/Pictures/iWatch/AppStore/1.0/privacy-revised-no-tracking.jpg`.
+
+### Privacy publication — October 26, 2026
+
+- Owner authorized completing the remaining preparation and explicitly confirmed Apple's final publication statement. Published the revised four-category declaration with tracking No and no Third-Party Advertising purpose; collection, identity linkage, App Functionality, Analytics, and Product Personalization remain disclosed.
+- App Store Connect showed **Published a few seconds ago by Tyler Keegan**, including after reload. Proof: `~/Pictures/iWatch/AppStore/1.0/privacy-published.jpg`.
+- Version 1.0 remains Prepare for Submission, with build 29 selected and Save disabled (no unsaved changes). No Add for Review or App Review submission action was taken. This supersedes the unpublished-draft status above.

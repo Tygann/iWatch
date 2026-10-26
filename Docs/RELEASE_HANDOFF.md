@@ -66,15 +66,16 @@ schema passed the checker for all eight models. Evidence is in
 
 ## Declaration status
 
-The App Privacy draft remains unpublished. Following public-source research, all
+The revised App Privacy declaration was published on October 26, 2026 after
+the owner confirmed Apple’s publication statement. Following public-source research, all
 four existing categories now say No tracking and omit Third-Party Advertising.
 Identity linkage, App Functionality, Analytics, and Product Personalization
 remain. This is the best-supported assessment for the current integration, not a
 provider-specific backend guarantee. See the superseding assessment and sources
 in `APP_STORE_PRIVACY_REVIEW.md`. General website advertising language alone is
 not a sufficient basis for declaring that native API requests perform tracking.
-The revised draft still requires publication before submission; no App Review
-submission has been authorized.
+App Store Connect showed Published by Tyler Keegan, including after reload.
+No App Review submission has been authorized.
 
 The content-rights answer was saved as Yes, necessary rights to third-party
 content, based on the public conditional API licenses for the current free use,
