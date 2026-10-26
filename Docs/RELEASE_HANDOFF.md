@@ -66,10 +66,15 @@ schema passed the checker for all eight models. Evidence is in
 
 ## Declaration status
 
-The App Privacy draft remains unpublished. The known account-linked sync data is
-recorded in `APP_STORE_PRIVACY_REVIEW.md`; API-specific retention, linkage,
-purposes, and advertising/tracking practices still need authoritative answers.
-Do not infer those answers from a lack of advertising SDKs.
+The App Privacy draft remains unpublished. Following public-source research, all
+four existing categories now say No tracking and omit Third-Party Advertising.
+Identity linkage, App Functionality, Analytics, and Product Personalization
+remain. This is the best-supported assessment for the current integration, not a
+provider-specific backend guarantee. See the superseding assessment and sources
+in `APP_STORE_PRIVACY_REVIEW.md`. General website advertising language alone is
+not a sufficient basis for declaring that native API requests perform tracking.
+The revised draft still requires publication before submission; no App Review
+submission has been authorized.
 
 The content-rights answer was saved as Yes, necessary rights to third-party
 content, based on the public conditional API licenses for the current free use,
@@ -78,5 +83,4 @@ not only free pricing; reassess commercial licensing before premium monetization
 Trakt's public API Use Policy permits this type of free/paid integration without
 individual written approval, subject to its requirements.
 
-Do not submit for App Review until these declarations and physical verification
-are resolved.
+Do not submit for App Review without the owner’s final authorization.
