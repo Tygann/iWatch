@@ -2,15 +2,18 @@
 
 ## Current distribution boundary
 
-App Store Connect version 1.0 selects build 27, sourced from
-`3e3e6cc0354228d815bb719275b9dfab67593c63`. Its What to Test is saved.
+App Store Connect version 1.0 selects build 29, sourced from
+`6b8370a41bde543b637326f0123c7cb781ca3bcf`. Its What to Test is saved.
 The genuine 13-inch iPad assets are uploaded. No App Review submission was made.
 See `releases/ReleaseHistory.md` for uploaded-build history.
 
-Local commits after that boundary prepare HTTPS/PKCE authentication and provider
-cache retention. They have not been pushed because main automatically uploads
-through Xcode Cloud, and the new physical-device authentication check is pending.
-The owner elected to perform that check locally later.
+The owner confirmed the new physical-device Trakt checks passed and authorized
+proceeding. Authentication/cache source was pushed to main. Xcode Cloud build 28
+compiled/archived but failed export because automatic signing could not enable
+Associated Domains. Enabled that capability for com.tyler.iWatch on team
+XKQ424HQ33, then clean build 29 passed distribution export and uploaded. TestFlight
+showed Ready to Submit; version 1.0 now selects build 29 and its tester notes are
+saved. Build 28 was not uploaded. No App Review submission was made.
 
 ## Local physical-device check
 
@@ -33,9 +36,10 @@ in the built product and strips the bundled client secret; do not edit credentia
 6. Recheck two-device CloudKit replication with the new schema and metadata
    migration; verify library/history survives and account boundaries remain intact.
 
-After recording results, push the validated commits, allow Xcode Cloud to upload,
-verify processing and signing, select the new build, and record its actual source
-commit/build in ReleaseHistory. Do not assume build 27 contains these changes.
+The owner-confirmed Trakt checks, upload, build selection, and ReleaseHistory
+record are complete. The earlier owner-confirmed two-device CloudKit checks and
+Production schema verification are separate evidence; no new two-device result
+was claimed in the latest Trakt-only confirmation.
 
 ## Cache retention implementation
 
@@ -60,16 +64,16 @@ schema passed the checker for all eight models. Evidence is in
 `~/Pictures/iWatch/AppStore/1.0/cloudkit-retention-production.ckdb` and
 `retention-schema-deployed.jpg`.
 
-## Unresolved declarations
+## Declaration status
 
 The App Privacy draft remains unpublished. The known account-linked sync data is
 recorded in `APP_STORE_PRIVACY_REVIEW.md`; API-specific retention, linkage,
 purposes, and advertising/tracking practices still need authoritative answers.
 Do not infer those answers from a lack of advertising SDKs.
 
-The content-rights attestation is still unset. Attribution is implemented and
-cache expiry is prepared, but the distributed build must include it before
-attesting compliance. TMDB's non-commercial allowance depends on actual purpose,
+The content-rights answer was saved as Yes, necessary rights to third-party
+content, based on the public conditional API licenses for the current free use,
+implemented attribution, and bounded cache retention. The selected build 29 contains the cache changes. TMDB's non-commercial allowance depends on actual purpose,
 not only free pricing; reassess commercial licensing before premium monetization.
 Trakt's public API Use Policy permits this type of free/paid integration without
 individual written approval, subject to its requirements.

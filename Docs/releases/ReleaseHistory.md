@@ -2,6 +2,24 @@
 
 This file records builds uploaded to App Store Connect. The source commit in the newest entry is the exclusive comparison boundary for the next build: review meaningful product changes after that commit, excluding release-history-only commits, and do not repeat previously published notes.
 
+## Version 1.0 (Build 29)
+
+- Uploaded: 2026-10-26
+- Channel: TestFlight / App Store preparation (not submitted)
+- Source commit: `6b8370a41bde543b637326f0123c7cb781ca3bcf`
+- Uploaded through Xcode Cloud after enabling Associated Domains on the registered App ID. Build 28 failed distribution export and was not uploaded. Build 29 processed as Ready to Submit and replaced build 27 in the saved version 1.0 listing. What to Test was saved. No App Review submission was made.
+
+### What to Test
+
+What's new:
+- Improved Trakt sign-in with a secure return to iWatch.
+- Catalog information and artwork now expire and refresh while keeping your Watchlist and watched history intact.
+
+Please test:
+- Connect Trakt, cancel and retry sign-in, then disconnect and reconnect.
+- Confirm your existing Watchlist and watched history remain intact after updating.
+- Open previously viewed titles online and offline and check that details and artwork refresh when available.
+
 ## Version 1.0 (Build 27)
 
 - Uploaded: 2026-10-25
