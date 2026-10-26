@@ -15,5 +15,7 @@ inspected and its dimensions and absence of an alpha channel verified.
 Apple's wide header specification:
 https://developer.apple.com/help/app-store-connect/reference/app-information/creative-assets-specifications
 
-Preview cropping in App Store Connect before publishing. This export has not
-been uploaded to the listing.
+Uploaded to version 1.0 in App Store Connect on October 26, 2026. The header
+preview was visually checked and remained present after reloading the page.
+Evidence: `~/Pictures/iWatch/AppStore/1.0/header-uploaded.png`.
+No App Review submission was made.
