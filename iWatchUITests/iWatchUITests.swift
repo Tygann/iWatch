@@ -112,38 +112,120 @@ final class iWatchUITests: XCTestCase {
 
     @MainActor
     private func verifySyncDiagnostics(contentSize: String) throws {
+        let app = launchSyncSettings(contentSize: contentSize, state: "confirmation")
+        let cloud = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'iCloud Sync,'")).firstMatch
+        reveal(cloud, in: app)
+        cloud.tap()
+        XCTAssertTrue(app.navigationBars["iCloud Sync"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Rebuild from Trakt"].exists)
+        capture(app, "iCloud - " + contentSize)
+        app.navigationBars["iCloud Sync"].buttons.firstMatch.tap()
+        let trakt = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Trakt,'")).firstMatch
+        reveal(trakt, in: app)
+        trakt.tap()
+        XCTAssertTrue(app.navigationBars["Trakt"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Waiting for Confirmation"].exists)
+        reveal(app.buttons["Check Again"], in: app)
+        XCTAssertTrue(app.buttons["Check Again"].exists)
+        XCTAssertFalse(app.buttons["Dismiss"].exists)
+        capture(app, "Trakt confirmation - " + contentSize)
+        let pending = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Pending Changes' ")).firstMatch
+        reveal(pending, in: app)
+        pending.tap()
+        XCTAssertTrue(app.navigationBars["Pending Changes"].waitForExistence(timeout: 5))
+        let episode = app.staticTexts["Example Show · S1 E1"]
+        reveal(episode, in: app)
+        XCTAssertTrue(episode.exists)
+        capture(app, "Pending watched changes - " + contentSize)
+        let advanced = app.buttons["Advanced"]
+        reveal(advanced, in: app)
+        advanced.tap()
+        XCTAssertTrue(app.navigationBars["Advanced"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Discard Changes and Rebuild"].exists)
+        let diagnostics = app.buttons["Diagnostics"]
+        reveal(diagnostics, in: app)
+        diagnostics.tap()
+        XCTAssertTrue(app.navigationBars["Diagnostics"].waitForExistence(timeout: 5))
+        let duplicates = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label BEGINSWITH 'Possible Local Duplicates'")).firstMatch
+        for _ in 0..<15 {
+            if duplicates.exists { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(duplicates.exists)
+        XCTAssertGreaterThan(duplicates.frame.height, 0)
+        capture(app, "Read-only diagnostics - " + contentSize)
+        app.navigationBars["Diagnostics"].buttons.firstMatch.tap()
+        let recovery = app.buttons["Move Pending Uploads"]
+        reveal(recovery, in: app)
+        recovery.tap()
+        XCTAssertTrue(app.navigationBars["Move Pending Uploads"].waitForExistence(timeout: 5))
+        let move = app.buttons["Move Pending Uploads Here"]
+        reveal(move, in: app)
+        XCTAssertTrue(move.isEnabled)
+        capture(app, "Upload ownership - " + contentSize)
+        app.navigationBars["Move Pending Uploads"].buttons.firstMatch.tap()
+        let rebuild = app.buttons["Rebuild from Trakt"]
+        reveal(rebuild, in: app)
+        rebuild.tap()
+        XCTAssertTrue(app.navigationBars["Rebuild from Trakt"].waitForExistence(timeout: 5))
+        let discard = app.buttons["Rebuild from Trakt"]
+        reveal(discard, in: app)
+        discard.tap()
+        XCTAssertTrue(app.buttons["Discard Changes and Rebuild"].waitForExistence(timeout: 5))
+        capture(app, "Rebuild confirmation - " + contentSize)
+        app.buttons["Cancel"].tap()
+    }
+
+    @MainActor
+    func testSyncNormalOfflineAndSetupStates() throws {
+        for state in ["normal", "offline", "syncing", "setup"] {
+            let app = launchSyncSettings(contentSize: "UICTContentSizeCategoryL", state: state)
+            let trakt = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Trakt,'")).firstMatch
+            reveal(trakt, in: app)
+            trakt.tap()
+            XCTAssertTrue(app.navigationBars["Trakt"].waitForExistence(timeout: 5))
+            let expected = ["normal": "Sync Complete", "offline": "Connection Interrupted",
+                            "syncing": "Syncing…", "setup": "Finish Setup"][state]!
+            XCTAssertTrue(app.staticTexts[expected].waitForExistence(timeout: 5))
+            if state == "setup" {
+                XCTAssertTrue(app.buttons["Use Trakt Library"].exists)
+                XCTAssertTrue(app.buttons["Upload Pending Changes"].exists)
+            }
+            capture(app, "Trakt - " + state)
+            app.terminate()
+        }
+    }
+
+    @MainActor
+    private func launchSyncSettings(contentSize: String, state: String) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments += ["UITEST_MODE", "-UIPreferredContentSizeCategoryName", contentSize]
+        app.launchArguments += ["UITEST_MODE", "UITEST_SYNC_STATE", state,
+            "-appTheme", contentSize.contains("Accessibility") ? "2" : "1",
+            "-UIPreferredContentSizeCategoryName", contentSize]
         if contentSize.contains("Accessibility") { app.launchArguments.append("UITEST_ACCESSIBILITY_TEXT") }
         app.launch()
         let settings = app.buttons["Settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
         settings.tap()
-        let cloud = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'iCloud Sync,'")).firstMatch
-        for _ in 0..<6 {
-            if cloud.exists { break }
+        return app
+    }
+
+    @MainActor
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+        for _ in 0..<15 {
+            if element.isHittable { return }
             app.swipeUp()
         }
-        XCTAssertTrue(cloud.waitForExistence(timeout: 5))
-        cloud.tap()
-        XCTAssertTrue(app.navigationBars["Sync Diagnostics"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["iCloud"].exists)
-        let status = XCTAttachment(screenshot: app.screenshot())
-        status.name = "Sync status - " + contentSize
-        status.lifetime = .keepAlways
-        add(status)
-        let recovery = app.buttons["Recover Pending Uploads on This Device"]
-        for _ in 0..<8 {
-            if recovery.exists, recovery.frame.midY > app.frame.minY + 100,
-               recovery.frame.midY < app.frame.maxY - 100 { break }
-            app.swipeUp()
-        }
-        XCTAssertTrue(recovery.exists)
-        XCTAssertFalse(recovery.isEnabled)
-        let maintenance = XCTAttachment(screenshot: app.screenshot())
-        maintenance.name = "Sync maintenance - " + contentSize
-        maintenance.lifetime = .keepAlways
-        add(maintenance)
+        XCTAssertTrue(element.isHittable, "Expected reachable element: " + element.description)
+    }
+
+    @MainActor
+    private func capture(_ app: XCUIApplication, _ name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     @MainActor

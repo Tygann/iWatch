@@ -1,220 +1,133 @@
 import SwiftUI
 
-// MARK: - Connection State
-
-enum TraktConnectionAccessory: Equatable {
-    case connect
-    case connecting
-    case connected
-
-    static func resolve(isConnected: Bool, isConnecting: Bool) -> Self {
-        if isConnecting {
-            return .connecting
-        }
-        return isConnected ? .connected : .connect
-    }
-}
-
-// MARK: - Trakt Settings Screen
-
 struct TraktSettingsView: View {
     @Environment(AppSession.self) private var session
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var showDisconnect = false
+    @State private var showImport = false
 
-    @State private var showDisconnectConfirmation = false
-    @State private var showLinkDecision = false
+    private var health: TraktSyncPresentation { session.traktSyncPresentation }
 
     var body: some View {
         Form {
-            statusSection
-
-            if session.traktConnected {
-                syncSection
-                disconnectSection
+            Section {
+                SyncStatusContent(title: health.title, detail: health.detail, symbol: health.symbol,
+                                  needsAttention: health.needsAttention, isWorking: health.isWorking)
+                if !session.traktConnected {
+                    Button("Connect Trakt") { session.startTraktOAuth() }
+                        .disabled(session.syncActionsUnavailable)
+                } else if session.pendingTraktAccountKey == nil {
+                    TraktSyncActionButton()
+                }
+                if session.traktConnected, session.pendingTraktAccountKey == nil, let date = session.lastSyncAt {
+                    SyncDateRow(title: "Last Successful Sync", date: date)
+                }
             }
 
-            if let error = session.traktLastError {
-                issueSection(error)
+            if session.pendingTraktAccountKey != nil {
+                setupSection
+            } else if session.traktConnected {
+                if !session.syncDiagnostics.changes.isEmpty || health.needsAttention {
+                    Section {
+                        NavigationLink {
+                            TraktPendingChangesView()
+                        } label: {
+                            SettingsNavigationLabel(title: "Pending Changes", systemImage: "clock",
+                                detail: session.syncDiagnostics.changes.isEmpty ? "Review" : session.syncDiagnostics.changes.count.formatted())
+                        }
+                    }
+                }
+                Section {
+                    NavigationLink("Advanced") { TraktAdvancedSettingsView() }
+                } footer: {
+                    Text("Library checks, diagnostics, and recovery options.")
+                }
+            }
+
+            if session.traktConnected {
+                Section {
+                    Label("Signed In to Trakt", systemImage: "person.crop.circle")
+                    Button("Disconnect Trakt", role: .destructive) { showDisconnect = true }
+                        .disabled(session.syncActionsUnavailable)
+                } header: {
+                    Text("Account")
+                } footer: {
+                    Text("Disconnecting stops Trakt sync. Your iWatch library stays on this device and in iCloud.")
+                }
             }
         }
         .navigationTitle("Trakt")
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog(
-            "Choose how to set up Trakt",
-            isPresented: $showLinkDecision,
-            titleVisibility: .visible
-        ) {
-            Button("Import Trakt Library") {
-                Task { await session.importTraktLibrary() }
-            }
-            Button("Upload Local Library") {
-                Task { await session.uploadLocalLibrary() }
-            }
-            Button("Decide Later", role: .cancel) {}
+        .confirmationDialog("Disconnect Trakt?", isPresented: $showDisconnect, titleVisibility: .visible) {
+            Button("Disconnect Trakt", role: .destructive) { session.logoutTrakt() }
         } message: {
-            Text("Import uses your Trakt Watchlist and active progress as the starting point. Upload sends existing Watchlist items and watched history to Trakt.")
+            Text("Your iWatch library will remain. Future changes won’t sync with Trakt until you reconnect.")
         }
-        .confirmationDialog(
-            "Disconnect Trakt?",
-            isPresented: $showDisconnectConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Disconnect Trakt", role: .destructive) {
-                session.logoutTrakt()
-            }
+        .alert("Replace Library from Trakt?", isPresented: $showImport) {
+            Button("Replace and Import", role: .destructive) { Task { await session.importTraktLibrary() } }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Your local iWatch library remains on this device and in iCloud. Future changes won’t sync with Trakt until you reconnect.")
+            Text("This removes your iWatch Watchlist, watched history, show progress, and pending uploads before importing this account. Removals can sync through iCloud. Unsynced changes will be lost.")
         }
-        .task {
-            await session.refreshSyncDiagnostics()
-            showLinkDecision = session.pendingTraktAccountKey != nil
-        }
-        .onChange(of: session.pendingTraktAccountKey) { _, accountKey in
-            showLinkDecision = accountKey != nil
-        }
+        .task { await session.refreshSyncDiagnostics() }
     }
 
-    private var statusSection: some View {
+    private var setupSection: some View {
         Section {
-            Group {
-                if dynamicTypeSize.isAccessibilitySize {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Status")
-                        connectionAccessory
-                    }
-                } else {
-                    HStack {
-                        Text("Status")
-                        Spacer()
-                        connectionAccessory
-                    }
-                }
+            VStack(alignment: .leading, spacing: 6) {
+                Button("Use Trakt Library") { showImport = true }
+                Text("Start from this account’s Watchlist and watched history. This replaces your iWatch Watchlist, watched history, show progress, and pending uploads.")
+                    .font(.subheadline).foregroundStyle(.secondary)
             }
-
-            if let lastSyncAt = session.lastSyncAt {
-                LabeledContent("Last Synced") {
-                    Text(lastSyncAt.formatted(date: .abbreviated, time: .shortened))
-                        .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 6) {
+                Button("Upload Pending Changes") { Task { await session.uploadLocalLibrary() } }
+                Text("Send pending changes made on this device before connecting to Trakt, then download this account’s library.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            if let error = session.traktLastError {
+                DisclosureGroup("Error Details") {
+                    Text(error).font(.subheadline).textSelection(.enabled)
                 }
             }
         } header: {
-            Text("Connection")
+            Text("Choose How to Start")
         } footer: {
-            Text("Trakt syncs your Watchlist and watched history. Your iWatch library also remains in iCloud.")
+            Text("Sync won’t start until you choose. You can leave this screen and finish setup later.")
         }
+        .disabled(session.syncActionsUnavailable)
     }
+}
 
-    private var syncSection: some View {
-        Section {
-            Button {
-                Task { await session.runSync(reason: .userInitiated) }
-            } label: {
-                Label(
-                    session.isSyncing ? "Syncing…" : "Sync Now",
-                    systemImage: "arrow.trianglehead.2.clockwise.rotate.90"
-                )
-            }
-            .disabled(session.isSyncing || session.isErasingAllData)
+struct TraktSyncActionButton: View {
+    @Environment(AppSession.self) private var session
 
-            NavigationLink {
-                SyncDiagnosticsView()
-            } label: {
-                SettingsNavigationLabel(
-                    title: "Troubleshooting",
-                    systemImage: "stethoscope",
-                    detail: session.syncDiagnostics.deadletterOperationCount > 0 ? "Needs Attention" : nil
-                )
-            }
-        } header: {
-            Text("Actions")
-        } footer: {
-            if session.isSyncing {
-                Text("Syncing your latest Trakt changes…")
-            } else {
-                Text("Changes normally sync automatically. Use Sync Now when you want to refresh immediately.")
+    var body: some View {
+        Button(title) {
+            Task {
+                switch session.traktSyncPresentation.action {
+                case .check: await session.checkWatchedUploadConfirmations()
+                case .retry: await session.retryFailedSyncOperations()
+                case .sync: await session.runSync(reason: .userInitiated)
+                case .connect: session.startTraktOAuth()
+                case .setup: break
+                }
             }
         }
+        .disabled(session.syncActionsUnavailable || session.pendingTraktAccountKey != nil)
     }
 
-    private var disconnectSection: some View {
-        Section {
-            Button("Disconnect Trakt", role: .destructive) {
-                showDisconnectConfirmation = true
-            }
-            .disabled(session.isSyncing || session.isErasingAllData)
-        }
-    }
-
-    private func issueSection(_ error: String) -> some View {
-        Section {
-            Label {
-                Text(error)
-                    .foregroundStyle(.primary)
-            } icon: {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-            }
-
-            Button("Dismiss") {
-                session.traktLastError = nil
-            }
-        } header: {
-            Text("Needs Attention")
-        }
-    }
-
-    @ViewBuilder
-    private var connectionAccessory: some View {
-        switch TraktConnectionAccessory.resolve(
-            isConnected: session.traktConnected,
-            isConnecting: session.traktIsConnecting
-        ) {
-        case .connect:
-            Button("Connect") {
-                session.startTraktOAuth()
-            }
-            .buttonStyle(.borderless)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(Color.accentColor)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color.accentColor.opacity(0.12), in: Capsule())
-            .fixedSize()
-            .disabled(session.isErasingAllData)
-            .accessibilityLabel("Connect Trakt")
-
-        case .connecting:
-            HStack(spacing: 5) {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Connecting")
-                    .font(.caption.weight(.semibold))
-            }
-            .foregroundStyle(.secondary)
-            .fixedSize()
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Trakt connecting")
-
-        case .connected:
-            Text("Connected")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.green)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.green.opacity(0.12), in: Capsule())
-                .fixedSize()
-                .accessibilityLabel("Trakt connected")
+    private var title: String {
+        if session.isSyncing { return "Syncing…" }
+        switch session.traktSyncPresentation.action {
+        case .check: return "Check Again"
+        case .retry: return "Retry Failed Changes"
+        case .sync: return "Sync Now"
+        case .connect: return "Connect Trakt"
+        case .setup: return "Finish Setup"
         }
     }
 }
 
-// MARK: - Previews
-
-#Preview("Disconnected") {
+#Preview {
     let container = AppContainer.preview()
-    NavigationStack {
-        TraktSettingsView()
-    }
-    .environment(container.session)
+    NavigationStack { TraktSettingsView() }.environment(container.session)
 }

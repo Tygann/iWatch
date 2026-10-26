@@ -692,6 +692,67 @@ struct FoundationRewriteTests {
         #expect(progress.watchedEpisodeKeys.contains("ep:400:S0:E1") == true)
     }
 
+    @Test
+    func manualConfirmationCheckKeepsRequestIntentAndAccountBoundary() async throws {
+        let persistence = makePersistence()
+        let repository = makeLibraryRepository(persistence: persistence)
+        let watched = Date(timeIntervalSince1970: 1700000039.75)
+        try await repository.addWatchEvent(for: MediaID(kind: .movie, id: 11), watchedAt: watched)
+        let context = persistence.makeContext()
+        let operation = try #require(context.fetch(FetchDescriptor<SyncOperationRecord>()).first)
+        var payload = try SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: operation.payload)
+        payload.historyKnownIDs = []
+        payload.historyRequestStartedAt = watched
+        operation.payload = try SyncPayloadCodec.encoder.encode(payload)
+        operation.status = .deadletter
+        operation.attemptCount = 5
+        operation.nextAttemptAt = .distantFuture
+        let other = SyncOperationRecord(kind: .addHistory, payload: operation.payload, accountKey: "other-account")
+        other.status = .deadletter
+        context.insert(other)
+        try context.save()
+        let remote = FakeTraktSyncRemote(token: makeToken(),
+            lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now), watchlist: [],
+            history: [makeMovieHistoryItem(historyID: 999, watchedAt: Date(timeIntervalSince1970: 1699999980))])
+        let engine = SyncEngine(persistence: persistence, trakt: remote,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { "default" })
+        let before = await engine.diagnostics()
+        #expect(before.changes.count == 1)
+        #expect(before.changes.first?.state == .confirming)
+        #expect(before.deadletterOperationCount == 1)
+        try await engine.prepareHistoryConfirmationChecks()
+        let rows = try fetchAll(SyncOperationRecord.self, from: persistence)
+        let queued = try #require(rows.first { $0.id == operation.id })
+        #expect(queued.status == .pending)
+        #expect(queued.nextAttemptAt == nil)
+        #expect(queued.attemptCount == 5)
+        #expect(try SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: queued.payload).historyRequestStartedAt == watched)
+        #expect(rows.first { $0.accountKey == "other-account" }?.status == .deadletter)
+        #expect(await engine.run(reason: .userInitiated))
+        #expect(await remote.snapshot().addHistoryCalls == 0)
+        #expect(await engine.diagnostics().changes.isEmpty)
+    }
+
+    @Test(arguments: [false, true])
+    func retryAndRecoveryNeverEraseUncertainHistoryIntent(recover: Bool) async throws {
+        let persistence = makePersistence()
+        let repository = makeLibraryRepository(persistence: persistence)
+        try await repository.addWatchEvent(for: MediaID(kind: .movie, id: 11), watchedAt: .now)
+        let context = persistence.makeContext()
+        let operation = try #require(context.fetch(FetchDescriptor<SyncOperationRecord>()).first)
+        operation.status = .deadletter
+        operation.attemptCount = 5
+        try context.save()
+        let remote = FakeTraktSyncRemote(token: makeToken(),
+            lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now), watchlist: [], history: [])
+        let engine = SyncEngine(persistence: persistence, trakt: remote,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { "default" })
+        if recover { _ = try await engine.recoverPendingUploads() }
+        else { _ = try await engine.retryDeadletterOperations() }
+        #expect(await engine.run(reason: .userInitiated) == false)
+        #expect(await remote.snapshot().addHistoryCalls == 0)
+    }
+
     @Test(arguments: [false, true])
     func episodeUploadConfirmsMinuteRoundedTime(alreadySent: Bool) async throws {
         let persistence = makePersistence()

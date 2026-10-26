@@ -53,6 +53,9 @@ struct SyncDiagnostics: Equatable, Sendable {
     let lastSeenRemoteActivityAt: Date?
     let lastErrorDescription: String?
 
+    var changes: [SyncPendingChange] = []
+    var failure: SyncFailure?
+
     nonisolated var hasPendingWork: Bool {
         pendingOperationCount > 0 || processingOperationCount > 0
     }
@@ -108,4 +111,22 @@ struct SyncIntegrityRepairSummary: Equatable, Sendable {
         syncStatesMerged: 0,
         prunedCompletedOperations: 0
     )
+}
+
+/// Presentation-safe snapshots; never expose account keys or encoded outbox payloads to views.
+nonisolated struct SyncPendingChange: Equatable, Sendable, Identifiable {
+    let id: UUID
+    let title: String
+    let action: String
+    let createdAt: Date
+    let state: State
+    let isOnThisDevice: Bool
+
+    enum State: Equatable, Sendable {
+        case waiting, uploading, failed, confirming
+    }
+}
+
+nonisolated enum SyncFailure: Equatable, Sendable {
+    case offline, confirmation, ambiguous, other
 }

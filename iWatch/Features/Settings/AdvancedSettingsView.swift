@@ -54,7 +54,7 @@ struct AdvancedSettingsView: View {
                         Label("Erase All App Data", systemImage: "trash")
                             .foregroundStyle(.red)
                     }
-                    .disabled(session.isErasingAllData || session.isSyncing)
+                    .disabled(session.syncActionsUnavailable)
                 }
             } header: {
                 Text(AdvancedSettingsSection.reset.rawValue)

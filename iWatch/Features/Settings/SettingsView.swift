@@ -28,6 +28,7 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: session.libraryRevision) { await session.refreshSyncDiagnostics() }
     }
 
     // MARK: - Preferences Section
@@ -83,7 +84,7 @@ struct SettingsView: View {
             }
 
             NavigationLink {
-                SyncDiagnosticsView()
+                ICloudSyncSettingsView()
             } label: {
                 SettingsNavigationLabel(title: "iCloud Sync", systemImage: "icloud", detail: session.cloudSyncStatus.title)
             }
@@ -133,34 +134,11 @@ struct SettingsView: View {
 
     // MARK: - Helpers
     private var traktStatus: String {
-        Self.traktStatus(
-            isConnecting: session.traktIsConnecting,
-            isSyncing: session.isSyncing,
-            isConnected: session.traktConnected,
-            needsAttention: session.traktLastError != nil || session.syncDiagnostics.deadletterOperationCount > 0
-        )
+        session.traktSyncPresentation.title
     }
 
     private var notificationStatus: String {
         ReleaseNotificationPreferences.enabled ? "On" : "Off"
-    }
-
-    static func traktStatus(
-        isConnecting: Bool,
-        isSyncing: Bool,
-        isConnected: Bool,
-        needsAttention: Bool
-    ) -> String {
-        if isConnecting {
-            return "Connecting…"
-        }
-        if isSyncing {
-            return "Syncing…"
-        }
-        if needsAttention {
-            return "Needs Attention"
-        }
-        return isConnected ? "Connected" : "Not Connected"
     }
 }
 

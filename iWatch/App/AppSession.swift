@@ -26,7 +26,7 @@ final class AppSession {
 
         var title: String {
             switch self {
-            case .idle: return "Waiting"
+            case .idle: return "Automatic"
             case .importing: return "Downloading…"
             case .imported: return "Downloaded"
             case .exporting: return "Uploading…"
@@ -78,8 +78,11 @@ final class AppSession {
     var traktIsConnecting = false
     var traktLastError: String?
     var traktConnected = false
+    var traktConnectionInterrupted = false
     var pendingTraktAccountKey: String?
     var isSyncing = false
+    var isMaintainingSync = false
+    var syncMaintenanceTitle: String?
     var isClearingCache = false
     var isErasingAllData = false
     var lastSyncAt: Date?
@@ -223,14 +226,21 @@ final class AppSession {
     }
 
     func runSync(reason: SyncReason = .userInitiated) async {
+        guard !isMaintainingSync else { return }
+        await performSync(reason: reason)
+    }
+
+    private func performSync(reason: SyncReason, allowMaintenance: Bool = false) async {
         guard !isErasingAllData else { return }
         guard pendingTraktAccountKey == nil else { return }
         guard let expectedAccount = TraktLinkStore.activeAccountKey else { return }
-        guard await refreshAuthState(), !isSyncing else { return }
+        guard await refreshAuthState(), !isSyncing, !isErasingAllData,
+              !isMaintainingSync || allowMaintenance,
+              TraktLinkStore.activeAccountKey == expectedAccount else { return }
         isSyncing = true
         let syncStartedAt = Date()
         syncSaveStartedAt = nil
-        syncMaintenanceMessage = nil
+        if !isMaintainingSync { syncMaintenanceMessage = nil }
         defer {
             isSyncing = false
             endBackgroundTaskIfNeeded()
@@ -253,6 +263,7 @@ final class AppSession {
             return
         }
 
+        traktLastError = nil
         lastSyncAt = Date()
         monitorCloudExport(startingAfter: syncSaveStartedAt ?? syncStartedAt)
         syncSaveStartedAt = nil
@@ -276,6 +287,8 @@ final class AppSession {
             await self.trakt.clearAuth()
             await MainActor.run {
                 self.traktConnected = false
+                self.lastSyncAt = nil
+                self.traktConnectionInterrupted = false
                 self.traktLastError = nil
                 self.syncMaintenanceMessage = nil
                 self.syncDiagnostics = .empty
@@ -297,7 +310,7 @@ final class AppSession {
     }
 
     func eraseAllAppData() async {
-        guard !isErasingAllData else { return }
+        guard !isMaintainingSync, !isErasingAllData else { return }
 
         isErasingAllData = true
         dataResetStatus = .deletingOnDevice
@@ -346,7 +359,7 @@ final class AppSession {
     }
 
     func retryCloudResetConfirmation() async {
-        guard !isErasingAllData else { return }
+        guard !isMaintainingSync, !isErasingAllData else { return }
         isErasingAllData = true
         dataResetStatus = .waitingForICloud
         await syncEngine.beginDataReset()
@@ -449,7 +462,13 @@ final class AppSession {
     }
 
     func refreshSyncDiagnostics() async {
-        syncDiagnostics = await syncEngine.diagnostics()
+        let account = TraktLinkStore.activeAccountKey
+        let diagnostics = await syncEngine.diagnostics()
+        guard TraktLinkStore.activeAccountKey == account else { return }
+        syncDiagnostics = diagnostics
+        #if DEBUG
+        applySyncSettingsFixtureIfRequested()
+        #endif
         if !isSyncing, syncProgress == .idle, syncDiagnostics.initialBaselineComplete {
             syncProgress = .complete
         }
@@ -481,6 +500,11 @@ final class AppSession {
     // MARK: Sync Maintenance
 
     func importTraktLibrary() async {
+        guard !isSyncing, !isMaintainingSync, !isErasingAllData else { return }
+        isMaintainingSync = true
+        syncMaintenanceTitle = "Importing Library…"
+        syncMaintenanceMessage = nil
+        defer { isMaintainingSync = false; syncMaintenanceTitle = nil }
         guard let accountKey = pendingTraktAccountKey else { return }
         await syncEngine.beginDataReset()
         var shouldSync = false
@@ -494,23 +518,47 @@ final class AppSession {
         }
         await syncEngine.endDataReset()
         if shouldSync {
-            await runSync(reason: .userInitiated)
+            await performSync(reason: .userInitiated, allowMaintenance: true)
         }
     }
 
     func uploadLocalLibrary() async {
+        guard !isSyncing, !isMaintainingSync, !isErasingAllData else { return }
+        isMaintainingSync = true
+        syncMaintenanceTitle = "Preparing Uploads…"
+        syncMaintenanceMessage = nil
+        defer { isMaintainingSync = false; syncMaintenanceTitle = nil }
         guard let accountKey = pendingTraktAccountKey else { return }
         do {
             try await syncEngine.assignUnlinkedOperations(to: accountKey)
             TraktLinkStore.activeAccountKey = accountKey
             pendingTraktAccountKey = nil
-            await runSync(reason: .userInitiated)
+            await performSync(reason: .userInitiated, allowMaintenance: true)
         } catch {
             traktLastError = error.localizedDescription
         }
     }
 
+    func checkWatchedUploadConfirmations() async {
+        guard !isSyncing, !isMaintainingSync, !isErasingAllData else { return }
+        isMaintainingSync = true
+        syncMaintenanceTitle = "Checking Confirmation…"
+        defer { isMaintainingSync = false; syncMaintenanceTitle = nil }
+        do {
+            try await syncEngine.prepareHistoryConfirmationChecks()
+            await performSync(reason: .userInitiated, allowMaintenance: true)
+        } catch {
+            traktLastError = error.localizedDescription
+            await refreshSyncDiagnostics()
+        }
+    }
+
     func retryFailedSyncOperations() async {
+        guard !isSyncing, !isMaintainingSync, !isErasingAllData else { return }
+        isMaintainingSync = true
+        syncMaintenanceTitle = "Preparing Retry…"
+        syncMaintenanceMessage = nil
+        defer { isMaintainingSync = false; syncMaintenanceTitle = nil }
         do {
             let retried = try await syncEngine.retryDeadletterOperations()
             await refreshSyncDiagnostics()
@@ -521,7 +569,7 @@ final class AppSession {
             }
 
             syncMaintenanceMessage = "Queued \(retried) failed sync operation\(retried == 1 ? "" : "s") for retry."
-            await runSync(reason: .userInitiated)
+            await performSync(reason: .userInitiated, allowMaintenance: true)
         } catch {
             traktLastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             await refreshSyncDiagnostics()
@@ -529,16 +577,25 @@ final class AppSession {
     }
 
     func recoverPendingUploads() async {
-        guard !isSyncing, !isErasingAllData else { return }
+        guard !isSyncing, !isMaintainingSync, !isErasingAllData else { return }
+        isMaintainingSync = true
+        syncMaintenanceTitle = "Moving Uploads…"
+        syncMaintenanceMessage = nil
+        defer { isMaintainingSync = false; syncMaintenanceTitle = nil }
         do {
             let count = try await syncEngine.recoverPendingUploads()
             syncMaintenanceMessage = "Recovered \(count) pending uploads on this device."
-            await runSync(reason: .localMutation)
+            await performSync(reason: .localMutation, allowMaintenance: true)
         } catch { traktLastError = error.localizedDescription }
         await refreshSyncDiagnostics()
     }
 
     func repairLocalSyncData() async {
+        guard !isSyncing, !isMaintainingSync, !isErasingAllData else { return }
+        isMaintainingSync = true
+        syncMaintenanceTitle = "Checking Library…"
+        syncMaintenanceMessage = nil
+        defer { isMaintainingSync = false; syncMaintenanceTitle = nil }
         do {
             let summary = try await syncEngine.repairIntegrity()
             await refreshSyncDiagnostics()
@@ -553,6 +610,11 @@ final class AppSession {
     }
 
     func resetLocalTraktSyncCache() async {
+        guard !isSyncing, !isMaintainingSync, !isErasingAllData else { return }
+        isMaintainingSync = true
+        syncMaintenanceTitle = "Rebuilding Library…"
+        syncMaintenanceMessage = nil
+        defer { isMaintainingSync = false; syncMaintenanceTitle = nil }
         await syncEngine.beginDataReset()
         var shouldSync = false
         do {
@@ -569,7 +631,7 @@ final class AppSession {
         }
         await syncEngine.endDataReset()
         if shouldSync {
-            await runSync(reason: .userInitiated)
+            await performSync(reason: .userInitiated, allowMaintenance: true)
         }
     }
 
@@ -579,6 +641,7 @@ final class AppSession {
     func refreshAuthState() async -> Bool {
         do {
             let status = try await trakt.sessionStatus()
+            traktConnectionInterrupted = false
             switch status {
             case .connected:
                 traktConnected = true
@@ -611,7 +674,8 @@ final class AppSession {
                 return false
             }
         } catch {
-            traktConnected = false
+            traktConnected = await trakt.currentToken() != nil
+            traktConnectionInterrupted = error is URLError
             BackgroundRefresh.cancelScheduledRefresh()
             traktLastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             return false

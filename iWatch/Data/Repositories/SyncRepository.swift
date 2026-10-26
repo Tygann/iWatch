@@ -38,6 +38,8 @@ actor SyncEngine {
     private static let claimCoordinator = SyncClaimCoordinator()
 
     private var lastRunErrorDescription: String?
+    private var lastRunFailure: SyncFailure?
+    private var lastRunAccountKey: String?
     private var isRunning = false
 
     init(persistence: Persistence,
@@ -86,6 +88,8 @@ actor SyncEngine {
         guard await resetGate.allowsLibraryWork() else { return false }
         do {
             lastRunErrorDescription = nil
+            lastRunFailure = nil
+            lastRunAccountKey = accountKeyProvider()
 
             await progress?(.checkingLocalData)
 
@@ -116,6 +120,18 @@ actor SyncEngine {
             await progress?(.complete)
             return true
         } catch {
+            if let reconciliation = error as? HistoryReconciliationError {
+                switch reconciliation {
+                case .unconfirmed: lastRunFailure = .confirmation
+                case .ambiguous: lastRunFailure = .ambiguous
+                case .waitingForAddition: lastRunFailure = .other
+                }
+            } else if let network = error as? URLError,
+                      [.notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost, .timedOut].contains(network.code) {
+                lastRunFailure = .offline
+            } else {
+                lastRunFailure = .other
+            }
             lastRunErrorDescription = descriptiveError(error)
             await progress?(.failed(lastRunErrorDescription ?? "Sync failed."))
             #if DEBUG
@@ -141,9 +157,11 @@ actor SyncEngine {
         )
     }
 
-    func diagnostics() -> SyncDiagnostics {
+    func diagnostics() async -> SyncDiagnostics {
+        let device = await deviceIdentityStore.currentDeviceID()
+        let account = accountKeyProvider()
         let context = persistence.makeContext()
-        let operations = allOperations(context: context)
+        let operations = allOperations(context: context).filter { account != nil && $0.accountKey == account }
         let state = syncState(context: context)
         let watchlist = allWatchlist(context: context).filter(\.isInWatchlist)
         let history = allEvents(context: context).filter { !$0.tombstoned }
@@ -160,8 +178,61 @@ actor SyncEngine {
             lastSuccessfulPullAt: state.lastSuccessfulPullAt,
             lastSuccessfulPushAt: state.lastSuccessfulPushAt,
             lastSeenRemoteActivityAt: state.lastSeenRemoteActivityAt,
-            lastErrorDescription: lastRunErrorDescription
+            lastErrorDescription: lastRunAccountKey == account ? lastRunErrorDescription : nil,
+            changes: pendingChanges(operations, device: device, context: context),
+            failure: lastRunAccountKey == account ? lastRunFailure : nil
         )
+    }
+
+    private func pendingChanges(_ operations: [SyncOperationRecord], device: String, context: ModelContext) -> [SyncPendingChange] {
+        let media = allMedia(context: context)
+        let episodes = allEpisodes(context: context)
+        return operations.filter { $0.status != .succeeded }.sorted { $0.createdAt < $1.createdAt }.map { operation in
+            let payload = try? SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: operation.payload)
+            let title: String
+            if payload?.mediaKind == .episode, let episode = episodes.first(where: { $0.tmdbID == payload?.tmdbID }) {
+                let show = media.first { $0.kind == .show && $0.tmdbID == episode.showTMDbID }?.title ?? "Episode"
+                title = "\(show) · S\(episode.seasonNumber) E\(episode.episodeNumber)"
+            } else if let payload, payload.mediaKind == .episode,
+                      let season = payload.seasonNumber, let episode = payload.episodeNumber {
+                let show = media.first { $0.kind == .show && $0.tmdbID == payload.showTMDbID }?.title ?? "Episode"
+                title = "\(show) · S\(season) E\(episode)"
+            } else {
+                title = media.first { $0.kind == payload?.mediaKind && $0.tmdbID == payload?.tmdbID }?.title
+                    ?? (payload?.mediaKind == .episode ? "Episode" : "Library item")
+            }
+            let action: String
+            switch operation.kind {
+            case .addHistory: action = "Marked watched"
+            case .removeHistory: action = "Removed watched play"
+            case .addWatchlist: action = "Added to Watchlist"
+            case .removeWatchlist: action = "Removed from Watchlist"
+            }
+            let uncertain = operation.kind == .addHistory && payload.map {
+                $0.historyRequestStartedAt != nil || (operation.attemptCount > 0 && $0.historyRequestRejected != true)
+            } == true
+            let state: SyncPendingChange.State = operation.status == .processing ? .uploading
+                : uncertain ? .confirming : operation.status == .deadletter ? .failed : .waiting
+            return SyncPendingChange(id: operation.id, title: title, action: action, createdAt: operation.createdAt,
+                state: state, isOnThisDevice: payload?.originDeviceID == device)
+        }
+    }
+
+    /// Recheck uncertain requests without clearing the persisted intent or baseline IDs.
+    func prepareHistoryConfirmationChecks() async throws {
+        guard !isRunning, let account = accountKeyProvider(), await resetGate.allowsLibraryWork() else { return }
+        let device = await deviceIdentityStore.currentDeviceID()
+        let context = persistence.makeContext()
+        for operation in allOperations(context: context) where operation.accountKey == account
+            && operation.kind == .addHistory && operation.status != .succeeded && operation.status != .processing {
+            guard let payload = try? SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: operation.payload),
+                  payload.originDeviceID == device,
+                  payload.historyRequestStartedAt != nil || (operation.attemptCount > 0 && payload.historyRequestRejected != true) else { continue }
+            operation.status = .pending
+            operation.nextAttemptAt = nil
+            // Preserve attemptCount: legacy uncertain requests also use it to prevent resending.
+        }
+        try context.save()
     }
 
     func hasPendingOperations() -> Bool {
@@ -227,6 +298,7 @@ actor SyncEngine {
         }
 
         for operation in deadletters {
+            try preserveHistoryRequestIntent(operation)
             operation.status = .pending
             operation.attemptCount = 0
             operation.lastAttemptAt = nil
@@ -272,7 +344,18 @@ actor SyncEngine {
         }
 
         lastRunErrorDescription = nil
+        lastRunFailure = nil
+        lastRunAccountKey = nil
         try context.save()
+    }
+
+    private func preserveHistoryRequestIntent(_ operation: SyncOperationRecord) throws {
+        guard operation.kind == .addHistory, operation.attemptCount > 0 else { return }
+        var payload = try SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: operation.payload)
+        guard payload.historyRequestStartedAt == nil, payload.historyRequestRejected != true else { return }
+        // Resetting retry counters must never turn an uncertain request into an unsent one.
+        payload.historyRequestStartedAt = operation.lastAttemptAt ?? operation.createdAt
+        operation.payload = try SyncPayloadCodec.encoder.encode(payload)
     }
 
     /// Explicit recovery only: the user must stop syncing on the previous device.
@@ -288,6 +371,7 @@ actor SyncEngine {
         }) else { throw AppError.unknown("An upload may still be running. Stop syncing on the other device and try again later.") }
         var count = 0
         for operation in operations where operation.status != .succeeded {
+            try preserveHistoryRequestIntent(operation)
             var payload = try SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: operation.payload)
             payload.originDeviceID = device
             operation.payload = try SyncPayloadCodec.encoder.encode(payload)
