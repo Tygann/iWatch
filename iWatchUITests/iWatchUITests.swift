@@ -217,7 +217,7 @@ final class iWatchUITests: XCTestCase {
         identity.lifetime = .keepAlways
         add(identity)
 
-        for label in ["The Movie Database (TMDB)", "Privacy Policy", "Support"] {
+        for label in ["The Movie Database (TMDB)", "Trakt", "Privacy Policy", "Support"] {
             let link = app.buttons[label]
             for _ in 0..<8 {
                 if link.isHittable { break }

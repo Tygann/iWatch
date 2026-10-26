@@ -33,6 +33,14 @@ struct AboutView: View {
                 Text("This product uses the TMDB API but is not endorsed or certified by TMDB.")
             }
 
+            Section {
+                Link(destination: URL(string: "https://trakt.tv/")!) {
+                    Label("Trakt", systemImage: "arrow.up.right.square")
+                }
+            } footer: {
+                Text("iWatch uses Trakt but is not endorsed or certified by Trakt.")
+            }
+
             Section("Privacy & Support") {
                 Link(destination: URL(string: "https://tylerkeegan.com/iwatch/privacy/")!) {
                     Label("Privacy Policy", systemImage: "hand.raised")

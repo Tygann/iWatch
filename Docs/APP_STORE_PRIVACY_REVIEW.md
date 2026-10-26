@@ -132,3 +132,15 @@ Remaining blockers before App Review:
 4. Confirm Production CloudKit schema readiness under `Docs/CLOUDKIT_RELEASE_CHECKLIST.md`. The owner confirmed device checks; a separate live Production schema inspection was not performed in this pass.
 
 No App Review submission was made. Future premium monetization requires reassessing commercial API licensing before activation.
+
+
+### Additional preparation — October 25, 2026
+
+- Browser access restored. Exported **Production** schema from CloudKit Console for team `XKQ424HQ33`, container `iCloud.com.tyler.iWatch`, to `~/Downloads/cloudkit-production.ckdb`. Ran `python3 Scripts/check-cloudkit-schema.py --schema ~/Downloads/cloudkit-production.ckdb`: **CloudKit Production schema covers 8 SwiftData models**. No schema deployment, data query, token creation, or user-record modification was needed. This resolves the schema-structure verification item; owner-confirmed physical-device checks remain separate evidence.
+- Reviewed Trakt's current [API Use Policy](https://developer.trakt.tv/docs/api-use-policy). It explicitly permits user watchlist/history integrations in free and paid apps without separate written approval, subject to the policy. Lack of a separate Trakt commercial contract is therefore not itself a blocker. TMDB's distinct terms still apply to TMDB-sourced metadata/artwork.
+- The Trakt policy requires the notice `iWatch uses Trakt but is not endorsed or certified by Trakt.` in About and the app-store description. Added a Trakt link/notice in About and appended the notice to the existing App Store description. Saved the listing copy; all original description text was retained. Proof: `~/Pictures/iWatch/AppStore/1.0/trakt-store-attribution.jpg`.
+- Trakt Developer shows the existing iWatch application as **Approved**, using `com.tyler.iWatch://oauth/callback`. Settings are read-only until the owner connects GitHub. Requested that prerequisite; no live API credentials were revealed, modified, or copied.
+- Trakt's current [PKCE guide](https://developer.trakt.tv/docs/pkce) recommends S256 PKCE plus HTTPS redirects backed by Universal Links; the present implementation uses state and a bundled client secret. Coordinate PKCE, HTTPS callback handling, website association, and registered redirect together. Do not switch the live redirect before the app/domain path is ready and physically verified.
+
+- The additional Trakt attribution passed a Simulator build and all 100 selected tests (96 unit + four About UI variants). Exported and visually reviewed standard/accessibility light/dark screenshots under `~/Pictures/iWatch/AppStore/1.0/TraktAttributionQA/`.
+- With the owner's authorization, started the Trakt GitHub connection. It requires GitHub sign-in in the browser; requested owner login. No credentials were entered or revealed.
