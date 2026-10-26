@@ -66,6 +66,7 @@ public struct TokenResponse: Codable, Sendable, Equatable {
 public struct TraktAuthorizationRequest: Sendable, Equatable {
     public let url: URL
     public let state: String
+    let codeVerifier: String
 }
 
 struct TraktAccount: Codable, Sendable {

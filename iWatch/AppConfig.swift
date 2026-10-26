@@ -29,17 +29,14 @@ struct AppConfig {
         let tmdbKey = readInfo("TMDB_API_KEY") ?? readSecret("TMDB_API_KEY") ?? ""
         let traktId = readInfo("TRAKT_CLIENT_ID") ?? readSecret("TRAKT_CLIENT_ID") ?? ""
         let traktSecret = readInfo("TRAKT_CLIENT_SECRET") ?? readSecret("TRAKT_CLIENT_SECRET") ?? ""
-        let bundleIdentifier = Bundle.main.bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
-            ?? readInfo("CFBundleIdentifier")
-            ?? "com.tyler.iWatch"
-        let traktRedirectURI = readInfo("TRAKT_REDIRECT_URI")
+        let configuredRedirect = readInfo("TRAKT_REDIRECT_URI")
             ?? readSecret("TRAKT_REDIRECT_URI")
-            ?? "\(bundleIdentifier)://oauth/callback"
+            ?? TraktOAuthRedirect.httpsURI
+        let traktRedirectURI = TraktOAuthRedirect.migratingLegacy(configuredRedirect)
 
         #if DEBUG
         if tmdbKey.isEmpty { print("[AppConfig] WARNING: TMDB_API_KEY is missing.") }
         if traktId.isEmpty { print("[AppConfig] WARNING: TRAKT_CLIENT_ID is missing.") }
-        if traktSecret.isEmpty { print("[AppConfig] WARNING: TRAKT_CLIENT_SECRET is missing.") }
         if traktRedirectURI.isEmpty { print("[AppConfig] WARNING: TRAKT_REDIRECT_URI is missing.") }
         #endif
 
@@ -101,3 +98,15 @@ private extension String {
 //        self.traktClientSecret = read("TRAKT_CLIENT_SECRET")
 //    }
 //}
+
+
+enum TraktOAuthRedirect {
+    static let httpsURI = "https://tylerkeegan.com/iwatch/oauth/trakt"
+
+    static func migratingLegacy(_ uri: String) -> String {
+        switch uri {
+        case "com.tyler.iWatch://oauth/callback", "com.tyler.iwatch://oauth/callback": httpsURI
+        default: uri
+        }
+    }
+}

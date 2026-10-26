@@ -50,10 +50,12 @@ elif args[0] in ('-replace', '-remove'):
         ('missing TMDb key', {k: v for k, v in valid.items() if k != 'TMDB_API_KEY'}, {}, False),
         ('placeholder TMDb key', dict(valid, TMDB_API_KEY='replace-with-key'), {}, False),
         ('whitespace TMDb key', dict(valid, TMDB_API_KEY='  '), {}, False),
-        ('missing secret', {k: v for k, v in valid.items() if k != 'TRAKT_CLIENT_SECRET'}, {}, False),
+        ('PKCE without secret', {k: v for k, v in valid.items() if k != 'TRAKT_CLIENT_SECRET'}, {}, True),
         ('placeholder', dict(valid, TRAKT_CLIENT_ID='replace-with-id'), {}, False),
         ('whitespace', dict(valid, TRAKT_CLIENT_ID='  '), {}, False),
         ('unresolved', dict(valid, TRAKT_CLIENT_ID='$(TRAKT_CLIENT_ID)'), {}, False),
+        ('migrate legacy redirect', dict(valid, TRAKT_REDIRECT_URI='com.tyler.iWatch://oauth/callback'), {}, True),
+        ('HTTPS redirect', dict(valid, TRAKT_REDIRECT_URI='https://tylerkeegan.com/iwatch/oauth/trakt'), {}, True),
         ('bad redirect', dict(valid, TRAKT_REDIRECT_URI='other://oauth/callback'), {}, False),
         ('CI without local file', {}, valid, True),
         ('CI overrides local', dict(valid, TRAKT_CLIENT_ID='old-id'), valid, True),
@@ -75,6 +77,9 @@ elif args[0] in ('-replace', '-remove'):
         if name.startswith('CI'):
             assert plistlib.loads(info.read_bytes())['TRAKT_CLIENT_ID'] == 'fixture-id'
             assert plistlib.loads(info.read_bytes())['TMDB_API_KEY'] == 'fixture-tmdb-key'
+        assert 'TRAKT_CLIENT_SECRET' not in plistlib.loads(info.read_bytes())
+        if secrets.exists():
+            assert 'TRAKT_CLIENT_SECRET' not in plistlib.loads(secrets.read_bytes())
         print('PASS:', name)
     local_secrets.unlink(missing_ok=True)
     run(valid, True)

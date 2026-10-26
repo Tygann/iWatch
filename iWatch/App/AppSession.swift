@@ -73,6 +73,7 @@ final class AppSession {
     private var syncSaveStartedAt: Date?
     private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
     private var pendingOAuthState: String?
+    private var pendingOAuthVerifier: String?
 
     var traktIsConnecting = false
     var traktLastError: String?
@@ -178,17 +179,19 @@ final class AppSession {
             guard !isSyncing else { throw AppError.unknown("Wait for the current Trakt sync to finish before connecting an account.") }
             let state = OAuthStateGenerator.make()
             let authRequest = try trakt.authorizationRequest(redirectURI: traktRedirectURI, state: state)
-            let callbackScheme = try callbackScheme()
+            _ = try callbackScheme()
             pendingOAuthState = authRequest.state
+            pendingOAuthVerifier = authRequest.codeVerifier
             traktLastError = nil
             traktIsConnecting = true
 
-            authCoordinator.start(authURL: authRequest.url, callbackScheme: callbackScheme, prefersEphemeral: true) { [weak self] callbackURL, error in
+            authCoordinator.start(authURL: authRequest.url, callbackURL: URL(string: traktRedirectURI)!, prefersEphemeral: true) { [weak self] callbackURL, error in
                 guard let self else { return }
                 if let error {
                     Task { @MainActor in
                         self.traktIsConnecting = false
                         self.pendingOAuthState = nil
+                        self.pendingOAuthVerifier = nil
                         if (error as NSError).code != ASWebAuthenticationSessionError.canceledLogin.rawValue {
                             self.traktLastError = error.localizedDescription
                         }
@@ -200,6 +203,7 @@ final class AppSession {
                     Task { @MainActor in
                         self.traktIsConnecting = false
                         self.pendingOAuthState = nil
+                        self.pendingOAuthVerifier = nil
                         self.traktLastError = TraktAuthError.missingAuthorizationCode.errorDescription
                     }
                     return
@@ -212,6 +216,7 @@ final class AppSession {
             }
         } catch {
             pendingOAuthState = nil
+            pendingOAuthVerifier = nil
             traktIsConnecting = false
             traktLastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
@@ -261,6 +266,7 @@ final class AppSession {
         endBackgroundTaskIfNeeded()
         BackgroundRefresh.cancelScheduledRefresh()
         pendingOAuthState = nil
+        pendingOAuthVerifier = nil
         pendingTraktAccountKey = nil
         traktIsConnecting = false
         TraktLinkStore.clear()
@@ -304,6 +310,7 @@ final class AppSession {
         endBackgroundTaskIfNeeded()
         BackgroundRefresh.cancelScheduledRefresh()
         pendingOAuthState = nil
+        pendingOAuthVerifier = nil
         pendingTraktAccountKey = nil
         traktIsConnecting = false
         isSyncing = false
@@ -598,6 +605,7 @@ final class AppSession {
                 traktConnected = false
                 traktIsConnecting = false
                 pendingOAuthState = nil
+                pendingOAuthVerifier = nil
                 BackgroundRefresh.cancelScheduledRefresh()
                 traktLastError = message
                 return false
@@ -655,6 +663,8 @@ final class AppSession {
         guard let scheme = URL(string: traktRedirectURI)?.scheme, !scheme.isEmpty else {
             throw TraktAuthError.invalidRedirectURI
         }
+        if scheme == "https", let url = URL(string: traktRedirectURI),
+           url.host == "tylerkeegan.com", url.path == "/iwatch/oauth/trakt" { return scheme }
         guard isRegisteredURLScheme(scheme) else {
             throw TraktAuthError.redirectSchemeNotRegistered(scheme: scheme)
         }
@@ -677,15 +687,16 @@ final class AppSession {
         defer {
             traktIsConnecting = false
             pendingOAuthState = nil
+            pendingOAuthVerifier = nil
         }
 
         do {
-            guard let pendingOAuthState else {
+            guard let pendingOAuthState, let pendingOAuthVerifier else {
                 throw TraktAuthError.stateMismatch
             }
 
             let code = try trakt.authorizationCode(from: callbackURL, expectedState: pendingOAuthState)
-            _ = try await trakt.exchangeCodeForToken(code: code, redirectURI: traktRedirectURI)
+            _ = try await trakt.exchangeCodeForToken(code: code, redirectURI: traktRedirectURI, codeVerifier: pendingOAuthVerifier)
             exchangedToken = true
             pendingTraktAccountKey = try await trakt.authenticatedAccount().syncKey
             traktConnected = true

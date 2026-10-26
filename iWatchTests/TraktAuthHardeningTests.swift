@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import Testing
 @testable import iWatch
 
@@ -91,6 +92,16 @@ struct TraktAuthHardeningTests {
         #expect(queryItems["client_id"] == "client-id")
         #expect(queryItems["redirect_uri"] == "com.tyler.iWatch://oauth/callback")
         #expect(queryItems["state"] == "state-123")
+        #expect((43...128).contains(request.codeVerifier.count))
+        let challenge = Data(SHA256.hash(data: Data(request.codeVerifier.utf8))).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        #expect(queryItems["code_challenge"] == challenge)
+        #expect(queryItems["code_challenge_method"] == "S256")
+        #expect(!request.url.absoluteString.contains(request.codeVerifier))
+        let another = try service.authorizationRequest(redirectURI: "https://tylerkeegan.com/iwatch/oauth/trakt", state: "other")
+        #expect(another.codeVerifier != request.codeVerifier)
     }
 
     @Test
@@ -149,7 +160,8 @@ struct TraktAuthHardeningTests {
             #expect(object?["code"] == "auth-code")
             #expect(object?["grant_type"] == "authorization_code")
             #expect(object?["client_id"] == "client-id")
-            #expect(object?["client_secret"] == "client-secret")
+            #expect(object?["client_secret"] == nil)
+            #expect(object?["code_verifier"] == "fixture-verifier")
             #expect(object?["redirect_uri"] == "com.tyler.iWatch://oauth/callback")
 
             let response = HTTPURLResponse(
@@ -166,7 +178,8 @@ struct TraktAuthHardeningTests {
         let service = makeTraktService(authStore: authStore)
         let token = try await service.exchangeCodeForToken(
             code: "auth-code",
-            redirectURI: "com.tyler.iWatch://oauth/callback"
+            redirectURI: "com.tyler.iWatch://oauth/callback",
+            codeVerifier: "fixture-verifier"
         )
 
         let stored = await authStore.currentToken()
@@ -174,6 +187,12 @@ struct TraktAuthHardeningTests {
         #expect(token.createdAt != nil)
         #expect(stored?.accessToken == "new-access")
         #expect(stored?.createdAt != nil)
+    }
+
+    @Test
+    func legacyRedirectMigratesWithoutChangingUnknownConfiguration() {
+        #expect(TraktOAuthRedirect.migratingLegacy("com.tyler.iWatch://oauth/callback") == TraktOAuthRedirect.httpsURI)
+        #expect(TraktOAuthRedirect.migratingLegacy("other://callback") == "other://callback")
     }
 
     // MARK: Account Identity

@@ -242,7 +242,7 @@ enum OAuthStateGenerator {
         var bytes = [UInt8](repeating: 0, count: byteCount)
         let status = SecRandomCopyBytes(kSecRandomDefault, byteCount, &bytes)
         guard status == errSecSuccess else {
-            return UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+            return (UUID().uuidString + UUID().uuidString).replacingOccurrences(of: "-", with: "").lowercased()
         }
 
         let data = Data(bytes)
@@ -308,13 +308,16 @@ final class TraktAuthCoordinator {
     private let presenter = TraktWebAuthPresenter()
 
     func start(authURL: URL,
-               callbackScheme: String,
+               callbackURL: URL,
                prefersEphemeral: Bool = true,
                completion: @escaping (URL?, Error?) -> Void) {
         // Present after a window is available
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            let s = ASWebAuthenticationSession(url: authURL, callbackURLScheme: callbackScheme) { [weak self] url, error in
+            let callback: ASWebAuthenticationSession.Callback = callbackURL.scheme == "https"
+                ? .https(host: callbackURL.host!, path: callbackURL.path)
+                : .customScheme(callbackURL.scheme!)
+            let s = ASWebAuthenticationSession(url: authURL, callback: callback) { [weak self] url, error in
                 completion(url, error)
                 self?.session = nil
             }

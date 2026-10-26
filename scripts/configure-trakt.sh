@@ -35,13 +35,15 @@ for key in TMDB_API_KEY TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET TRAKT_REDIRECT_URI; 
     /usr/bin/plutil -remove "$key" "$info" 2>/dev/null || true
 done
 
+# Native OAuth uses PKCE. Never ship the legacy client secret in the app.
+/usr/bin/plutil -remove TRAKT_CLIENT_SECRET "$secrets" 2>/dev/null || true
+
 # Environment variables are a private CI input. Write only into the build
 # product, leaving the developer's local Secrets.plist untouched.
-for key in TMDB_API_KEY TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET TRAKT_REDIRECT_URI; do
+for key in TMDB_API_KEY TRAKT_CLIENT_ID TRAKT_REDIRECT_URI; do
     case "$key" in
         TMDB_API_KEY) value="${TMDB_API_KEY:-}" ;;
         TRAKT_CLIENT_ID) value="${TRAKT_CLIENT_ID:-}" ;;
-        TRAKT_CLIENT_SECRET) value="${TRAKT_CLIENT_SECRET:-}" ;;
         TRAKT_REDIRECT_URI) value="${TRAKT_REDIRECT_URI:-}" ;;
     esac
     if [ -n "$value" ]; then
@@ -54,12 +56,20 @@ for key in TMDB_API_KEY TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET TRAKT_REDIRECT_URI; 
     fi
 done
 
+# Migrate only the known legacy callback in the build product, never the local file.
+redirect="$(read_key "$info" TRAKT_REDIRECT_URI)"
+if [ -z "$redirect" ]; then redirect="$(read_key "$secrets" TRAKT_REDIRECT_URI)"; fi
+case "$redirect" in
+    ''|com.tyler.iWatch://oauth/callback|com.tyler.iwatch://oauth/callback)
+        /usr/bin/plutil -replace TRAKT_REDIRECT_URI -string https://tylerkeegan.com/iwatch/oauth/trakt "$info" ;;
+esac
+
 # Debug remains usable without remote service configuration.
 if [ "${CONFIGURATION:-}" != Release ] && [ "${ACTION:-}" != install ]; then
     exit 0
 fi
 
-for key in TMDB_API_KEY TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET TRAKT_REDIRECT_URI; do
+for key in TMDB_API_KEY TRAKT_CLIENT_ID TRAKT_REDIRECT_URI; do
     value="$(read_key "$info" "$key")"
     if ! valid_value "$value"; then
         # An invalid nonempty Info value would mask the bundled fallback.
@@ -69,13 +79,13 @@ for key in TMDB_API_KEY TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET TRAKT_REDIRECT_URI; 
         value="$(read_key "$secrets" "$key")"
     fi
     if [ "$key" = TRAKT_REDIRECT_URI ] && [ -z "$value" ]; then
-        value="${PRODUCT_BUNDLE_IDENTIFIER:?}://oauth/callback"
+        value="https://tylerkeegan.com/iwatch/oauth/trakt"
     fi
     valid_value "$value" || fail "$key is missing or a placeholder. Supply private build environment variables or a local iWatch/Secrets.plist."
     if [ "$key" = TRAKT_REDIRECT_URI ]; then
         case "$value" in
-            com.tyler.iWatch://oauth/callback|com.tyler.iwatch://oauth/callback) ;;
-            *) fail "TRAKT_REDIRECT_URI must use a registered app callback: com.tyler.iWatch://oauth/callback. Match it exactly in the Trakt application settings." ;;
+            https://tylerkeegan.com/iwatch/oauth/trakt) ;;
+            *) fail "TRAKT_REDIRECT_URI must use the registered HTTPS callback: https://tylerkeegan.com/iwatch/oauth/trakt. Match it exactly in the Trakt application settings." ;;
         esac
     fi
 done

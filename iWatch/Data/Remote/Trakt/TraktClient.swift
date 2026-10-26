@@ -1,21 +1,20 @@
 import Foundation
+import CryptoKit
 
 // MARK: - Trakt Service
 
 final class TraktService: TraktSyncing, EpisodeAirtimeProviding {
     private let api: APIClient
     private let clientId: String
-    private let clientSecret: String
     private let authStore: TraktAuthStore
     private let base = URL(string: "https://api.trakt.tv")!
     private let authBase = URL(string: "https://auth.trakt.tv")!
     private let encoder: JSONEncoder
     private let refreshCoordinator = TokenRefreshCoordinator()
 
-    init(apiClient: APIClient, clientId: String, clientSecret: String, authStore: TraktAuthStore = KeychainTraktAuthStore()) {
+    init(apiClient: APIClient, clientId: String, clientSecret _: String, authStore: TraktAuthStore = KeychainTraktAuthStore()) {
         self.api = apiClient
         self.clientId = clientId
-        self.clientSecret = clientSecret
         self.authStore = authStore
         self.encoder = JSONEncoder()
         self.encoder.dateEncodingStrategy = .iso8601
@@ -98,22 +97,29 @@ final class TraktService: TraktSyncing, EpisodeAirtimeProviding {
     // MARK: OAuth
 
     func authorizationRequest(redirectURI: String, state: String) throws -> TraktAuthorizationRequest {
-        try validateConfiguration(requiresClientSecret: false)
+        try validateConfiguration()
         guard let redirectURL = URL(string: redirectURI), redirectURL.scheme?.isEmpty == false else {
             throw TraktAuthError.invalidRedirectURI
         }
 
+        let verifier = OAuthStateGenerator.make(byteCount: 64)
+        let challenge = Data(SHA256.hash(data: Data(verifier.utf8))).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
         var comps = URLComponents(url: authBase.appendingPathComponent("oauth/authorize"), resolvingAgainstBaseURL: false)
         comps?.queryItems = [
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "client_id", value: clientId),
             URLQueryItem(name: "redirect_uri", value: redirectURI),
-            URLQueryItem(name: "state", value: state)
+            URLQueryItem(name: "state", value: state),
+            URLQueryItem(name: "code_challenge", value: challenge),
+            URLQueryItem(name: "code_challenge_method", value: "S256")
         ]
         guard let url = comps?.url else {
             throw TraktAuthError.invalidRedirectURI
         }
-        return TraktAuthorizationRequest(url: url, state: state)
+        return TraktAuthorizationRequest(url: url, state: state, codeVerifier: verifier)
     }
 
     func authorizationCode(from callbackURL: URL, expectedState: String) throws -> String {
@@ -154,14 +160,14 @@ final class TraktService: TraktSyncing, EpisodeAirtimeProviding {
         return req
     }
 
-    func exchangeCodeForToken(code: String, redirectURI: String) async throws -> TokenResponse {
+    func exchangeCodeForToken(code: String, redirectURI: String, codeVerifier: String) async throws -> TokenResponse {
         let generation = await refreshCoordinator.invalidate()
-        try validateConfiguration(requiresClientSecret: true)
+        try validateConfiguration()
 
         let body: [String: Any] = [
             "code": code,
             "client_id": clientId,
-            "client_secret": clientSecret,
+            "code_verifier": codeVerifier,
             "redirect_uri": redirectURI,
             "grant_type": "authorization_code"
         ]
@@ -181,12 +187,11 @@ final class TraktService: TraktSyncing, EpisodeAirtimeProviding {
     private func performTokenRefresh(generation: UUID) async throws {
         guard let current = await authStore.currentToken() else { return }
         guard current.requiresRefresh() else { return }
-        try validateConfiguration(requiresClientSecret: true)
+        try validateConfiguration()
 
         let body: [String: Any] = [
             "refresh_token": current.refreshToken,
             "client_id": clientId,
-            "client_secret": clientSecret,
             "grant_type": "refresh_token"
         ]
 
@@ -343,14 +348,9 @@ final class TraktService: TraktSyncing, EpisodeAirtimeProviding {
         }
     }
 
-    private func validateConfiguration(requiresClientSecret: Bool) throws {
+    private func validateConfiguration() throws {
         guard clientId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
             throw TraktAuthError.missingClientID
-        }
-        if requiresClientSecret {
-            guard clientSecret.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
-                throw TraktAuthError.missingClientSecret
-            }
         }
     }
 

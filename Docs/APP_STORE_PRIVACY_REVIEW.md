@@ -144,3 +144,15 @@ No App Review submission was made. Future premium monetization requires reassess
 
 - The additional Trakt attribution passed a Simulator build and all 100 selected tests (96 unit + four About UI variants). Exported and visually reviewed standard/accessibility light/dark screenshots under `~/Pictures/iWatch/AppStore/1.0/TraktAttributionQA/`.
 - With the owner's authorization, started the Trakt GitHub connection. It requires GitHub sign-in in the browser; requested owner login. No credentials were entered or revealed.
+
+
+### HTTPS / PKCE implementation follow-up
+
+- With explicit owner authorization, published website commit `2c4345b` in Portfolio. Live `https://tylerkeegan.com/.well-known/apple-app-site-association` returned HTTP 200 and application/json; it names only `XKQ424HQ33.com.tyler.iWatch`, limits applinks to the Trakt callback, and provides Apple's webcredentials association. The fallback page uses no scripts, does not reflect query values, and sends no-referrer/no-store headers.
+- Owner connected GitHub to Trakt Developer. Added `https://tylerkeegan.com/iwatch/oauth/trakt` to iWatch's allowed redirects and verified it alongside the legacy URI. Existing users can still use the old build's redirect. No live credentials were revealed or changed.
+- Prepared app migration: Apple's HTTPS authentication callback, associated domains, fresh S256 PKCE per attempt, verifier cleanup on completion/cancel/disconnect, and secret-free token exchange/refresh. The build phase strips the legacy client secret from built plists only and migrates the known old redirect to HTTPS; local Secrets.plist remains untouched.
+- Final Simulator build and 97 unit tests passed, including account-boundary/authentication tests and legacy redirect migration. Configuration fixture tests pass, including no bundled client secret, legacy migration, HTTPS acceptance, and invalid redirect rejection. Website build and five build checks passed.
+- **Do not push/upload the authentication commit to main's automatic archive workflow until physical-device HTTPS sign-in, callback, token exchange, import, refresh, and reconnect are verified.** Prior owner-confirmed tests were for the old flow and do not validate these new changes. Keep the legacy registration until compatibility is no longer needed.
+- Saved proof: `~/Pictures/iWatch/AppStore/1.0/trakt-https-registration.jpg`, `oauth-fallback-preview.jpg`, and `cloudkit-production-schema.jpg`.
+
+- Build 27 from `3e3e6cc0354228d815bb719275b9dfab67593c63` archived successfully, processed as Ready to Submit, and replaced build 26 in the saved version 1.0 listing. Screenshot: `~/Pictures/iWatch/AppStore/1.0/build-27-selection.jpg`. It contains Trakt attribution, not the later local authentication migration.

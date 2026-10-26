@@ -12,17 +12,29 @@ TMDb supplies movie/show metadata and artwork independently of Trakt. Configure
 Keep it in the ignored local plist for local builds.
 
 For CI and Xcode Cloud, configure private environment variables
-`TMDB_API_KEY`, `TRAKT_CLIENT_ID`, `TRAKT_CLIENT_SECRET`, and
-`TRAKT_REDIRECT_URI` in the build service. Make them available to the archive action. The Configure Trakt phase
+`TMDB_API_KEY`, `TRAKT_CLIENT_ID`, and `TRAKT_REDIRECT_URI` in the build service. Make them available to the archive action. The Configure Trakt phase
 places these values into the app build product without changing the source
 Secrets.plist. Use `main` as the workflow source branch. Local Xcode does not
 inherit Xcode Cloud variables; keep the ignored local file for local builds.
 When a variable is supplied, it overrides the corresponding local value.
 Keep shell tracing disabled and never print these variables.
 
-Use `com.tyler.iWatch://oauth/callback` as the redirect and register that exact
-value in the Trakt application's settings. When omitted, the redirect defaults
-to the bundle identifier followed by `://oauth/callback`.
+The HTTPS redirect is `https://tylerkeegan.com/iwatch/oauth/trakt`.
+That value is registered in Trakt and the website association is deployed.
+The build phase migrates the known legacy callback in its output without editing
+local credential files; unknown callback values fail Release validation. The app supports
+Apple's HTTPS authentication callback and declares both applinks and webcredentials
+for tylerkeegan.com. Keep the legacy `com.tyler.iWatch://oauth/callback` registration
+until the new flow has passed physical-device sign-in/reconnect verification.
+New builds default to the HTTPS callback. Physical-device verification is still
+required before uploading this authentication change.
+
+OAuth uses a fresh in-memory S256 PKCE verifier for each attempt; state and verifier
+are discarded after completion, cancellation, or disconnect. Token exchange and
+refresh do not send a client secret. The build phase removes TRAKT_CLIENT_SECRET
+from both built plists even if older local/CI inputs still contain it, without
+editing the local source file. Remove obsolete CI configuration privately when
+convenient. Never print or commit credentials.
 
 Every Release build and archive validates the effective configuration in the
 built app. Missing, whitespace-only, placeholder, or unresolved values stop the

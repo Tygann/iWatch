@@ -2,6 +2,22 @@
 
 This file records builds uploaded to App Store Connect. The source commit in the newest entry is the exclusive comparison boundary for the next build: review meaningful product changes after that commit, excluding release-history-only commits, and do not repeat previously published notes.
 
+## Version 1.0 (Build 27)
+
+- Uploaded: 2026-10-25
+- Channel: TestFlight / App Store preparation (not submitted)
+- Source commit: `3e3e6cc0354228d815bb719275b9dfab67593c63`
+- Selected for version 1.0 after Xcode Cloud archive/upload and TestFlight processing succeeded. This build adds Trakt attribution; it does not contain the subsequent local HTTPS/PKCE migration.
+
+### What to Test
+
+What's new:
+- About now includes Trakt attribution alongside TMDB, privacy, and support information.
+
+Please test:
+- Open Settings > About and confirm both provider notices are readable in light and dark appearance.
+- Increase text size and confirm all attribution and support links remain reachable.
+
 ## Version 1.0 (Build 26)
 
 - Uploaded: 2026-10-25
