@@ -692,6 +692,35 @@ struct FoundationRewriteTests {
         #expect(progress.watchedEpisodeKeys.contains("ep:400:S0:E1") == true)
     }
 
+    @Test(arguments: [false, true])
+    func episodeUploadConfirmsMinuteRoundedTime(alreadySent: Bool) async throws {
+        let persistence = makePersistence()
+        let repository = makeLibraryRepository(persistence: persistence)
+        let watched = Date(timeIntervalSince1970: 1700000039.75)
+        try await repository.addWatchEvent(for: MediaID(kind: .episode, id: 33, traktID: 333), watchedAt: watched)
+        if alreadySent {
+            let context = persistence.makeContext()
+            let operation = try #require(context.fetch(FetchDescriptor<SyncOperationRecord>()).first)
+            var payload = try SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: operation.payload)
+            payload.historyRequestStartedAt = .now
+            payload.historyKnownIDs = []
+            operation.payload = try SyncPayloadCodec.encoder.encode(payload)
+            try context.save()
+        }
+        let confirmed = [makeEpisodeHistoryItem(historyID: 999, watchedAt: Date(timeIntervalSince1970: 1699999980))]
+        let remote = FakeTraktSyncRemote(token: makeToken(),
+            lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now),
+            watchlist: [], history: alreadySent ? confirmed : [], historyAfterUpload: confirmed)
+        let engine = SyncEngine(persistence: persistence, trakt: remote,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { "default" })
+        #expect(await engine.run(reason: .localMutation))
+        #expect(await remote.snapshot().addHistoryCalls == (alreadySent ? 0 : 1))
+        let event = try #require(fetchAll(WatchedEventRecord.self, from: persistence).first)
+        #expect(event.traktHistoryID == 999)
+        #expect(!event.dirty)
+        #expect(event.watchedAt == watched)
+    }
+
     @Test
     func acceptedHistoryUploadWithLostResponseIsNotPostedTwice() async throws {
         let persistence = makePersistence()
@@ -699,7 +728,7 @@ struct FoundationRewriteTests {
         let watched = Date(timeIntervalSince1970: 1700000000.75)
         try await repository.addWatchEvent(for: MediaID(kind: .movie, id: 11, traktID: 111), watchedAt: watched)
         let remote = FakeTraktSyncRemote(token: makeToken(), lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now),
-            watchlist: [], history: [], historyAfterUpload: [makeMovieHistoryItem(historyID: 999, watchedAt: Date(timeIntervalSince1970: 1700000000))], loseHistoryResponse: true)
+            watchlist: [], history: [], historyAfterUpload: [makeMovieHistoryItem(historyID: 999, watchedAt: Date(timeIntervalSince1970: 1699999980))], loseHistoryResponse: true)
         let engine = SyncEngine(persistence: persistence, trakt: remote,
             deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { "default" })
         #expect(await engine.run(reason: .localMutation) == false)
@@ -714,14 +743,14 @@ struct FoundationRewriteTests {
     }
 
     @Test
-    func existingPlayCannotConfirmANewUncertainUploadInTheSameSecond() async throws {
+    func existingPlayCannotConfirmANewUncertainUploadInTheSameMinute() async throws {
         let persistence = makePersistence()
         let context = persistence.makeContext()
         let previous = Date(timeIntervalSince1970: 1700000000)
         context.insert(WatchedEventRecord(kind: .movie, tmdbID: 11, watchedAt: previous, traktHistoryID: 998))
         try context.save()
         let repository = makeLibraryRepository(persistence: persistence)
-        try await repository.addWatchEvent(for: MediaID(kind: .movie, id: 11), watchedAt: previous.addingTimeInterval(0.75))
+        try await repository.addWatchEvent(for: MediaID(kind: .movie, id: 11), watchedAt: previous.addingTimeInterval(30.75))
         let existing = [makeMovieHistoryItem(historyID: 998, watchedAt: previous)]
         let remote = FakeTraktSyncRemote(token: makeToken(), lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now),
             watchlist: [], history: existing, historyAfterUpload: existing, loseHistoryResponse: true)
@@ -768,7 +797,7 @@ struct FoundationRewriteTests {
         try await repository.addWatchEvent(for: MediaID(kind: .movie, id: 11, traktID: 111), watchedAt: watched)
         let eventID = try #require(fetchAll(WatchedEventRecord.self, from: persistence).first?.recordID)
         let remote = FakeTraktSyncRemote(token: makeToken(), lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now),
-            watchlist: [], history: [], historyAfterUpload: [makeMovieHistoryItem(historyID: 999, watchedAt: Date(timeIntervalSince1970: 1700000000))],
+            watchlist: [], history: [], historyAfterUpload: [makeMovieHistoryItem(historyID: 999, watchedAt: Date(timeIntervalSince1970: 1699999980))],
             loseHistoryResponse: lostResponse,
             onAddHistory: { try await repository.removeWatchEvent(eventID: eventID) })
         let engine = SyncEngine(persistence: persistence, trakt: remote,
@@ -2024,7 +2053,13 @@ private actor FakeTraktSyncRemote: TraktSyncing {
 
     func getHistory(startAt: Date?) async throws -> [TraktHistoryItemDTO] {
         getHistoryCalls += 1
-        return history
+        let snapshot = history
+        return await MainActor.run {
+            snapshot.filter { item in
+                guard let startAt else { return true }
+                return item.watchedAt.map { $0 >= startAt } ?? false
+            }
+        }
     }
 
     func addToWatchlist(_ items: [MediaID]) async throws {

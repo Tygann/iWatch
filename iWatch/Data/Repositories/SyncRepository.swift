@@ -584,8 +584,9 @@ actor SyncEngine {
 
     private func matchingRemoteHistory(_ payload: SyncOperationPayload, operation: SyncOperationRecord) async throws -> [TraktHistoryItemDTO] {
         guard let date = payload.watchedAt, payload.tmdbID != nil else { throw HistoryReconciliationError.ambiguous }
-        let second = Date(timeIntervalSince1970: floor(date.timeIntervalSince1970))
-        let history = try await trakt.getHistory(startAt: second.addingTimeInterval(-1), endAt: second.addingTimeInterval(1))
+        // Trakt normalizes watched_at to the start of its UTC minute.
+        let minute = HistoryMatchPolicy.remoteMinute(date)
+        let history = try await trakt.getHistory(startAt: minute.addingTimeInterval(-1), endAt: minute.addingTimeInterval(60))
         try await validateHistoryContext(operation)
         return history.filter { HistoryMatchPolicy.matches(payload, remote: $0) }
     }
@@ -638,12 +639,16 @@ actor SyncEngine {
         let acknowledgement = persistence.makeContext()
         if let event = eventRecord(kind: kind, tmdbID: id, watchedAt: payload.watchedAt, context: acknowledgement) {
             guard event.traktHistoryID == nil || event.traktHistoryID == remote.id else { throw HistoryReconciliationError.ambiguous }
+            // Imported replicas can have a newer bookkeeping timestamp without a newer local edit.
+            let canClearDirty = !event.tombstoned
+                && event.updatedAt <= (payload.mutationAt ?? operation.createdAt)
+                && canAcknowledge(operation, in: acknowledgement)
             event.traktHistoryID = remote.id
             for duplicate in allEvents(context: acknowledgement) where duplicate !== event && duplicate.traktHistoryID == remote.id {
                 mergeWatchedEvent(event, with: duplicate)
                 acknowledgement.delete(duplicate)
             }
-            if !event.tombstoned, event.updatedAt <= (payload.mutationAt ?? operation.createdAt), canAcknowledge(operation, in: acknowledgement) {
+            if canClearDirty, !event.tombstoned {
                 event.dirty = false
             }
             try acknowledgement.save()
@@ -1652,6 +1657,10 @@ nonisolated enum HistoryReconciliationError: Error, LocalizedError {
 }
 
 nonisolated enum HistoryMatchPolicy {
+    static func remoteMinute(_ date: Date) -> Date {
+        Date(timeIntervalSince1970: floor(date.timeIntervalSince1970 / 60) * 60)
+    }
+
     static func samePlay(_ lhs: SyncOperationPayload, _ rhs: SyncOperationPayload) -> Bool {
         guard let a = lhs.watchedAt, let b = rhs.watchedAt else { return false }
         return lhs.mediaKind == rhs.mediaKind && lhs.tmdbID == rhs.tmdbID
@@ -1667,6 +1676,6 @@ nonisolated enum HistoryMatchPolicy {
         }
         guard let localDate = payload.watchedAt, let remoteDate = remote.watchedAt else { return false }
         return payload.mediaKind == kind && payload.tmdbID == id
-            && floor(localDate.timeIntervalSince1970) == floor(remoteDate.timeIntervalSince1970)
+            && remoteMinute(localDate) == remoteMinute(remoteDate)
     }
 }
