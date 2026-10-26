@@ -4,10 +4,10 @@ This file records builds uploaded to App Store Connect. The source commit in the
 
 ## Version 1.0 (Build 32)
 
-- Upload date: 2026-10-26 (Xcode Cloud build in progress; upload not yet confirmed)
+- Uploaded: 2026-10-26
 - Channel: TestFlight
 - Source commit: `0fd51967fda4ba4f30093456e8142b3fcc042b92`
-- Build number and in-progress status supplied by Tyler. Notes compare against the latest logged release, build 29; builds 30 and 31 have no recorded published boundary.
+- Xcode Cloud upload completed successfully, confirmed by Tyler and the App Store Connect screenshot showing build 32 as Complete and Ready to Submit. Tyler is adding it to TestFlight with the notes below; tester-group assignment and saved notes are not yet confirmed. Notes compare against the latest previously logged release, build 29; builds 30 and 31 have no recorded source boundary.
 
 ### What to Test
 
