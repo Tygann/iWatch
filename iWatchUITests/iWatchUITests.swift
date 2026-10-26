@@ -165,11 +165,70 @@ final class iWatchUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Connect Trakt"].exists)
 
         app.navigationBars["Trakt"].buttons.firstMatch.tap()
-        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'App Appearance,'")).firstMatch.tap()
-        XCTAssertTrue(app.navigationBars["App Appearance"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["System"].exists)
-        XCTAssertTrue(app.staticTexts["Light"].exists)
-        XCTAssertTrue(app.staticTexts["Dark"].exists)
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Appearance,'")).firstMatch.tap()
+        XCTAssertTrue(app.buttons["System"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Light"].exists)
+        XCTAssertTrue(app.buttons["Dark"].exists)
+    }
+
+    @MainActor
+    func testAboutLightStandard() throws {
+        try verifyAbout(theme: "light", accessibility: false)
+    }
+
+    @MainActor
+    func testAboutDarkStandard() throws {
+        try verifyAbout(theme: "dark", accessibility: false)
+    }
+
+    @MainActor
+    func testAboutLightAccessibility() throws {
+        try verifyAbout(theme: "light", accessibility: true)
+    }
+
+    @MainActor
+    func testAboutDarkAccessibility() throws {
+        try verifyAbout(theme: "dark", accessibility: true)
+    }
+
+    @MainActor
+    private func verifyAbout(theme: String, accessibility: Bool) throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["UITEST_MODE", "-appTheme", theme == "dark" ? "2" : "1"]
+        if accessibility {
+            app.launchArguments += ["UITEST_ACCESSIBILITY_TEXT",
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"]
+        }
+        app.launch()
+        let settings = app.buttons["Settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        settings.tap()
+        let about = app.buttons["About"]
+        for _ in 0..<6 {
+            if about.isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(about.isHittable)
+        about.tap()
+        XCTAssertTrue(app.navigationBars["About"].waitForExistence(timeout: 5))
+        let identity = XCTAttachment(screenshot: app.screenshot())
+        identity.name = "About identity - \(theme) - \(accessibility ? "accessibility" : "standard")"
+        identity.lifetime = .keepAlways
+        add(identity)
+
+        for label in ["The Movie Database (TMDB)", "Privacy Policy", "Support"] {
+            let link = app.buttons[label]
+            for _ in 0..<8 {
+                if link.isHittable { break }
+                app.swipeUp()
+            }
+            XCTAssertTrue(link.isHittable, "About link must remain reachable: " + label)
+        }
+        let links = XCTAttachment(screenshot: app.screenshot())
+        links.name = "About links - \(theme) - \(accessibility ? "accessibility" : "standard")"
+        links.lifetime = .keepAlways
+        add(links)
     }
 
 }

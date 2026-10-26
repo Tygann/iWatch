@@ -49,10 +49,68 @@ References:
 
 ## Remaining release actions
 
-1. On a Mac, build scheme `iWatch`, run affected unit tests, and verify About in light/dark appearance and standard/accessibility text sizes.
-2. Capture genuine 13-inch iPad screenshots at an accepted size (2048 × 2732 or 2064 × 2752 portrait, or landscape equivalents).
+1. Mac simulator builds and 96 unit tests passed on October 25; About was inspected in light/dark appearance at standard and largest accessibility sizes. See the Mac follow-up below.
+2. Three genuine 13-inch iPad screenshots were captured at 2064 × 2752. Uploaded them to version 1.0’s 13-inch iPad slot; App Store Connect shows 3 of 10 screenshots.
 3. After Mac checks pass, fix and commit any issues found, upload the updated build, and attach it to version 1.0. The currently attached build 25 does not contain these changes.
 4. Complete the App Privacy declaration using the provider review above.
 5. Complete content rights after the updated build contains the attribution and applicable usage permissions are established. Free/non-commercial TMDB API use is subject to attribution and terms; an API integration alone does not prove a separate commercial agreement or rights to every item of artwork.
 
 TMDB requirements: https://developer.themoviedb.org/docs/faq
+
+
+## Mac follow-up — October 25, 2026
+
+- Pulled `origin/main` with fast-forward-only; it was already at `f31797924797e382f135dab7b153e587dc328dbc`, with a clean working tree.
+- XcodeBuildMCP built and launched scheme `iWatch` on iPhone 17 and iPad Pro 11-inch (M5), iOS/iPadOS 26.5. All 96 `iWatchTests` passed, including Trakt authentication and account-boundary tests.
+- About was visually inspected in light/dark appearance, at standard and largest accessibility text sizes. Attribution and links wrap and remain reachable by scrolling; no app UI fix was needed.
+- The existing iPadOS 27.0 screenshot simulator could not boot. Created a dedicated **iWatch App Store iPad 13**, iPad Pro 13-inch (M5), running working iPadOS 26.5; build and launch passed.
+- Saved unmodified native screenshots to `~/Pictures/iWatch/AppStore/1.0/iPad13/`: `01-discover-light.png`, `02-trending-light.png`, `03-show-detail-light.png`. Each is a genuine 2064 × 2752 PNG from Device Hub, using real TMDB catalog responses and no UI-test fixtures. XcodeBuildMCP's screenshot response is a reduced preview, so Device Hub's screenshot export supplied the upload files.
+- The owner completed App Store Connect sign-in on this Mac. Build selection, privacy publication, content-rights save, and App Review submission have not been performed in this follow-up. Build 25's selection has not been changed. No new uploaded-build entry belongs in ReleaseHistory until an upload is confirmed.
+
+### Provider review and draft questionnaire decisions
+
+Reviewed Apple's [App Privacy guidance](https://developer.apple.com/app-store/app-privacy-details/), [TMDB privacy policy](https://www.themoviedb.org/privacy-policy) (effective August 24, 2026), [TMDB API terms](https://www.themoviedb.org/api-terms-of-use), [TMDB FAQ](https://developer.themoviedb.org/docs/faq), and [Trakt privacy policy](https://app.trakt.tv/privacy) (displayed August 20, 2024).
+
+Apple distinguishes retained off-device data from request-only processing. Ongoing optional sync is disclosable; Apple-only collection is not automatically the developer's collection.
+
+| Data / answer | Supported decision | Still needed |
+| --- | --- | --- |
+| Data collected | Yes: Trakt retains account-linked synced library/history | Do not publish Data Not Collected |
+| User ID | Trakt identifier; linked; App Functionality | Confirm additional provider purposes |
+| Other User Content | Synced watchlist/library; linked; App Functionality | Confirm provider classification and additional purposes |
+| Product Interaction | Synced watched history; linked; App Functionality | Trakt also describes personalization/analytics of sync activity and possible targeted ads; determine applicability to this integration |
+| Search History | TMDB explicitly includes search/API data in its policy | Retention, linkage, purposes, and tracking for unauthenticated end-user API searches |
+| IP / technical data | Both providers describe technical collection; classify by actual use | API retention, geolocation derivation, diagnostic/device identifier treatment |
+| Device ID in private CloudKit | App-generated coordination ID exists | Establish developer-access/collection treatment separately from Apple-only collection |
+| Tracking | No defensible blanket No from the absence of an ad SDK | API-specific confirmation about cross-context ads, advertising measurement, and broker sharing |
+
+TMDB's policy covers API use and permits analysis, personalization, and advertising-related processing. Trakt explicitly discusses retained account data, sync-content personalization/analytics, and possible targeted advertising. Neither public policy isolates every practice for iWatch's exact API traffic. These are unresolved provider facts, not evidence that the app definitely tracks users or that every website cookie practice applies to native API calls. Do not add ATT or publish tracking answers based only on a guess.
+
+Prepared questions for the owner to obtain from providers (not sent):
+
+1. TMDB: For third-party native API/CDN calls using a developer key without end-user TMDB sign-in, which search, IP, request, and identifier data are retained; for how long; linked to whom; and for which purposes? Is any of this data used with third-party data for advertising/measurement or shared with brokers?
+2. Trakt: For account-linked watchlist/history API sync, which identifiers/content/technical data are retained, and used for analytics, personalization, advertising, or cross-context advertising? Can API-origin data be excluded from advertising uses, and what defaults apply?
+
+### Content rights and remaining release gates
+
+The app uses third-party metadata/artwork, so a declaration that it contains no third-party content would be inaccurate. TMDB grants a conditional API/content license; its FAQ allows attributed non-commercial use, while commercial revenue use requires a separate written agreement. Confirm the app's actual commercial intent and any applicable written permissions before saving the rights attestation. Free App Store pricing alone does not settle indirect commercial use. The API terms also restrict caching TMDB information beyond six months; verify the persisted metadata/cache lifecycle or obtain applicable permission before attesting compliance. Keep user-authored library/history distinct from provider metadata when assessing retention.
+
+Before upload/submission, reconcile the repository's release gates:
+
+- `Docs/TRAKT_CONFIGURATION.md` requires a clean Release archive with valid configuration and real-device OAuth, import, refresh, and reconnect verification before uploading; Simulator unit tests do not establish these results.
+- `Docs/CLOUDKIT_RELEASE_CHECKLIST.md` requires Production schema verification and physical-device replication/reset checks.
+- `Docs/NEXT_STEPS.md` records migration of Trakt's custom URL callback to Universal Links before public release; confirm completion or explicitly resolve that release requirement with the owner.
+- Once the checks and sign-in are resolved, upload a uniquely numbered build greater than 25, wait for processing, and attach it to the version 1.0 listing. Record the actual uploaded source commit/build in ReleaseHistory only after confirmation. Stop before submitting for App Review.
+
+
+Owner clarification: iWatch is currently free; a premium option may be added later. The owner has only the public TMDB/Trakt terms, with no separate written provider permissions. Reassess TMDB commercial licensing before introducing premium, ads, subscriptions, or other revenue use. The current free release still needs to satisfy the public license conditions. The owner confirmed that the required physical-device Trakt and two-device CloudKit replication/reset checks passed.
+
+
+### Mac verification and listing result
+
+- Added four About UI checks (light/dark, standard/largest accessibility text) that require the TMDB, privacy, and support links to remain reachable and retain screenshot attachments. Reviewed the exported light/dark screenshots. Corrected an existing Settings UI test to use the native Appearance menu; all five focused UI checks passed.
+- About QA attachments are under `~/Pictures/iWatch/AppStore/1.0/AboutQA/` and `AboutQA-Dark/`; the dark rerun is the authoritative dark-appearance evidence.
+- Uploaded the three PNGs to version 1.0, English (U.S.), **iPad 13-inch display**. Apple showed all three filenames and `3 of 10 App Screenshots`; existing iPhone screenshots were preserved. Local proof: `~/Pictures/iWatch/AppStore/1.0/ipad-upload-confirmation.jpg`.
+- Saved an **unpublished, incomplete** App Privacy draft with Other User Content, Search History, User ID, and Product Interaction. Additional types and per-type purpose/linkage/tracking answers still require the provider review above. Publish remains disabled; no privacy label was published. Local proof: `~/Pictures/iWatch/AppStore/1.0/privacy-draft-confirmation.jpg`.
+- Inspected Apple's exact content-rights question. The Yes answer also attests necessary rights; No is inaccurate for iWatch. Left it unset pending resolution of the conditional TMDB license/cache review and applicable permissions.
+- The owner confirmed the required physical-device Trakt and two-device CloudKit checks passed. This is owner-supplied verification, separate from the Simulator evidence above.
