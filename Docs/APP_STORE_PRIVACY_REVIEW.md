@@ -51,7 +51,7 @@ References:
 
 1. Mac simulator builds and 96 unit tests passed on October 25; About was inspected in light/dark appearance at standard and largest accessibility sizes. See the Mac follow-up below.
 2. Three genuine 13-inch iPad screenshots were captured at 2064 × 2752. Uploaded them to version 1.0’s 13-inch iPad slot; App Store Connect shows 3 of 10 screenshots.
-3. After Mac checks pass, fix and commit any issues found, upload the updated build, and attach it to version 1.0. The currently attached build 25 does not contain these changes.
+3. Build 26 from the handoff commit has processed and replaced build 25 in version 1.0. ReleaseHistory records its source boundary. Do not submit until the remaining privacy, content-rights, and public-release gates are resolved.
 4. Complete the App Privacy declaration using the provider review above.
 5. Complete content rights after the updated build contains the attribution and applicable usage permissions are established. Free/non-commercial TMDB API use is subject to attribution and terms; an API integration alone does not prove a separate commercial agreement or rights to every item of artwork.
 
@@ -65,7 +65,7 @@ TMDB requirements: https://developer.themoviedb.org/docs/faq
 - About was visually inspected in light/dark appearance, at standard and largest accessibility text sizes. Attribution and links wrap and remain reachable by scrolling; no app UI fix was needed.
 - The existing iPadOS 27.0 screenshot simulator could not boot. Created a dedicated **iWatch App Store iPad 13**, iPad Pro 13-inch (M5), running working iPadOS 26.5; build and launch passed.
 - Saved unmodified native screenshots to `~/Pictures/iWatch/AppStore/1.0/iPad13/`: `01-discover-light.png`, `02-trending-light.png`, `03-show-detail-light.png`. Each is a genuine 2064 × 2752 PNG from Device Hub, using real TMDB catalog responses and no UI-test fixtures. XcodeBuildMCP's screenshot response is a reduced preview, so Device Hub's screenshot export supplied the upload files.
-- The owner completed App Store Connect sign-in on this Mac. Build selection, privacy publication, content-rights save, and App Review submission have not been performed in this follow-up. Build 25's selection has not been changed. No new uploaded-build entry belongs in ReleaseHistory until an upload is confirmed.
+- The owner completed App Store Connect sign-in on this Mac. Build 26 selection was saved later in this follow-up (see below). Privacy publication, content-rights save, and App Review submission have not been performed.
 
 ### Provider review and draft questionnaire decisions
 
@@ -114,3 +114,21 @@ Owner clarification: iWatch is currently free; a premium option may be added lat
 - Saved an **unpublished, incomplete** App Privacy draft with Other User Content, Search History, User ID, and Product Interaction. Additional types and per-type purpose/linkage/tracking answers still require the provider review above. Publish remains disabled; no privacy label was published. Local proof: `~/Pictures/iWatch/AppStore/1.0/privacy-draft-confirmation.jpg`.
 - Inspected Apple's exact content-rights question. The Yes answer also attests necessary rights; No is inaccurate for iWatch. Left it unset pending resolution of the conditional TMDB license/cache review and applicable permissions.
 - The owner confirmed the required physical-device Trakt and two-device CloudKit checks passed. This is owner-supplied verification, separate from the Simulator evidence above.
+
+
+### Build 26 completion and resumed handoff
+
+- Xcode Cloud had automatically archived and uploaded `f31797924797e382f135dab7b153e587dc328dbc` as build 26 on October 25, 2026. Its archive succeeded with Xcode 27.2 RC; TestFlight showed **Ready to Submit**. Reused this exact validated product commit rather than creating a redundant upload for test/documentation-only changes.
+- Replaced build 25 with build 26 in version 1.0 and saved. Proof: `~/Pictures/iWatch/AppStore/1.0/build-26-selection.jpg`.
+- Saved the focused What to Test copy recorded in ReleaseHistory; TestFlight showed **Saved**. Proof: `~/Pictures/iWatch/AppStore/1.0/build-26-test-notes.jpg`.
+- Final light-mode UI rerun also passed both standard/accessibility checks after using the integer AppTheme preference, completing validation of the final test source. All five focused UI checks and 96 unit tests passed; no application Swift changes were necessary.
+- On resumption, local browser use was disabled in Work settings, preventing fresh live verification or further questionnaire edits. The listing results above were verified in the preceding pass, not rechecked after resumption.
+
+Remaining blockers before App Review:
+
+1. Finish and publish accurate App Privacy purpose/linkage/tracking answers after resolving the API-specific provider practices described above. The saved four-category draft is incomplete, including any additional technical-data categories.
+2. Resolve content rights under the public TMDB/Trakt terms. In particular, the inspected code refreshes persisted metadata opportunistically and can serve cached records during failures; a six-month hard expiry was not established. Confirm compliant retention or obtain permission before making the necessary-rights attestation. Never erase user library/history to solve provider-cache retention.
+3. Resolve the pre-public-release Universal Links callback item in `Docs/NEXT_STEPS.md`; it is distinct from the owner-confirmed physical-device tests.
+4. Confirm Production CloudKit schema readiness under `Docs/CLOUDKIT_RELEASE_CHECKLIST.md`. The owner confirmed device checks; a separate live Production schema inspection was not performed in this pass.
+
+No App Review submission was made. Future premium monetization requires reassessing commercial API licensing before activation.

@@ -2,6 +2,23 @@
 
 This file records builds uploaded to App Store Connect. The source commit in the newest entry is the exclusive comparison boundary for the next build: review meaningful product changes after that commit, excluding release-history-only commits, and do not repeat previously published notes.
 
+## Version 1.0 (Build 26)
+
+- Uploaded: 2026-10-25
+- Channel: TestFlight / App Store preparation (not submitted)
+- Source commit: `f31797924797e382f135dab7b153e587dc328dbc`
+- Xcode Cloud archived and uploaded this commit automatically. Build 26 processed successfully and replaced build 25 in the version 1.0 listing. Mac validation subsequently passed 96 unit tests, Simulator builds, and five focused Settings/About UI checks.
+
+### What to Test
+
+What's new:
+- About now includes TMDB attribution and direct links to the privacy policy and support.
+
+Please test:
+- Open Settings > About in light and dark appearance and confirm the logo and attribution are readable.
+- Increase your device text size and confirm you can scroll to every About link.
+- Open Privacy Policy and Support and confirm the correct pages load.
+
 ## Version 1 (Build 24)
 
 - Uploaded: 2026-10-25
