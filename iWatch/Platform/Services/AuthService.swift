@@ -45,12 +45,6 @@ public actor KeychainTraktAuthStore: TraktAuthStore {
         }
         guard let data else { return }
 
-        if let jsonString = String(data: data, encoding: .utf8) {
-            print("[Keychain] Save token: \(jsonString)")
-        } else {
-            print("[Keychain] Save token: unable to convert token data to JSON string")
-        }
-
         if await readKeychain(service: service, account: account) != nil {
             let success = await updateKeychain(data: data, service: service, account: account)
             print("[Keychain] Update keychain \(success ? "succeeded" : "failed")")

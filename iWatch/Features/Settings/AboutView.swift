@@ -17,16 +17,34 @@ struct AboutView: View {
 
             Section {
                 Link(destination: URL(string: "https://www.themoviedb.org/")!) {
-                    Label("The Movie Database (TMDB)", systemImage: "arrow.up.right.square")
+                    VStack(alignment: .leading, spacing: 12) {
+                        Image("TMDBLogo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 80)
+                            .accessibilityHidden(true)
+
+                        Label("The Movie Database (TMDB)", systemImage: "arrow.up.right.square")
+                    }
                 }
             } header: {
                 Text("Data & Attribution")
             } footer: {
-                Text("Movie and television metadata is provided by TMDB. iWatch is not endorsed or certified by TMDB.")
+                Text("This product uses the TMDB API but is not endorsed or certified by TMDB.")
+            }
+
+            Section("Privacy & Support") {
+                Link(destination: URL(string: "https://tylerkeegan.com/iwatch/privacy/")!) {
+                    Label("Privacy Policy", systemImage: "hand.raised")
+                }
+
+                Link(destination: URL(string: "https://tylerkeegan.com/iwatch/support/")!) {
+                    Label("Support", systemImage: "questionmark.circle")
+                }
             }
 
             Section {
-                Text("© 2026 iWatch. All rights reserved.")
+                Text("© 2026 Tyler Keegan. All rights reserved.")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
             }
