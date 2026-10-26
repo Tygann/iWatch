@@ -2,6 +2,26 @@
 
 This file records builds uploaded to App Store Connect. The source commit in the newest entry is the exclusive comparison boundary for the next build: review meaningful product changes after that commit, excluding release-history-only commits, and do not repeat previously published notes.
 
+## Version 1.0 (Build 32)
+
+- Upload date: 2026-10-26 (Xcode Cloud build in progress; upload not yet confirmed)
+- Channel: TestFlight
+- Source commit: `0fd51967fda4ba4f30093456e8142b3fcc042b92`
+- Build number and in-progress status supplied by Tyler. Notes compare against the latest logged release, build 29; builds 30 and 31 have no recorded published boundary.
+
+### What to Test
+
+What's new:
+- Fixed Trakt sync reporting an unconfirmed upload after marking movies or episodes watched.
+- Improved confirmation of previously uploaded watched entries without sending them again.
+- Updated the app icon and About artwork.
+
+Please test:
+- Mark one episode watched, then mark several episodes together, and confirm Trakt sync completes without an unconfirmed-upload warning.
+- If watched changes were pending before this update, use Sync Now and confirm they clear without duplicate plays on Trakt.
+- Mark a movie watched and confirm it appears once in both iWatch and Trakt history.
+- Check the app icon and Settings > About artwork in light and dark appearance.
+
 ## Version 1.0 (Build 29)
 
 - Uploaded: 2026-10-26
