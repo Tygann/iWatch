@@ -11,8 +11,10 @@ final class APIClient {
     // Rename later if you like; keeping your name/signature.
     static func makeDefault(cacheService: CacheService) -> APIClient {
         let config = URLSessionConfiguration.default
-        config.requestCachePolicy = .useProtocolCachePolicy
-        config.urlCache = cacheService.urlCache
+        // Persisted catalog caching is managed by the metadata retention policy.
+        cacheService.clear() // Remove responses from earlier versions.
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.urlCache = nil
         let session = URLSession(configuration: config)
         return APIClient(session: session)
     }

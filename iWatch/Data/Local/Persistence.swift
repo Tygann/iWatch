@@ -46,6 +46,23 @@ nonisolated final class Persistence: @unchecked Sendable {
         }
     }
 
+    // Only provider metadata is disposable. Library/history/outbox rows are never touched.
+    // Unknown legacy provenance expires immediately; 150 days leaves margin below six months.
+    func makeMetadataContext(now: Date = .now) throws -> ModelContext {
+        let context = makeContext()
+        let cutoff = now.addingTimeInterval(-150 * 86400)
+        let media = try context.fetch(FetchDescriptor<MediaRecord>(
+            predicate: #Predicate { $0.metadataCachedAt <= cutoff || $0.metadataCachedAt > now }
+        ))
+        let episodes = try context.fetch(FetchDescriptor<EpisodeRecord>(
+            predicate: #Predicate { $0.metadataCachedAt <= cutoff || $0.metadataCachedAt > now }
+        ))
+        for record in media { context.delete(record) }
+        for record in episodes { context.delete(record) }
+        if context.hasChanges { try context.save() }
+        return context
+    }
+
     func makeContext() -> ModelContext {
         ModelContext(modelContainer)
     }

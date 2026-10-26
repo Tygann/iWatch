@@ -19,6 +19,8 @@ final class EpisodeRecord {
     var stillPath: String?
     var overview: String?
     var extrasData: Data?
+    // Immutable retention origin; edits and partial refreshes must not extend old fields.
+    var metadataCachedAt: Date = Date.distantPast
     var updatedAt: Date = Date.distantPast
 
     init(showTMDbID: Int,
@@ -47,6 +49,7 @@ final class EpisodeRecord {
         self.stillPath = stillPath
         self.overview = overview
         self.extrasData = extrasData
+        self.metadataCachedAt = updatedAt
         self.updatedAt = updatedAt
     }
 }

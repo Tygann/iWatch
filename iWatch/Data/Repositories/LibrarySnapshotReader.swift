@@ -11,7 +11,7 @@ actor LibrarySnapshotReader {
     }
 
     func episodeCounts(for showID: Int, seasons: [Int]) throws -> [Int: Int] {
-        let context = persistence.makeContext()
+        let context = try persistence.makeMetadataContext()
         var counts: [Int: Int] = [:]
         for season in seasons {
             try Task.checkCancellation()
@@ -25,7 +25,7 @@ actor LibrarySnapshotReader {
     // MARK: Release Notifications
 
     func releaseNotificationSnapshot(referenceDate: Date = .now) throws -> ReleaseNotificationSnapshot {
-        let context = persistence.makeContext()
+        let context = try persistence.makeMetadataContext()
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
         let includesLegacyRows = generationID == LibraryGenerationPolicy.legacyGenerationID
         let watchlist = try context.fetch(FetchDescriptor<WatchlistRecord>(
@@ -106,7 +106,7 @@ actor LibrarySnapshotReader {
     // MARK: Movies
 
     func movieItems() throws -> [LibraryMovieItem] {
-        let context = persistence.makeContext()
+        let context = try persistence.makeMetadataContext()
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
         let includesLegacyRows = generationID == LibraryGenerationPolicy.legacyGenerationID
         let movieKind = MediaKind.movie.rawValue
@@ -170,7 +170,7 @@ actor LibrarySnapshotReader {
     // MARK: Shows
 
     func showItems() throws -> [LibraryShowItem] {
-        let context = persistence.makeContext()
+        let context = try persistence.makeMetadataContext()
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
         let includesLegacyRows = generationID == LibraryGenerationPolicy.legacyGenerationID
         let showKind = MediaKind.show.rawValue

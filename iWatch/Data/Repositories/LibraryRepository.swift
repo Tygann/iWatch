@@ -12,8 +12,8 @@ final class LibraryRepository {
     private let deviceIdentityStore: any DeviceIdentityStore
     private let accountKeyProvider: @Sendable () -> String?
     private let snapshotReader: LibrarySnapshotReader
-    private var cachedMovieSnapshot: (revision: Int, items: [LibraryMovieItem])?
-    private var cachedShowSnapshot: (revision: Int, snapshot: ShowLibrarySnapshot)?
+    private var cachedMovieSnapshot: (revision: Int, cachedAt: Date, items: [LibraryMovieItem])?
+    private var cachedShowSnapshot: (revision: Int, cachedAt: Date, snapshot: ShowLibrarySnapshot)?
     private var showSnapshotTask: (revision: Int, token: UUID, task: Task<ShowLibrarySnapshot, Error>)?
     private var detailRequests: [String: Task<MediaDetails, Error>] = [:]
     private let metadataFreshness: MetadataFreshnessStore
@@ -45,6 +45,11 @@ final class LibraryRepository {
         cachedShowSnapshot = nil
         showSnapshotTask?.task.cancel()
         showSnapshotTask = nil
+    }
+
+    func expireProviderMetadata() throws {
+        _ = try persistence.makeMetadataContext()
+        invalidateSnapshots()
     }
 
     // MARK: Discovery
@@ -100,7 +105,7 @@ final class LibraryRepository {
     // MARK: Details
 
     func mediaDetails(for id: MediaID, forceRefresh: Bool = false) async throws -> MediaDetails {
-        let context = persistence.makeContext()
+        let context = try persistence.makeMetadataContext()
         if !forceRefresh, let record = mediaRecord(for: id, context: context), isMediaRecordComplete(record) {
             let cached = try mapMediaRecord(record)
             let upcoming = record.releaseDate.map { $0 > Date() } ?? false
@@ -150,7 +155,7 @@ final class LibraryRepository {
     }
 
     func episodes(for showID: MediaID, seasonNumber: Int, forceRefresh: Bool = false) async throws -> [EpisodeDetails] {
-        let context = persistence.makeContext()
+        let context = try persistence.makeMetadataContext()
         let cached = episodeRecords(forShowID: showID.tmdbID, seasonNumber: seasonNumber, context: context)
         let expectedEpisodeCount = mediaRecord(for: showID, context: context)
             .flatMap { decodeSeasons($0.seasonsData) }
@@ -180,13 +185,13 @@ final class LibraryRepository {
         refreshedSeasonArtworkKeys.insert(seasonKey)
         metadataFreshness.markFetched("season:\(seasonKey)")
 
-        let refreshedContext = persistence.makeContext()
+        let refreshedContext = try persistence.makeMetadataContext()
         return episodeRecords(forShowID: showID.tmdbID, seasonNumber: seasonNumber, context: refreshedContext)
             .map(mapEpisodeRecord(_:))
     }
 
     func episodeDetails(for ref: EpisodeRef, forceRefresh: Bool = false) async throws -> EpisodeDetails {
-        let context = persistence.makeContext()
+        let context = try persistence.makeMetadataContext()
         if !forceRefresh,
            let record = episodeRecord(for: ref, context: context) {
             let cached = mapEpisodeRecord(record)
@@ -218,7 +223,7 @@ final class LibraryRepository {
         metadataFreshness.markFetched("episode:\(ref.showId):\(ref.season):\(ref.episode)")
         onMetadataChanged?()
 
-        let refreshedContext = persistence.makeContext()
+        let refreshedContext = try persistence.makeMetadataContext()
         guard let record = episodeRecord(for: ref, context: refreshedContext) else {
             throw AppError.unknown("Unable to cache episode details.")
         }
@@ -272,7 +277,7 @@ final class LibraryRepository {
         guard await resetGate.allowsLibraryWork() else {
             throw AppError.unknown("Wait for the library reset to finish before making changes.")
         }
-        let context = persistence.makeContext()
+        let context = try persistence.makeMetadataContext()
         let now = Date()
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
 
@@ -325,7 +330,7 @@ final class LibraryRepository {
         guard await resetGate.allowsLibraryWork() else {
             throw AppError.unknown("Wait for the library reset to finish before making changes.")
         }
-        let context = persistence.makeContext()
+        let context = try persistence.makeMetadataContext()
         let now = Date()
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
 
@@ -550,7 +555,7 @@ final class LibraryRepository {
         let showID = MediaID(kind: .show, id: episode.showId, traktID: episode.showTraktID)
         await enrichEpisodeCatalog(for: showID, throughSeason: episode.seasonNumber)
 
-        let context = persistence.makeContext()
+        guard let context = try? persistence.makeMetadataContext() else { return [] }
         let watchedKeys = Set(
             watchedEventRecords(forShowID: episode.showId, context: context)
                 .filter { !$0.tombstoned }
@@ -582,11 +587,11 @@ final class LibraryRepository {
     }
 
     func movieLibraryItems(revision: Int, forceRefresh: Bool = false) async throws -> [LibraryMovieItem] {
-        if !forceRefresh, let cachedMovieSnapshot, cachedMovieSnapshot.revision == revision {
+        if !forceRefresh, let cachedMovieSnapshot, cachedMovieSnapshot.revision == revision, Date().timeIntervalSince(cachedMovieSnapshot.cachedAt) < 60 {
             return cachedMovieSnapshot.items
         }
         let items = try await movieLibraryItems()
-        cachedMovieSnapshot = (revision, items)
+        cachedMovieSnapshot = (revision, .now, items)
         return items
     }
 
@@ -595,7 +600,7 @@ final class LibraryRepository {
     }
 
     func showLibrarySnapshot(revision: Int, forceRefresh: Bool = false) async throws -> ShowLibrarySnapshot {
-        if !forceRefresh, let cachedShowSnapshot, cachedShowSnapshot.revision == revision {
+        if !forceRefresh, let cachedShowSnapshot, cachedShowSnapshot.revision == revision, Date().timeIntervalSince(cachedShowSnapshot.cachedAt) < 60 {
             return cachedShowSnapshot.snapshot
         }
 
@@ -624,7 +629,7 @@ final class LibraryRepository {
             let snapshot = try await task.value
             try Task.checkCancellation()
             if showSnapshotTask?.token == token {
-                cachedShowSnapshot = (revision, snapshot)
+                cachedShowSnapshot = (revision, .now, snapshot)
                 showSnapshotTask = nil
             }
             return snapshot
@@ -642,7 +647,7 @@ final class LibraryRepository {
     }
 
     func showProgress(for showID: MediaID) async throws -> ShowProgress {
-        let context = persistence.makeContext()
+        let context = try persistence.makeMetadataContext()
         let episodeRows = allEpisodeRecords(forShowID: showID.tmdbID, context: context)
         let events = watchedEventRecords(forShowID: showID.tmdbID, context: context).filter { !$0.tombstoned }
         return makeShowProgress(
@@ -744,7 +749,7 @@ final class LibraryRepository {
     func enrichShowProgress(for showID: MediaID) async throws {
         _ = try await mediaDetails(for: showID)
 
-        let context = persistence.makeContext()
+        let context = try persistence.makeMetadataContext()
         guard let media = mediaRecord(for: showID, context: context),
               let seasons = decodeSeasons(media.seasonsData) else {
             return
@@ -768,7 +773,7 @@ final class LibraryRepository {
     private func enrichEpisodeCatalog(for showID: MediaID, throughSeason targetSeason: Int) async {
         guard case let .show(show) = try? await mediaDetails(for: showID) else { return }
 
-        let context = persistence.makeContext()
+        guard let context = try? persistence.makeMetadataContext() else { return }
         let cachedEpisodeCounts = Dictionary(
             grouping: allEpisodeRecords(forShowID: showID.tmdbID, context: context),
             by: \.seasonNumber
@@ -789,7 +794,7 @@ final class LibraryRepository {
     func enrichUpcomingEpisodeAirtimes(for showID: MediaID) async -> Bool {
         guard let airtimeProvider, let showTraktID = showID.traktID else { return false }
 
-        let context = persistence.makeContext()
+        guard let context = try? persistence.makeMetadataContext() else { return false }
         let startOfToday = Calendar.current.startOfDay(for: .now)
         let candidates = allEpisodeRecords(forShowID: showID.tmdbID, context: context).filter {
             $0.airedAt == nil && ($0.airDate.map { $0 >= startOfToday } ?? false)
@@ -829,7 +834,7 @@ final class LibraryRepository {
     // MARK: Persistence Mapping
 
     private func cacheSearchItems(_ items: [SearchItem]) throws {
-        let context = persistence.makeContext()
+        let context = try persistence.makeMetadataContext()
         let now = Date()
         for item in items {
             let existing = mediaRecord(for: item.mediaID, context: context)
@@ -854,7 +859,7 @@ final class LibraryRepository {
     }
 
     private func upsertMovie(_ movie: MovieDetails, requestedID: MediaID) throws {
-        let context = persistence.makeContext()
+        let context = try persistence.makeMetadataContext()
         let existing = mediaRecord(for: requestedID, context: context)
         if let existing {
             existing.traktID = requestedID.traktID ?? existing.traktID
@@ -893,7 +898,7 @@ final class LibraryRepository {
     }
 
     private func upsertShow(_ show: ShowDetails, requestedID: MediaID) throws {
-        let context = persistence.makeContext()
+        let context = try persistence.makeMetadataContext()
         let seasonsData = try JSONEncoder().encode(show.seasons.map {
             StoredShowSeason(
                 id: $0.id,
@@ -949,7 +954,7 @@ final class LibraryRepository {
     }
 
     private func upsertEpisodes(_ episodes: [EpisodeDetails], for showID: MediaID) throws {
-        let context = persistence.makeContext()
+        let context = try persistence.makeMetadataContext()
         let encoder = JSONEncoder()
         let seasonNumbers = Set(episodes.map(\.seasonNumber))
         var existingByKey = Dictionary(

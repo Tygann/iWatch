@@ -156,3 +156,11 @@ No App Review submission was made. Future premium monetization requires reassess
 - Saved proof: `~/Pictures/iWatch/AppStore/1.0/trakt-https-registration.jpg`, `oauth-fallback-preview.jpg`, and `cloudkit-production-schema.jpg`.
 
 - Build 27 from `3e3e6cc0354228d815bb719275b9dfab67593c63` archived successfully, processed as Ready to Submit, and replaced build 26 in the saved version 1.0 listing. Screenshot: `~/Pictures/iWatch/AppStore/1.0/build-27-selection.jpg`. It contains Trakt attribution, not the later local authentication migration.
+
+### Cache-retention implementation — October 25, 2026
+
+- Added a replicated retention origin to MediaRecord/EpisodeRecord, independent of mutable edit timestamps. Catalog metadata expires after 150 days; unknown legacy provenance expires immediately on inspection. Duplicate merging keeps the oldest origin. Metadata reads/writes, snapshot reads, and launch/foreground maintenance remove expired provider rows without removing watchlists, watched history, dispositions, generations, or outbox records.
+- Bounded artwork retention to 30 days, including synchronous decoded-image reuse, and disabled API HTTP-response caching after clearing the legacy cache. Snapshot reuse is limited to 60 seconds. A dormant app checks expiry when it runs again; offline expired metadata does not receive an unlimited fallback.
+- Added and deployed only `CD_metadataCachedAt TIMESTAMP` on CD_MediaRecord and CD_EpisodeRecord. Production schema exported from the Console passes the eight-model checker. No Console user-record edits or security-role changes were made. Proof: `~/Pictures/iWatch/AppStore/1.0/retention-schema-deployed.jpg`.
+- Simulator build and 100 unit tests passed during verification; see `RELEASE_HANDOFF.md` for physical-device checks and the distribution boundary. Owner chose to test the new flow locally later. Keep the new commits local until those checks pass; build 27 does not include them.
+- App Privacy and the content-rights attestation remain unpublished/unset. Implementation addresses the identified cache-lifecycle gap but does not establish provider-side privacy facts or a commercial TMDB license.

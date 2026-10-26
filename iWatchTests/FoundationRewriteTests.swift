@@ -1550,7 +1550,8 @@ struct FoundationRewriteTests {
         let watchedAt = Date()
 
         context.insert(MediaRecord(kind: .movie, tmdbID: 11, traktID: 111, title: "Movie"))
-        context.insert(MediaRecord(kind: .movie, tmdbID: 11, traktID: 111, title: ""))
+        context.insert(MediaRecord(kind: .movie, tmdbID: 11, traktID: 111, title: "",
+            updatedAt: watchedAt.addingTimeInterval(-10 * 86400)))
         context.insert(WatchlistRecord(mediaID: MediaID(kind: .movie, id: 11, traktID: 111), isInWatchlist: true))
         context.insert(WatchlistRecord(mediaID: MediaID(kind: .movie, id: 11, traktID: 111), isInWatchlist: true))
         context.insert(WatchedEventRecord(kind: .movie, tmdbID: 11, traktID: nil, watchedAt: watchedAt))
@@ -1572,6 +1573,7 @@ struct FoundationRewriteTests {
         let summary = try await engine.repairIntegrity()
 
         #expect(summary.mediaMerged == 1)
+        #expect(try fetchAll(MediaRecord.self, from: persistence).first?.metadataCachedAt == watchedAt.addingTimeInterval(-10 * 86400))
         #expect(summary.watchlistMerged == 1)
         #expect(summary.watchedEventsMerged == 1)
         #expect(try fetchAll(MediaRecord.self, from: persistence).count == 1)

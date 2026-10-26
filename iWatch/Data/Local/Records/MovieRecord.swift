@@ -25,6 +25,8 @@ final class MediaRecord {
     var nextAirDate: Date?
     var statusRaw: String?
     var seasonsData: Data?
+    // Immutable retention origin; edits and partial refreshes must not extend old fields.
+    var metadataCachedAt: Date = Date.distantPast
     var updatedAt: Date = Date.distantPast
 
     init(kind: MediaKind,
@@ -63,6 +65,7 @@ final class MediaRecord {
         self.nextAirDate = nextAirDate
         self.statusRaw = statusRaw
         self.seasonsData = seasonsData
+        self.metadataCachedAt = updatedAt
         self.updatedAt = updatedAt
     }
 

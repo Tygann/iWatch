@@ -7,7 +7,12 @@ import UIKit
 nonisolated final class ArtworkMemoryCache: @unchecked Sendable {
     static let shared = ArtworkMemoryCache()
 
-    private let images = NSCache<NSString, UIImage>()
+    private final class Entry: NSObject {
+        let image: UIImage
+        let cachedAt = Date()
+        init(image: UIImage) { self.image = image }
+    }
+    private let images = NSCache<NSString, Entry>()
 
     init(memoryCapacity: Int = 48 * 1_024 * 1_024, countLimit: Int = 250) {
         images.totalCostLimit = memoryCapacity
@@ -15,12 +20,18 @@ nonisolated final class ArtworkMemoryCache: @unchecked Sendable {
     }
 
     func image(forKey key: String) -> UIImage? {
-        images.object(forKey: key as NSString)
+        guard let entry = images.object(forKey: key as NSString) else { return nil }
+        let age = Date().timeIntervalSince(entry.cachedAt)
+        guard age >= 0, age < 30 * 86400 else {
+            images.removeObject(forKey: key as NSString)
+            return nil
+        }
+        return entry.image
     }
 
     func insert(_ image: UIImage, forKey key: String) {
         let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? 0
-        images.setObject(image, forKey: key as NSString, cost: cost)
+        images.setObject(Entry(image: image), forKey: key as NSString, cost: cost)
     }
 
     func clear() {
@@ -36,13 +47,17 @@ actor ArtworkLoader {
     private let decodedImages: ArtworkMemoryCache
     private let urlCache: URLCache
     private let session: URLSession
+    private var cacheEpoch: Date?
+    private let retentionDefaults: UserDefaults?
+    private let currentDate: @Sendable () -> Date
     private var inFlight: [String: Task<UIImage?, Never>] = [:]
 
     init(
         diskCapacity: Int = 256 * 1_024 * 1_024,
         directory: URL? = nil,
         protocolClasses: [AnyClass]? = nil,
-        decodedImages: ArtworkMemoryCache = .shared
+        decodedImages: ArtworkMemoryCache = .shared,
+        currentDate: @escaping @Sendable () -> Date = { Date() }
     ) {
         let urlCache = URLCache(
             memoryCapacity: 16 * 1_024 * 1_024,
@@ -57,6 +72,9 @@ actor ArtworkLoader {
             configuration.protocolClasses = protocolClasses
         }
 
+        self.currentDate = currentDate
+        self.retentionDefaults = directory == nil && protocolClasses == nil ? .standard : nil
+        self.cacheEpoch = retentionDefaults?.object(forKey: "iWatch.artworkCacheEpoch.v1") as? Date
         self.urlCache = urlCache
         self.session = URLSession(configuration: configuration)
         self.decodedImages = decodedImages
@@ -65,6 +83,13 @@ actor ArtworkLoader {
     func image(for url: URL, targetSize: CGSize, displayScale: CGFloat) async -> UIImage? {
         guard !Task.isCancelled else { return nil }
 
+        // Bound disk and decoded cache age independently of CDN freshness headers.
+        let now = currentDate()
+        if cacheEpoch.map({ now.timeIntervalSince($0) >= 30 * 86400 || $0 > now }) ?? true {
+            await clear()
+            cacheEpoch = now
+            retentionDefaults?.set(now, forKey: "iWatch.artworkCacheEpoch.v1")
+        }
         let pixelSize = Self.pixelSize(for: targetSize, displayScale: displayScale)
         let key = Self.cacheKey(url: url, pixelSize: pixelSize)
 

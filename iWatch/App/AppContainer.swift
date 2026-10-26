@@ -55,6 +55,15 @@ final class AppContainer {
         self.router = router
     }
 
+    func maintainMetadataCache() {
+        do {
+            try libraryRepository.expireProviderMetadata()
+            session.markLibraryUpdated()
+        } catch {
+            session.cacheMaintenanceMessage = "Unable to remove expired catalog data. Please try again."
+        }
+    }
+
     // MARK: Construction
 
     static func bootstrap() -> AppContainer {

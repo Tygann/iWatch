@@ -1205,6 +1205,8 @@ actor SyncEngine {
     }
 
     private func mergeMedia(_ canonical: MediaRecord, with duplicate: MediaRecord) {
+        // Merged fields retain the oldest provenance, never the latest edit date.
+        canonical.metadataCachedAt = min(canonical.metadataCachedAt, duplicate.metadataCachedAt)
         canonical.mediaKey = canonical.mediaKey.isEmpty ? duplicate.mediaKey : canonical.mediaKey
         canonical.kindRaw = canonical.kindRaw.isEmpty ? duplicate.kindRaw : canonical.kindRaw
         if canonical.tmdbID == 0 { canonical.tmdbID = duplicate.tmdbID }
@@ -1246,6 +1248,8 @@ actor SyncEngine {
     }
 
     private func mergeEpisode(_ canonical: EpisodeRecord, with duplicate: EpisodeRecord) {
+        // Merged fields retain the oldest provenance, never the latest edit date.
+        canonical.metadataCachedAt = min(canonical.metadataCachedAt, duplicate.metadataCachedAt)
         canonical.episodeKey = canonical.episodeKey.isEmpty ? duplicate.episodeKey : canonical.episodeKey
         if canonical.showTMDbID == 0 { canonical.showTMDbID = duplicate.showTMDbID }
         canonical.showTraktID = canonical.showTraktID ?? duplicate.showTraktID

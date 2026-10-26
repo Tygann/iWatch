@@ -67,6 +67,23 @@ struct ArtworkAndPresentationTests {
         #expect(MockArtworkURLProtocol.requestCount == 2)
     }
 
+    @Test
+    func artworkOlderThanThirtyDaysIsFetchedAgain() async throws {
+        let sourceData = try #require(makeTestImage(size: CGSize(width: 100, height: 100)).pngData())
+        let url = try #require(URL(string: "https://example.com/expired.png"))
+        MockArtworkURLProtocol.responseData = sourceData
+        MockArtworkURLProtocol.requestCount = 0
+        defer { MockArtworkURLProtocol.responseData = nil }
+        let clock = ArtworkTestClock()
+        let loader = ArtworkLoader(diskCapacity: 0,
+            protocolClasses: [MockArtworkURLProtocol.self],
+            decodedImages: ArtworkMemoryCache(), currentDate: { clock.date })
+        #expect(await loader.image(for: url, targetSize: CGSize(width: 50, height: 50), displayScale: 1) != nil)
+        clock.advance(days: 31)
+        #expect(await loader.image(for: url, targetSize: CGSize(width: 50, height: 50), displayScale: 1) != nil)
+        #expect(MockArtworkURLProtocol.requestCount == 2)
+    }
+
     // MARK: Library Presentation
 
     @Test
@@ -525,4 +542,11 @@ private func makeShowDetails(status: String?) -> MediaDetails {
             status: status
         )
     )
+}
+
+private nonisolated final class ArtworkTestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = Date()
+    var date: Date { lock.withLock { value } }
+    func advance(days: Double) { lock.withLock { value.addTimeInterval(days * 86400) } }
 }

@@ -26,9 +26,11 @@ struct iWatchApp: App {
                  .modelContainer(container.persistence.modelContainer)
                  .appTheme(appTheme)
                  .modifier(UITestDynamicType())
+                 .task { container.maintainMetadataCache() }
                  .onChange(of: scenePhase) { _, phase in
                      switch phase {
                      case .active:
+                         container.maintainMetadataCache()
                          container.session.appDidBecomeActive()
                      case .background:
                          container.session.appDidEnterBackground()
