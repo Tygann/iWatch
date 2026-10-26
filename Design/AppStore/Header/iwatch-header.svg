@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3840" height="1646" viewBox="0 0 3840 1646">
+<rect width="3840" height="1646" fill="#F5F5F7"/>
+<g transform="translate(1130 613)">
+<rect width="420" height="420" rx="94" fill="#0088FF"/>
+<g transform="translate(31 31) scale(.35)">
+<path fill="#FFFFFF" fill-rule="evenodd" d="M92 265C92 207 139 160 197 160H827C885 160 932 207 932 265V654C932 712 885 759 827 759H197C139 759 92 712 92 654V265ZM164 267C164 248 179 232 199 232H825C844 232 860 248 860 267V548C860 571 851 593 835 609L775 669C765 679 749 679 739 669L699 629C690 620 676 617 665 623C651 630 645 647 653 661L669 687H199C179 687 164 671 164 652V267Z"/>
+<rect x="350" y="771" width="324" height="48" rx="24" fill="#FFFFFF"/>
+</g></g>
+<g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" fill="#1D1D1F">
+<text x="1650" y="740" font-size="108" font-weight="600" letter-spacing="-4">iWatch</text>
+<text x="1650" y="853" font-size="72" font-weight="500" letter-spacing="-2">Your next watch.</text>
+<text x="1650" y="946" font-size="72" font-weight="500" letter-spacing="-2">All in one place.</text>
+</g>
+</svg>
