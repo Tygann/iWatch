@@ -16,7 +16,8 @@ inspected and its dimensions and absence of an alpha channel verified.
 Apple's wide header specification:
 https://developer.apple.com/help/app-store-connect/reference/app-information/creative-assets-specifications
 
-Uploaded to version 1.0 in App Store Connect on October 26, 2026. The header
-preview was visually checked and remained present after reloading the page.
+Uploaded to version 1.0 in App Store Connect on October 26, 2026. App Store Connect retained 1 of 1 Header Asset after reload. The final export
+was visually checked locally; Apple’s thumbnail still showed a cloud placeholder
+after this replacement, so its rendered listing preview remains to be checked.
 Evidence: `~/Pictures/iWatch/AppStore/1.0/header-uploaded.png`.
 No App Review submission was made.
