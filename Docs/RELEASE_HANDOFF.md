@@ -5,7 +5,8 @@
 App Store Connect version 1.0 selects build 29, sourced from
 `6b8370a41bde543b637326f0123c7cb781ca3bcf`. Its What to Test is saved.
 The genuine 13-inch iPad assets are uploaded. The revised 3840 × 1646 vector
-header was uploaded on October 26, 2026, visually checked in App Store Connect,
+header, using the owner-supplied actual icon and blue gradient, was uploaded
+on October 26, 2026, visually checked in App Store Connect,
 and confirmed to persist after reload. Source and export are in
 `Design/AppStore/Header/`; evidence is
 `~/Pictures/iWatch/AppStore/1.0/header-uploaded.png`.

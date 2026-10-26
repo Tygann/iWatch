@@ -3,10 +3,11 @@
 Selected export: `iwatch-header-3840x1646.png` (3840 × 1646, opaque RGB PNG).
 Editable artwork: `iwatch-header.svg`. Preview: `iwatch-header-preview.png`.
 
-The composition uses iWatch's existing TV/check vector mark from
-`Design/LogoExploration/ProductionStudy/iwatch-tv-check-a.svg`, the current
-icon's #0088FF blue, Helvetica Neue typography, and a #F5F5F7 background.
-It contains no generated illustration, third-party artwork, or simulated app UI.
+The composition embeds the owner's supplied actual app icon, preserved in
+`iwatch-app-icon.png`, alongside Helvetica Neue typography and a restrained
+blue gradient (#153E80 → #1859AD → #2876CB). White text remains legible
+against the fixed opaque background in either App Store appearance.
+The icon is embedded unchanged in the editable SVG; it is only scaled for layout.
 
 Rasterized directly from SVG with Sharp on macOS. Keep Helvetica Neue installed
 when re-exporting to preserve text metrics. The final PNG has been visually
