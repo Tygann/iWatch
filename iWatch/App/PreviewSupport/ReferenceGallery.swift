@@ -13,6 +13,10 @@ struct ReferenceGallery: View {
                 NavigationLink("Offline Library") { ReferenceLibraryView(state: .offline) }
                 NavigationLink("Loading Library") { ReferenceLibraryView(state: .loading) }
             }
+            Section("Developer Diagnostics") {
+                NavigationLink("iCloud Diagnostics") { ICloudSyncDetailsView() }
+                NavigationLink("Trakt Diagnostics") { SyncDiagnosticsView() }
+            }
             Section("Settings") {
                 NavigationLink("Notifications — Blocked") { ReferenceSettingsView(scenario: .notifications) }
                 NavigationLink("Trakt — Synced") { ReferenceSettingsView(scenario: .synced) }

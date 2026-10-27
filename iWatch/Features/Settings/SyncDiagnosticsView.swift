@@ -1,6 +1,7 @@
+#if DEBUG
 import SwiftUI
 
-/// Read-only technical information. Normal status and actions live on the Trakt screen.
+/// Developer-only technical information. User recovery starts from the relevant sync issue.
 struct SyncDiagnosticsView: View {
     @Environment(AppSession.self) private var session
 
@@ -45,3 +46,5 @@ struct SyncDiagnosticsView: View {
         .task { await session.refreshSyncDiagnostics() }
     }
 }
+
+#endif

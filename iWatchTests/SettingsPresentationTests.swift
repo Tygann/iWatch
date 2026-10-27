@@ -17,6 +17,21 @@ struct SettingsPresentationTests {
     }
 
     @Test
+    @MainActor
+    func supportReportExcludesFreeformPrivateContent() {
+        var diagnostics = SyncDiagnostics.empty
+        diagnostics.changes = [SyncPendingChange(id: UUID(), title: "PRIVATE_TITLE", action: "PRIVATE_ACTION",
+            createdAt: .now, state: .confirming, isOnThisDevice: true)]
+        let report = SyncSupportReport.make(version: "1", build: "42", connected: true,
+            cloudStatus: .failed("PRIVATE_ERROR token=secret"), lastCloudActivity: nil, diagnostics: diagnostics)
+        #expect(report.contains("Unconfirmed changes: 1"))
+        #expect(report.contains("iCloud status: Needs Attention"))
+        #expect(!report.contains("PRIVATE"))
+        #expect(!report.contains("secret"))
+        #expect(!report.contains(diagnostics.changes[0].id.uuidString))
+    }
+
+    @Test
     func homeSectionsFollowUserFacingHierarchy() {
         #expect(SettingsHomeSection.allCases.map(\.rawValue) == [
             "Preferences"

@@ -1,30 +1,34 @@
 import SwiftUI
 
-struct TraktAdvancedSettingsView: View {
+struct TraktTroubleshootingView: View {
     @Environment(AppSession.self) private var session
-    @State private var showDisconnect = false
 
     var body: some View {
         Form {
             Section {
+                Text("Start by checking your library. Review the result before trying another recovery option.")
                 NavigationLink("Check Library Data") { TraktLibraryCheckView() }
-                NavigationLink("Diagnostics") { SyncDiagnosticsView() }
-                NavigationLink("Move Pending Uploads") { TraktRecoveryView() }
-                NavigationLink("Rebuild from Trakt") { TraktRebuildView() }
+            }
+            if session.syncDiagnostics.changes.contains(where: { !$0.isOnThisDevice }) {
+                Section {
+                    NavigationLink("Continue on This Device") { TraktRecoveryView() }
+                } footer: {
+                    Text("Use this only after stopping sync on the device where these changes were made.")
+                }
             }
             Section {
-                Button("Disconnect Trakt", role: .destructive) { showDisconnect = true }
-                    .disabled(session.syncActionsUnavailable)
+                NavigationLink("Contact Support") { SyncSupportView() }
+            }
+            Section {
+                NavigationLink("Rebuild from Trakt") { TraktRebuildView() }
+            } header: {
+                Text("If the Problem Continues")
+            } footer: {
+                Text("Rebuilding replaces your iWatch library and discards unsynced changes. Contact support first if you’re unsure.")
             }
         }
-        .navigationTitle("Advanced")
+        .navigationTitle("Help with Changes")
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog("Disconnect Trakt?", isPresented: $showDisconnect, titleVisibility: .visible) {
-            Button("Disconnect Trakt", role: .destructive) { session.logoutTrakt() }
-        } message: {
-            Text("Your iWatch library will remain. Future changes won’t sync with Trakt until you reconnect.")
-        }
-        .task { await session.refreshSyncDiagnostics() }
     }
 }
 
@@ -78,7 +82,7 @@ struct TraktRecoveryView: View {
                 Section("Latest Result") { Text(result) }
             }
         }
-        .navigationTitle("Move Pending Uploads")
+        .navigationTitle("Continue on This Device")
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog("Move Uploads to This Device?", isPresented: $showConfirmation, titleVisibility: .visible) {
             Button("Move Pending Uploads") { Task { await session.recoverPendingUploads() } }

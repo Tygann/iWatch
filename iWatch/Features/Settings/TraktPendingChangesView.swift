@@ -42,8 +42,14 @@ struct TraktPendingChangesView: View {
                     }
                 }
             }
-            Section {
-                NavigationLink("Advanced") { TraktAdvancedSettingsView() }
+            if session.traktSyncPresentation.needsAttention {
+                Section {
+                    NavigationLink("Help with These Changes") { TraktTroubleshootingView() }
+                }
+            } else if session.syncDiagnostics.changes.contains(where: { !$0.isOnThisDevice }) {
+                Section {
+                    NavigationLink("Continue on This Device") { TraktRecoveryView() }
+                }
             }
         }
         .navigationTitle("Pending Changes")

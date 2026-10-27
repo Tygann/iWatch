@@ -3,6 +3,7 @@ import SwiftUI
 struct TraktSettingsView: View {
     @Environment(AppSession.self) private var session
     @State private var showImport = false
+    @State private var showDisconnect = false
 
     private var health: TraktSyncPresentation { session.traktSyncPresentation }
 
@@ -29,11 +30,7 @@ struct TraktSettingsView: View {
 
             if session.pendingTraktAccountKey != nil {
                 setupSection
-                Section {
-                    NavigationLink("Advanced") { TraktAdvancedSettingsView() }
-                }
-            } else if session.traktConnected {
-                LibraryIncludedSection(includesShowProgress: false)
+            } else if session.traktConnected && (!session.syncDiagnostics.changes.isEmpty || health.needsAttention) {
                 Section {
                     if !session.syncDiagnostics.changes.isEmpty || health.needsAttention {
                         NavigationLink {
@@ -43,11 +40,21 @@ struct TraktSettingsView: View {
                                 detail: session.syncDiagnostics.changes.isEmpty ? "Review" : session.syncDiagnostics.changes.count.formatted())
                         }
                     }
-                    NavigationLink("Advanced") { TraktAdvancedSettingsView() }
+                }
+            }
+            if session.traktConnected {
+                Section {
+                    Button("Disconnect Trakt", role: .destructive) { showDisconnect = true }
+                        .disabled(session.syncActionsUnavailable)
                 }
             }
         }
-        .navigationTitle("Trakt Sync")
+        .navigationTitle("Trakt")
+        .confirmationDialog("Disconnect Trakt?", isPresented: $showDisconnect, titleVisibility: .visible) {
+            Button("Disconnect Trakt", role: .destructive) { session.logoutTrakt() }
+        } message: {
+            Text("Your iWatch library will remain. Future changes won’t sync with Trakt until you reconnect.")
+        }
         .navigationBarTitleDisplayMode(.inline)
         .alert("Replace Library from Trakt?", isPresented: $showImport) {
             Button("Replace and Import", role: .destructive) { Task { await session.importTraktLibrary() } }
@@ -74,6 +81,7 @@ struct TraktSettingsView: View {
                 DisclosureGroup("Error Details") {
                     Text(error).font(.subheadline).textSelection(.enabled)
                 }
+                NavigationLink("Contact Support") { SyncSupportView() }
             }
         } header: {
             Text("Choose How to Start")

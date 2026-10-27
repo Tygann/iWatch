@@ -13,7 +13,6 @@ enum SettingsHomeSection: String, CaseIterable {
 struct SettingsView: View {
     @Environment(AppSession.self) private var session
     @Environment(AppRouter.self) private var router
-    @Environment(\.requestReview) private var requestReview
 
     @AppStorage("appTheme") private var appTheme: AppTheme = .system
 
@@ -22,9 +21,7 @@ struct SettingsView: View {
         Form {
             librarySection
             preferencesSection
-            syncSection
             appSection
-            storageAndDataSection
             #if DEBUG
             Section("Development") {
                 NavigationLink("Reference Gallery") { ReferenceGallery() }
@@ -87,72 +84,24 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Sync Section
-    private var syncSection: some View {
-        Section {
-            NavigationLink {
-                TraktSettingsView()
-            } label: {
-                SettingsNavigationLabel(
-                    title: "Trakt Sync",
-                    systemImage: "checkmark.arrow.trianglehead.clockwise",
-                    detail: traktStatus
-                )
-            }
-            .accessibilityIdentifier("settings-trakt-sync")
-        }
-    }
-
-    // MARK: - App Section
     private var appSection: some View {
         Section {
-            ShareLink(
-                item: AppDistributionPresentation.shareText,
-                preview: SharePreview("iWatch")
-            ) {
-                Label("Share iWatch", systemImage: "square.and.arrow.up")
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                requestReview()
-            } label: {
-                Label("Rate iWatch", systemImage: "star")
-            }
-            .buttonStyle(.plain)
-
             NavigationLink {
                 AboutView()
             } label: {
-                Label("About", systemImage: "info.circle")
+                Label("Help & About", systemImage: "questionmark.circle")
             }
+            .accessibilityIdentifier("settings-help")
         }
-    }
-
-    // MARK: - Storage & Data Section
-    private var storageAndDataSection: some View {
-        Section {
-            NavigationLink {
-                AdvancedSettingsView()
-            } label: {
-                Label("Storage & Data", systemImage: "internaldrive")
-            }
-        }
-    }
-
-    // MARK: - Helpers
-    private var traktStatus: String? {
-        let health = session.traktSyncPresentation
-        if health.needsAttention { return "Needs Attention" }
-        if health.isWorking { return health.title }
-        return session.traktConnected ? nil : "Not Connected"
     }
 
     private var cloudStatus: String? {
+        if session.traktSyncPresentation.needsAttention { return "Needs Attention" }
+        if session.traktSyncPresentation.isWorking { return session.traktSyncPresentation.title }
         switch session.cloudSyncStatus {
-        case .importing, .exporting: session.cloudSyncStatus.title
-        case .failed, .unavailable, .timedOut: "Needs Attention"
-        default: nil
+        case .importing, .exporting: return session.cloudSyncStatus.title
+        case .failed, .unavailable, .timedOut: return "Needs Attention"
+        default: return nil
         }
     }
 
@@ -179,7 +128,7 @@ private struct SettingsLibraryLabel: View {
             }
             VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
                 Text("Your Library").font(.headline)
-                Text("iCloud sync").font(.subheadline).foregroundStyle(.secondary)
+                Text("Library & sync").font(.subheadline).foregroundStyle(.secondary)
                 if let status {
                     Text(status).font(.caption).foregroundStyle(.secondary)
                 }

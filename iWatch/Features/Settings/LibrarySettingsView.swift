@@ -20,15 +20,37 @@ struct LibrarySettingsView: View {
                         if isWorking { ProgressView().accessibilityLabel(session.cloudSyncStatus.title) }
                     }
                 }
+                if needsAttention {
+                    Link("Get Help with iCloud", destination: URL(string: "https://support.apple.com/guide/icloud/set-up-icloud-on-your-devices-mmfc0f1e2a/icloud")!)
+                }
             } header: {
                 Text("iCloud")
             } footer: {
                 Text("Your library syncs automatically across devices using the same Apple Account.")
             }
+            Section {
+                NavigationLink {
+                    TraktSettingsView()
+                } label: {
+                    SettingsNavigationLabel(title: "Trakt", systemImage: "checkmark.arrow.trianglehead.clockwise",
+                        detail: traktDetail)
+                }
+                .accessibilityIdentifier("settings-trakt-sync")
+            }
             LibraryIncludedSection()
+            Section {
+                NavigationLink("Manage Data") { AdvancedSettingsView() }
+            }
         }
         .navigationTitle("Your Library")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var traktDetail: String {
+        let health = session.traktSyncPresentation
+        if health.needsAttention { return "Needs Attention" }
+        if health.isWorking { return health.title }
+        return session.traktConnected ? "Connected" : "Not Connected"
     }
 
     private var capsuleTitle: String {
@@ -45,7 +67,7 @@ struct LibrarySettingsView: View {
             session.lastCloudActivityAt.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "No completed transfers recorded on this device."
         case .importing: "Downloading library changes."
         case .exporting: "Uploading library changes."
-        case .failed, .unavailable: "Check your connection and iCloud settings."
+        case let .failed(message), let .unavailable(message): message
         case .timedOut: "An upload hasn’t been confirmed yet."
         }
     }
@@ -65,6 +87,7 @@ struct LibrarySettingsView: View {
     }
 }
 
+#if DEBUG
 struct ICloudSyncDetailsView: View {
     @Environment(AppSession.self) private var session
 
@@ -109,20 +132,19 @@ struct ICloudSyncDetailsView: View {
     }
 }
 
+#endif
+
 struct LibraryIncludedSection: View {
     @Environment(AppSession.self) private var session
     @Environment(AppContainer.self) private var container
     @State private var counts: LibraryCounts?
     @State private var countsFailed = false
-    var includesShowProgress = true
 
     var body: some View {
-        Section("Included") {
+        Section("Library") {
             includedRow("Watchlist", symbol: "bookmark", detail: counts?.watchlistDescription)
             includedRow("Watched History", symbol: "clock", detail: counts?.historyDescription)
-            if includesShowProgress {
-                includedRow("Show Progress", symbol: "play.rectangle", detail: counts?.progressDescription)
-            }
+            includedRow("Show Progress", symbol: "play.rectangle", detail: counts?.progressDescription)
             if countsFailed {
                 Button("Try Again") { Task { await loadCounts() } }
             }

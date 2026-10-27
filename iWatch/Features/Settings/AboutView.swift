@@ -1,8 +1,10 @@
 import SwiftUI
+import StoreKit
 
 // MARK: - About Screen
 
 struct AboutView: View {
+    @Environment(\.requestReview) private var requestReview
     private var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
     }
@@ -14,6 +16,18 @@ struct AboutView: View {
     var body: some View {
         List {
             appIdentity
+
+            Section("Help") {
+                NavigationLink("Contact Support") { SyncSupportView() }
+            }
+            Section {
+                ShareLink(item: AppDistributionPresentation.shareText) {
+                    Label("Share iWatch", systemImage: "square.and.arrow.up")
+                }
+                Button { requestReview() } label: {
+                    Label("Rate iWatch", systemImage: "star")
+                }
+            }
 
             Section {
                 Link(destination: URL(string: "https://www.themoviedb.org/")!) {
@@ -41,13 +55,9 @@ struct AboutView: View {
                 Text("iWatch uses Trakt but is not endorsed or certified by Trakt.")
             }
 
-            Section("Privacy & Support") {
+            Section("Privacy") {
                 Link(destination: URL(string: "https://tylerkeegan.com/iwatch/privacy/")!) {
                     Label("Privacy Policy", systemImage: "hand.raised")
-                }
-
-                Link(destination: URL(string: "https://tylerkeegan.com/iwatch/support/")!) {
-                    Label("Support", systemImage: "questionmark.circle")
                 }
             }
 
@@ -58,32 +68,23 @@ struct AboutView: View {
             }
             .listRowBackground(Color.clear)
         }
-        .navigationTitle("About")
+        .navigationTitle("Help & About")
         .navigationBarTitleDisplayMode(.inline)
     }
 
     private var appIdentity: some View {
         Section {
-            VStack(spacing: 12) {
+            HStack(spacing: AppSpacing.medium) {
                 Image("iWatchLogo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 96, height: 96)
+                    .resizable().scaledToFit().frame(width: 48, height: 48)
                     .accessibilityHidden(true)
-
-                Text("iWatch")
-                    .font(.largeTitle.bold())
-
-                Text("Track the movies and shows you care about.")
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-
-                Text("Version \(version) (\(build))")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
+                    Text("iWatch").font(.headline)
+                    Text("Version \(version) (\(build))")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .padding(.vertical, AppSpacing.small)
             .accessibilityElement(children: .combine)
         }
         .listRowBackground(Color.clear)
@@ -94,7 +95,6 @@ struct AboutView: View {
 // MARK: - Previews
 
 #Preview {
-    NavigationStack {
-        AboutView()
-    }
+    let container = AppContainer.preview()
+    NavigationStack { AboutView() }.environment(container.session)
 }

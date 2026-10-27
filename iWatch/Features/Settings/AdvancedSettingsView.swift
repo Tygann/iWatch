@@ -46,10 +46,6 @@ struct AdvancedSettingsView: View {
                 }
             }
 
-            Section("Diagnostics") {
-                NavigationLink("iCloud Diagnostics") { ICloudSyncDetailsView() }
-            }
-
             Section {
                 if canStartReset {
                     Button(role: .destructive) {
@@ -68,7 +64,7 @@ struct AdvancedSettingsView: View {
 
             resetStatusSection
         }
-        .navigationTitle("Storage & Data")
+        .navigationTitle("Manage Data")
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog(
             "Erase all iWatch data?",
