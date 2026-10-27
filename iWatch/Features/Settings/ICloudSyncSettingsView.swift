@@ -7,13 +7,7 @@ struct ICloudSyncSettingsView: View {
         Form {
             Section {
                 LabeledContent("iCloud Sync") {
-                    Text(capsuleTitle)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(needsAttention ? Color.orange : Color.accentColor)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background((needsAttention ? Color.orange : Color.accentColor).opacity(0.12), in: Capsule())
-                        .fixedSize(horizontal: false, vertical: true)
+                    SettingsCapsule(title: capsuleTitle, tint: needsAttention ? .orange : .accentColor)
                 }
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {

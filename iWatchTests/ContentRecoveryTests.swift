@@ -17,18 +17,18 @@ struct ContentRecoveryTests {
         let container = AppContainer.preview()
         let seeded = try await container.libraryRepository.movieLibraryItems()
         #expect(!seeded.isEmpty)
-        var fails = false
+        let fails = TestValue(false)
         let model = MoviesScreenModel(repository: container.libraryRepository, session: container.session,
             loadItems: { _, _ in
-                if fails { throw URLError(.notConnectedToInternet) }
+                if fails.value { throw URLError(.notConnectedToInternet) }
                 return seeded
             })
         await model.load(revision: 0)
-        fails = true
+        fails.value = true
         await model.load(revision: 1)
         #expect(model.items == seeded)
         #expect(model.errorText != nil)
-        fails = false
+        fails.value = false
         await model.load(revision: 1)
         #expect(model.errorText == nil)
     }
@@ -38,18 +38,18 @@ struct ContentRecoveryTests {
         let container = AppContainer.preview()
         let seeded = try await container.libraryRepository.showLibrarySnapshot(revision: 0)
         #expect(!seeded.all.isEmpty)
-        var failure: Error?
+        let failure = TestValue<Error?>(nil)
         let model = ShowsScreenModel(repository: container.libraryRepository, session: container.session,
             loadSnapshot: { _, _ in
-                if let failure { throw failure }
+                if let error = failure.value { throw error }
                 return seeded
             })
         await model.load(revision: 0)
-        failure = CancellationError()
+        failure.value = CancellationError()
         await model.load(revision: 1)
         #expect(model.snapshot == seeded)
         #expect(model.errorText == nil)
-        failure = URLError(.timedOut)
+        failure.value = URLError(.timedOut)
         await model.load(revision: 1)
         #expect(model.snapshot == seeded)
         #expect(model.errorText != nil)
@@ -74,15 +74,15 @@ struct ContentRecoveryTests {
     @Test
     func failedSearchRetryKeepsOnlyResultsForThatQuery() async throws {
         let container = AppContainer.preview()
-        var fails = false
+        let fails = TestValue(false)
         let item = SearchItem(id: 1, kind: .movie, title: "Movie", posterPath: nil, year: nil)
         let model = SearchScreenModel(repository: container.libraryRepository, regionCode: "US", search: { _ in
-            if fails { throw URLError(.timedOut) }
+            if fails.value { throw URLError(.timedOut) }
             return [item]
         })
         model.query = "movie"
         await model.performSearch()
-        fails = true
+        fails.value = true
         await model.performSearch()
         #expect(model.results == [item])
         #expect(model.errorText != nil)
@@ -90,4 +90,10 @@ struct ContentRecoveryTests {
         await model.performSearch()
         #expect(model.results.isEmpty)
     }
+}
+
+@MainActor
+final class TestValue<Value> {
+    var value: Value
+    init(_ value: Value) { self.value = value }
 }

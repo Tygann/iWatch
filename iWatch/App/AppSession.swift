@@ -75,6 +75,18 @@ final class AppSession {
     private var pendingOAuthState: String?
     private var pendingOAuthVerifier: String?
 
+    #if DEBUG
+    var isReferencePreview = false
+    #endif
+
+    var isReadOnlyPreview: Bool {
+        #if DEBUG
+        isReferencePreview
+        #else
+        false
+        #endif
+    }
+
     var traktIsConnecting = false
     var traktLastError: String?
     var traktConnected = false
@@ -462,6 +474,7 @@ final class AppSession {
     }
 
     func refreshSyncDiagnostics() async {
+        guard !isReadOnlyPreview else { return }
         let account = TraktLinkStore.activeAccountKey
         let diagnostics = await syncEngine.diagnostics()
         guard TraktLinkStore.activeAccountKey == account else { return }
@@ -639,6 +652,7 @@ final class AppSession {
     // MARK: Authentication State
 
     func refreshAuthState() async -> Bool {
+        if isReadOnlyPreview { return traktConnected }
         do {
             let status = try await trakt.sessionStatus()
             traktConnectionInterrupted = false

@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import SwiftData
+import UserNotifications
 
 // MARK: - Dependency Container
 
@@ -37,7 +38,8 @@ final class AppContainer {
          peopleRepository: PeopleRepository,
          syncEngine: SyncEngine,
          session: AppSession,
-         router: AppRouter) {
+         router: AppRouter,
+         notificationCoordinator: ReleaseNotificationCoordinator? = nil) {
         self.config = config
         self.apiClient = apiClient
         self.cacheService = cacheService
@@ -49,7 +51,7 @@ final class AppContainer {
         self.libraryRepository = libraryRepository
         self.contentRepository = contentRepository
         self.peopleRepository = peopleRepository
-        self.releaseNotificationCoordinator = ReleaseNotificationCoordinator(repository: libraryRepository)
+        self.releaseNotificationCoordinator = notificationCoordinator ?? ReleaseNotificationCoordinator(repository: libraryRepository)
         self.syncEngine = syncEngine
         self.session = session
         self.router = router
@@ -252,7 +254,7 @@ final class AppContainer {
         )
     }
 
-    static func preview(seedCatalog: Bool = true) -> AppContainer {
+    static func preview(seedCatalog: Bool = true, notificationStatus: UNAuthorizationStatus? = nil) -> AppContainer {
         let config = AppConfig.load()
         let cacheService = CacheService.default
         let apiClient = APIClient.makeDefault(cacheService: cacheService)
@@ -300,7 +302,11 @@ final class AppContainer {
             peopleRepository: peopleRepository,
             syncEngine: syncEngine,
             session: session,
-            router: router
+            router: router,
+            notificationCoordinator: notificationStatus.map { status in
+                ReleaseNotificationCoordinator(repository: libraryRepository,
+                    readAuthorization: { status }, requestAuthorization: { false })
+            }
         )
         if seedCatalog {
             seedPreviewCatalog(into: persistence)

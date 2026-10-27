@@ -68,12 +68,12 @@ extension AppSession {
     }
 
     var syncActionsUnavailable: Bool {
-        isSyncing || isMaintainingSync || isErasingAllData || traktIsConnecting
+        isSyncing || isMaintainingSync || isErasingAllData || traktIsConnecting || isReadOnlyPreview
     }
 }
 
 /// Keep status and its action together; stack the accessory at accessibility sizes.
-struct SyncSettingsRow<Accessory: View>: View {
+struct SettingsStatusRow<Accessory: View>: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     let title: String
     let detail: String
@@ -84,12 +84,12 @@ struct SyncSettingsRow<Accessory: View>: View {
     var body: some View {
         Group {
             if typeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: AppSpacing.small) {
                     copy
                     accessory()
                 }
             } else {
-                HStack(spacing: 12) {
+                HStack(spacing: AppSpacing.medium) {
                     copy
                     Spacer(minLength: 8)
                     accessory()
@@ -119,7 +119,7 @@ struct SyncSettingsRow<Accessory: View>: View {
     }
 
     private var statusCopy: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
             Text(title).foregroundStyle(.primary)
             if !detail.isEmpty {
                 Text(detail).font(.caption).foregroundStyle(.secondary)
@@ -139,7 +139,7 @@ struct SyncDateRow: View {
 
     var body: some View {
         if typeSize.isAccessibilitySize {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
                 Text(title)
                 Text(date.formatted(date: .abbreviated, time: .shortened)).foregroundStyle(.secondary)
             }

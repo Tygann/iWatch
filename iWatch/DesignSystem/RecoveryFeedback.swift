@@ -6,15 +6,15 @@ struct RecoveryNotice: View {
     let action: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: AppSpacing.small) {
             Label(message, systemImage: "exclamationmark.circle")
                 .font(.subheadline)
                 .fixedSize(horizontal: false, vertical: true)
             Button(actionTitle, action: action).frame(minHeight: 44)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(.background, in: RoundedRectangle(cornerRadius: 12))
+        .padding(AppSpacing.large)
+        .background(.background, in: RoundedRectangle(cornerRadius: AppRadius.control))
         .padding(.horizontal)
     }
 }

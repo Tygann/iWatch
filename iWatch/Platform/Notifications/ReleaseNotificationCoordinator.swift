@@ -28,22 +28,38 @@ final class ReleaseNotificationCoordinator {
     private static let managedPrefix = "release."
     private let repository: LibraryRepository
     private let center: UNUserNotificationCenter
+    private let readAuthorization: @MainActor () async -> UNAuthorizationStatus
+    private let requestAuthorization: @MainActor () async throws -> Bool
 
     private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
     private(set) var scheduledCount = 0
 
     init(
         repository: LibraryRepository,
-        center: UNUserNotificationCenter = .current()
+        center: UNUserNotificationCenter = .current(),
+        readAuthorization: (@MainActor () async -> UNAuthorizationStatus)? = nil,
+        requestAuthorization: (@MainActor () async throws -> Bool)? = nil
     ) {
         self.repository = repository
         self.center = center
+        self.readAuthorization = readAuthorization ?? { await center.notificationSettings().authorizationStatus }
+        self.requestAuthorization = requestAuthorization ?? { try await center.requestAuthorization(options: [.alert, .badge, .sound]) }
     }
 
     func refreshStatus() async {
-        authorizationStatus = await center.notificationSettings().authorizationStatus
+        authorizationStatus = await readAuthorization()
         let pending = await center.pendingNotificationRequests()
         scheduledCount = pending.filter { $0.identifier.hasPrefix(Self.managedPrefix) }.count
+    }
+
+    /// Permission and the in-app reminder preference are separate choices.
+    func requestPermission() async {
+        guard await readAuthorization() == .notDetermined else {
+            await refreshStatus()
+            return
+        }
+        _ = try? await requestAuthorization()
+        await refreshStatus()
     }
 
     func setEnabled(_ enabled: Bool) async -> Bool {
@@ -53,11 +69,11 @@ final class ReleaseNotificationCoordinator {
             return false
         }
 
-        let settings = await center.notificationSettings()
-        switch settings.authorizationStatus {
+        let status = await readAuthorization()
+        switch status {
         case .notDetermined:
             do {
-                guard try await center.requestAuthorization(options: [.alert, .badge, .sound]) else {
+                guard try await requestAuthorization() else {
                     await refreshStatus()
                     return false
                 }
@@ -85,10 +101,8 @@ final class ReleaseNotificationCoordinator {
             return
         }
 
-        let settings = await center.notificationSettings()
-        guard settings.authorizationStatus == .authorized ||
-                settings.authorizationStatus == .provisional ||
-                settings.authorizationStatus == .ephemeral else {
+        let status = await readAuthorization()
+        guard status == .authorized || status == .provisional || status == .ephemeral else {
             await refreshStatus()
             return
         }

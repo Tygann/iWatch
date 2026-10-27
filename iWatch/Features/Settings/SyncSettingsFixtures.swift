@@ -8,7 +8,10 @@ extension AppSession {
         guard arguments.contains("UITEST_MODE"),
               let index = arguments.firstIndex(of: "UITEST_SYNC_STATE"),
               arguments.indices.contains(index + 1) else { return }
-        let state = arguments[index + 1]
+        applySyncSettingsFixture(arguments[index + 1])
+    }
+
+    func applySyncSettingsFixture(_ state: String) {
         traktConnected = true
         traktLastError = nil
         isSyncing = state == "syncing"

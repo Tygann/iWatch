@@ -304,7 +304,10 @@ final class iWatchUITests: XCTestCase {
     private func verifyRetainedLibraryError(accessibility: Bool) {
         let app = XCUIApplication()
         app.launchArguments += ["UITEST_MODE", "UITEST_RETAINED_LIBRARY_ERROR", "-appTheme", accessibility ? "2" : "1"]
-        if accessibility { app.launchArguments.append("UITEST_ACCESSIBILITY_TEXT") }
+        if accessibility {
+            app.launchArguments += ["UITEST_ACCESSIBILITY_TEXT", "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"]
+        }
         app.launch()
         let retry = app.buttons["Try Again"]
         XCTAssertTrue(retry.waitForExistence(timeout: 5))
@@ -314,6 +317,42 @@ final class iWatchUITests: XCTestCase {
         reveal(movie, in: app)
         XCTAssertTrue(movie.exists)
         XCTAssertFalse(app.staticTexts["Unable to Load Movies"].exists)
+    }
+
+    @MainActor
+    func testReferenceGalleryStandard() throws { verifyReferenceGallery(accessibility: false) }
+
+    @MainActor
+    func testReferenceGalleryAccessibility() throws { verifyReferenceGallery(accessibility: true) }
+
+    @MainActor
+    private func verifyReferenceGallery(accessibility: Bool) {
+        let app = XCUIApplication()
+        app.launchArguments += ["UITEST_MODE", "-appTheme", accessibility ? "2" : "1"]
+        if accessibility {
+            app.launchArguments += ["UITEST_ACCESSIBILITY_TEXT", "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"]
+        }
+        app.launch()
+        let settings = app.buttons["Settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        settings.tap()
+        let gallery = app.buttons["Reference Gallery"]
+        reveal(gallery, in: app)
+        gallery.tap()
+        XCTAssertTrue(app.navigationBars["Reference Gallery"].waitForExistence(timeout: 5))
+        let offline = app.buttons["Offline Library"]
+        reveal(offline, in: app)
+        offline.tap()
+        XCTAssertTrue(app.buttons["Try Again"].waitForExistence(timeout: 5))
+        capture(app, "Gallery offline library - \(accessibility)")
+        app.navigationBars["Movies"].buttons.firstMatch.tap()
+        let notifications = app.buttons["Notifications — Blocked"]
+        reveal(notifications, in: app)
+        notifications.tap()
+        XCTAssertTrue(app.navigationBars["Notifications"].waitForExistence(timeout: 5))
+        capture(app, "Notification access - \(accessibility)")
+        XCTAssertFalse(app.buttons["Notification Settings"].isEnabled)
     }
 
     @MainActor

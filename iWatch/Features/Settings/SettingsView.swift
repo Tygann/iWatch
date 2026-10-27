@@ -25,6 +25,11 @@ struct SettingsView: View {
             syncSection
             appSection
             storageAndDataSection
+            #if DEBUG
+            Section("Development") {
+                NavigationLink("Reference Gallery") { ReferenceGallery() }
+            }
+            #endif
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)

@@ -195,7 +195,7 @@ final class MoviesScreenModel {
             session.markLibraryUpdated(syncIfConnected: true)
             await load(revision: session.libraryRevision)
         } catch {
-            errorText = UserFacingError.message(for: error, context: .library)
+            errorText = UserFacingError.message(for: error, context: .action)
         }
     }
 
@@ -206,7 +206,7 @@ final class MoviesScreenModel {
                 session.markLibraryUpdated(syncIfConnected: true)
             await load(revision: session.libraryRevision)
             } catch {
-                errorText = UserFacingError.message(for: error, context: .library)
+                errorText = UserFacingError.message(for: error, context: .action)
             }
         }
     }

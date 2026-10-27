@@ -6,6 +6,8 @@ import UserNotifications
 struct ReleaseNotificationsSettingsView: View {
     @Environment(AppContainer.self) private var container
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var settingsOpenFailed = false
 
     @AppStorage(ReleaseNotificationPreferences.enabledKey) private var isEnabled = false
     @AppStorage(ReleaseNotificationPreferences.episodesEnabledKey) private var episodesEnabled = true
@@ -21,22 +23,40 @@ struct ReleaseNotificationsSettingsView: View {
     var body: some View {
         Form {
             Section {
+                SettingsStatusRow(title: "System Notifications", detail: permission.detail, symbol: "bell.badge",
+                                  needsAttention: coordinator.authorizationStatus == .denied) {
+                    if isUpdatingAuthorization {
+                        ProgressView().accessibilityLabel("Updating notification access")
+                    } else if permission.action != .none {
+                        Button(permission.action == .allow ? "Allow" : "Settings") {
+                            if permission.action == .allow {
+                                isUpdatingAuthorization = true
+                                Task {
+                                    await coordinator.requestPermission()
+                                    isUpdatingAuthorization = false
+                                }
+                            } else { openNotificationSettings() }
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel(permission.action == .allow ? "Allow Notifications" : "Notification Settings")
+                        .frame(minHeight: 44)
+                        .disabled(container.session.isReadOnlyPreview)
+                    }
+                }
                 Toggle("Release Notifications", isOn: Binding(
                     get: { isEnabled },
                     set: updateEnabled
                 ))
-                .disabled(isUpdatingAuthorization)
+                .disabled(isUpdatingAuthorization || container.session.isReadOnlyPreview)
 
-                if coordinator.authorizationStatus == .denied {
-                    Button("Open System Settings") {
-                        guard let url = URL(string: UIApplication.openNotificationSettingsURLString) else { return }
-                        openURL(url)
-                    }
-                }
+
             } footer: {
                 Text("Get reminders for releases already in your iWatch library.")
             }
 
+            if settingsOpenFailed {
+                Section { Text("iOS Settings couldn’t be opened. Open Settings > Notifications > iWatch.") }
+            }
             Section("Releases") {
                 Toggle("TV Episodes", isOn: $episodesEnabled)
                 Toggle("Movies", isOn: $moviesEnabled)
@@ -63,14 +83,28 @@ struct ReleaseNotificationsSettingsView: View {
                 }
             }
         }
+        .disabled(container.session.isReadOnlyPreview)
         .navigationTitle("Notifications")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await coordinator.refreshStatus()
         }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active, !container.session.isReadOnlyPreview else { return }
+            Task { await coordinator.reconcile() }
+        }
         .onChange(of: episodesEnabled) { _, _ in reconcile() }
         .onChange(of: moviesEnabled) { _, _ in reconcile() }
         .onChange(of: timing) { _, _ in reconcile() }
+    }
+
+    private var permission: NotificationPermissionPresentation {
+        .resolve(coordinator.authorizationStatus)
+    }
+
+    private func openNotificationSettings() {
+        guard let url = URL(string: UIApplication.openNotificationSettingsURLString) else { return }
+        openURL(url) { accepted in settingsOpenFailed = !accepted }
     }
 
     private func updateEnabled(_ newValue: Bool) {
@@ -85,7 +119,7 @@ struct ReleaseNotificationsSettingsView: View {
     }
 
     private func reconcile() {
-        guard isEnabled else { return }
+        guard isEnabled, !container.session.isReadOnlyPreview else { return }
         Task { await coordinator.reconcile() }
     }
 }

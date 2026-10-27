@@ -83,7 +83,7 @@ struct TraktStatusRow: View {
 
     var body: some View {
         let health = session.traktSyncPresentation
-        SyncSettingsRow(title: title, detail: detail, symbol: health.symbol, needsAttention: health.needsAttention) {
+        SettingsStatusRow(title: title, detail: detail, symbol: health.symbol, needsAttention: health.needsAttention) {
             if health.isWorking {
                 ProgressView().accessibilityLabel(health.title)
             } else if health.action != .setup {
@@ -125,13 +125,7 @@ struct TraktSyncActionButton: View {
                 Image(systemName: "arrow.triangle.2.circlepath")
                     .frame(minWidth: 44, minHeight: 44)
             } else if session.traktSyncPresentation.action == .connect {
-                Text("Connect")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.accentColor)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color.accentColor.opacity(0.12), in: Capsule())
-                    .fixedSize()
+                SettingsCapsule(title: "Connect")
                     .frame(minWidth: 44, minHeight: 44)
                     .contentShape(Rectangle())
             } else {
