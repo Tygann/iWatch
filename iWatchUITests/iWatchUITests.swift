@@ -122,7 +122,8 @@ final class iWatchUITests: XCTestCase {
         capture(app, "Library settings home - " + contentSize)
         reveal(cloud, in: app)
         cloud.tap()
-        XCTAssertTrue(app.navigationBars["Library & iCloud"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Your Library"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["iCloud"].exists)
         XCTAssertFalse(app.buttons["Rebuild from Trakt"].exists)
         capture(app, "iCloud - " + contentSize)
         let cloudDetails = app.buttons["Details"]
@@ -134,7 +135,7 @@ final class iWatchUITests: XCTestCase {
         let included = app.staticTexts["Included"]
         reveal(included, in: app)
         XCTAssertTrue(included.exists)
-        app.navigationBars["Library & iCloud"].buttons.firstMatch.tap()
+        app.navigationBars["Your Library"].buttons.firstMatch.tap()
         let trakt = app.buttons["settings-trakt-sync"]
         reveal(trakt, in: app)
         trakt.tap()

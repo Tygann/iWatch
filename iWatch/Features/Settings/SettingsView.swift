@@ -178,8 +178,8 @@ private struct SettingsLibraryLabel: View {
                     .accessibilityHidden(true)
             }
             VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
-                Text("iWatch Library").font(.headline)
-                Text("Library & iCloud").font(.subheadline).foregroundStyle(.secondary)
+                Text("Your Library").font(.headline)
+                Text("iCloud sync").font(.subheadline).foregroundStyle(.secondary)
                 if let status {
                     Text(status).font(.caption).foregroundStyle(.secondary)
                 }

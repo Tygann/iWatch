@@ -23,6 +23,8 @@ struct LibrarySettingsView: View {
                 }
                 .padding(.vertical, 4)
                 NavigationLink("Details") { ICloudSyncDetailsView() }
+            } header: {
+                Text("iCloud")
             } footer: {
                 Text("Your library syncs automatically across devices using the same Apple Account.")
             }
@@ -32,7 +34,7 @@ struct LibrarySettingsView: View {
                 Label("Show Progress", systemImage: "play.rectangle")
             }
         }
-        .navigationTitle("Library & iCloud")
+        .navigationTitle("Your Library")
         .navigationBarTitleDisplayMode(.inline)
     }
 
