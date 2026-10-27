@@ -28,7 +28,7 @@ struct ReleaseNotificationsSettingsView: View {
                     if isUpdatingAuthorization {
                         ProgressView().accessibilityLabel("Updating notification access")
                     } else if permission.action != .none {
-                        Button(permission.action == .allow ? "Allow" : "Settings") {
+                        Button {
                             if permission.action == .allow {
                                 isUpdatingAuthorization = true
                                 Task {
@@ -36,10 +36,13 @@ struct ReleaseNotificationsSettingsView: View {
                                     isUpdatingAuthorization = false
                                 }
                             } else { openNotificationSettings() }
+                        } label: {
+                            SettingsCapsule(title: permission.action == .allow ? "Allow" : "Settings")
+                                .frame(minWidth: 44, minHeight: 44)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.borderless)
                         .accessibilityLabel(permission.action == .allow ? "Allow Notifications" : "Notification Settings")
-                        .frame(minHeight: 44)
                         .disabled(container.session.isReadOnlyPreview)
                     }
                 }
