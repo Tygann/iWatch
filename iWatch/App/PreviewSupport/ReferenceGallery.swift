@@ -92,7 +92,7 @@ private struct ReferenceSettingsView: View {
         Group {
             switch scenario {
             case .notifications: ReleaseNotificationsSettingsView()
-            case .cloud: ICloudSyncSettingsView()
+            case .cloud: LibrarySettingsView()
             default: TraktSettingsView()
             }
         }

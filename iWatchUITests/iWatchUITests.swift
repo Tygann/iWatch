@@ -116,10 +116,13 @@ final class iWatchUITests: XCTestCase {
     @MainActor
     private func verifySyncDiagnostics(contentSize: String) throws {
         let app = launchSyncSettings(contentSize: contentSize, state: "confirmation")
-        let cloud = app.buttons.matching(NSPredicate(format: "label == 'iCloud' OR label BEGINSWITH 'iCloud,'")).firstMatch
+        let cloud = app.buttons["settings-library"]
+        XCTAssertTrue(cloud.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Sync"].exists)
+        capture(app, "Library settings home - " + contentSize)
         reveal(cloud, in: app)
         cloud.tap()
-        XCTAssertTrue(app.navigationBars["iCloud"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Library & iCloud"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["Rebuild from Trakt"].exists)
         capture(app, "iCloud - " + contentSize)
         let cloudDetails = app.buttons["Details"]
@@ -131,11 +134,11 @@ final class iWatchUITests: XCTestCase {
         let included = app.staticTexts["Included"]
         reveal(included, in: app)
         XCTAssertTrue(included.exists)
-        app.navigationBars["iCloud"].buttons.firstMatch.tap()
-        let trakt = app.buttons.matching(NSPredicate(format: "label == 'Trakt' OR label BEGINSWITH 'Trakt,'")).firstMatch
+        app.navigationBars["Library & iCloud"].buttons.firstMatch.tap()
+        let trakt = app.buttons["settings-trakt-sync"]
         reveal(trakt, in: app)
         trakt.tap()
-        XCTAssertTrue(app.navigationBars["Trakt"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Trakt Sync"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Waiting for Confirmation"].exists)
         reveal(app.buttons["Check Again"], in: app)
         XCTAssertTrue(app.buttons["Check Again"].exists)
@@ -200,10 +203,10 @@ final class iWatchUITests: XCTestCase {
     func testSyncNormalOfflineAndSetupStates() throws {
         for state in ["normal", "offline", "syncing", "setup"] {
             let app = launchSyncSettings(contentSize: "UICTContentSizeCategoryL", state: state)
-            let trakt = app.buttons.matching(NSPredicate(format: "label == 'Trakt' OR label BEGINSWITH 'Trakt,'")).firstMatch
+            let trakt = app.buttons["settings-trakt-sync"]
             reveal(trakt, in: app)
             trakt.tap()
-            XCTAssertTrue(app.navigationBars["Trakt"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.navigationBars["Trakt Sync"].waitForExistence(timeout: 5))
             let expected = ["normal": "Trakt", "offline": "Connection Interrupted",
                             "syncing": "Syncing…", "setup": "Finish Setup"][state]!
             if state == "normal" {
@@ -265,14 +268,15 @@ final class iWatchUITests: XCTestCase {
 
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Preferences"].exists)
-        XCTAssertTrue(app.staticTexts["Sync"].exists)
+        XCTAssertFalse(app.staticTexts["Sync"].exists)
+        XCTAssertTrue(app.buttons["settings-library"].exists)
 
-        app.buttons["Trakt, Not Connected"].tap()
-        XCTAssertTrue(app.navigationBars["Trakt"].waitForExistence(timeout: 5))
+        app.buttons["settings-trakt-sync"].tap()
+        XCTAssertTrue(app.navigationBars["Trakt Sync"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Connect Trakt"].exists)
         capture(app, "Disconnected Trakt")
 
-        app.navigationBars["Trakt"].buttons.firstMatch.tap()
+        app.navigationBars["Trakt Sync"].buttons.firstMatch.tap()
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Appearance,'")).firstMatch.tap()
         XCTAssertTrue(app.buttons["System"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Light"].exists)
@@ -288,7 +292,7 @@ final class iWatchUITests: XCTestCase {
         let settings = app.buttons["Settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
         settings.tap()
-        let trakt = app.buttons["Trakt, Not Connected"]
+        let trakt = app.buttons["settings-trakt-sync"]
         reveal(trakt, in: app)
         trakt.tap()
         let connect = app.buttons["Connect Trakt"]

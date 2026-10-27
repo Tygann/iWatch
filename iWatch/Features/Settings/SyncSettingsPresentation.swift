@@ -10,6 +10,11 @@ struct TraktSyncPresentation: Equatable {
     let isWorking: Bool
     let action: Action
 
+    var rowTitle: String {
+        if action == .connect, !isWorking, !needsAttention { return "Trakt" }
+        return title == "Sync Complete" ? "Trakt" : title
+    }
+
     static func resolve(connected: Bool, connecting: Bool, settingUp: Bool, syncing: Bool,
                         progress: SyncProgress, diagnostics: SyncDiagnostics, error: String?, maintenanceTitle: String? = nil) -> Self {
         if connecting {

@@ -36,7 +36,7 @@ struct TraktSettingsView: View {
                 }
             }
         }
-        .navigationTitle("Trakt")
+        .navigationTitle("Trakt Sync")
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog("Disconnect Trakt?", isPresented: $showDisconnect, titleVisibility: .visible) {
             Button("Disconnect Trakt", role: .destructive) { session.logoutTrakt() }
@@ -83,18 +83,13 @@ struct TraktStatusRow: View {
 
     var body: some View {
         let health = session.traktSyncPresentation
-        SettingsStatusRow(title: title, detail: detail, symbol: health.symbol, needsAttention: health.needsAttention) {
+        SettingsStatusRow(title: health.rowTitle, detail: detail, symbol: health.symbol, needsAttention: health.needsAttention) {
             if health.isWorking {
                 ProgressView().accessibilityLabel(health.title)
             } else if health.action != .setup {
                 TraktSyncActionButton()
             }
         }
-    }
-
-    private var title: String {
-        let health = session.traktSyncPresentation
-        return health.title == "Sync Complete" ? "Trakt" : health.title
     }
 
     private var detail: String {

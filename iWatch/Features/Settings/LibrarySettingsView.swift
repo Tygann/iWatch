@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct ICloudSyncSettingsView: View {
+struct LibrarySettingsView: View {
     @Environment(AppSession.self) private var session
 
     var body: some View {
@@ -32,7 +32,7 @@ struct ICloudSyncSettingsView: View {
                 Label("Show Progress", systemImage: "play.rectangle")
             }
         }
-        .navigationTitle("iCloud")
+        .navigationTitle("Library & iCloud")
         .navigationBarTitleDisplayMode(.inline)
     }
 

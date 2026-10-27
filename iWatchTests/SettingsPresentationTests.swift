@@ -7,8 +7,7 @@ struct SettingsPresentationTests {
     @Test
     func homeSectionsFollowUserFacingHierarchy() {
         #expect(SettingsHomeSection.allCases.map(\.rawValue) == [
-            "Preferences",
-            "Sync"
+            "Preferences"
         ])
     }
 
@@ -66,6 +65,24 @@ struct SettingsPresentationTests {
         #expect(TraktSyncPresentation.confirmationSummary(count: 0) == "A watched change needs checking.")
         #expect(TraktSyncPresentation.confirmationSummary(count: 1) == "1 watched change needs checking.")
         #expect(TraktSyncPresentation.confirmationSummary(count: 3) == "3 watched changes need checking.")
+    }
+
+    @Test
+    @MainActor
+    func traktRowNamesTheServiceWithoutHidingActionableStates() {
+        func health(connected: Bool = false, connecting: Bool = false, error: String? = nil) -> TraktSyncPresentation {
+            .resolve(connected: connected, connecting: connecting, settingUp: false, syncing: false,
+                progress: .idle, diagnostics: .empty, error: error)
+        }
+        #expect(health().rowTitle == "Trakt")
+        #expect(health().action == .connect)
+        #expect(health(connecting: true).rowTitle == "Connecting…")
+        #expect(health(error: "Sign-in expired").rowTitle == "Sign In to Trakt")
+        var diagnostics = SyncDiagnostics.empty
+        diagnostics.failure = .confirmation
+        let pending = TraktSyncPresentation.resolve(connected: true, connecting: false, settingUp: false,
+            syncing: false, progress: .idle, diagnostics: diagnostics, error: nil)
+        #expect(pending.rowTitle == "Waiting for Confirmation")
     }
 
 }

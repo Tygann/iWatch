@@ -6,7 +6,6 @@ import SwiftUI
 
 enum SettingsHomeSection: String, CaseIterable {
     case preferences = "Preferences"
-    case sync = "Sync"
 }
 
 // MARK: - Settings Screen
@@ -21,6 +20,7 @@ struct SettingsView: View {
     // MARK: - Body
     var body: some View {
         Form {
+            librarySection
             preferencesSection
             syncSection
             appSection
@@ -34,6 +34,18 @@ struct SettingsView: View {
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: session.libraryRevision) { await session.refreshSyncDiagnostics() }
+    }
+
+    // MARK: - Library
+    private var librarySection: some View {
+        Section {
+            NavigationLink {
+                LibrarySettingsView()
+            } label: {
+                SettingsLibraryLabel(status: cloudStatus)
+            }
+            .accessibilityIdentifier("settings-library")
+        }
     }
 
     // MARK: - Preferences Section
@@ -82,19 +94,12 @@ struct SettingsView: View {
                 TraktSettingsView()
             } label: {
                 SettingsNavigationLabel(
-                    title: "Trakt",
+                    title: "Trakt Sync",
                     systemImage: "checkmark.arrow.trianglehead.clockwise",
                     detail: traktStatus
                 )
             }
-
-            NavigationLink {
-                ICloudSyncSettingsView()
-            } label: {
-                SettingsNavigationLabel(title: "iCloud", systemImage: "icloud", detail: cloudStatus)
-            }
-        } header: {
-            Text(SettingsHomeSection.sync.rawValue)
+            .accessibilityIdentifier("settings-trakt-sync")
         }
     }
 
@@ -157,6 +162,34 @@ struct SettingsView: View {
 }
 
 // MARK: - Settings Components
+
+private struct SettingsLibraryLabel: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
+    let status: String?
+
+    var body: some View {
+        HStack(spacing: AppSpacing.medium) {
+            if !typeSize.isAccessibilitySize {
+                Image(systemName: "books.vertical")
+                    .font(.title2)
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 48, height: 48)
+                    .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.control))
+                    .accessibilityHidden(true)
+            }
+            VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
+                Text("iWatch Library").font(.headline)
+                Text("Library & iCloud").font(.subheadline).foregroundStyle(.secondary)
+                if let status {
+                    Text(status).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.vertical, AppSpacing.small)
+        .accessibilityElement(children: .combine)
+    }
+}
 
 struct SettingsNavigationLabel: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
