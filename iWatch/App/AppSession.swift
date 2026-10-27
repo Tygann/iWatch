@@ -62,6 +62,7 @@ final class AppSession {
     private let syncEngine: SyncEngine
     private let configuredTraktRedirectURI: String
     private let cacheService: CacheService
+    private let cloudActivityDefaults: UserDefaults?
     private let cloudExportMonitor: any CloudExportMonitoring
     private let invalidateLibrarySnapshots: @MainActor () -> Void
     private let authCoordinator = TraktAuthCoordinator()
@@ -102,8 +103,15 @@ final class AppSession {
     var syncDiagnostics: SyncDiagnostics = .empty
     var syncProgress: SyncProgress = .idle
     var cloudSyncStatus: CloudSyncStatus = .idle
-    var lastCloudImportAt: Date?
-    var lastCloudExportAt: Date?
+    var lastCloudImportAt: Date? {
+        didSet { cloudActivityDefaults?.set(lastCloudImportAt, forKey: "cloudLastImportAt") }
+    }
+    var lastCloudExportAt: Date? {
+        didSet { cloudActivityDefaults?.set(lastCloudExportAt, forKey: "cloudLastExportAt") }
+    }
+    var lastCloudActivityAt: Date? {
+        [lastCloudImportAt, lastCloudExportAt].compactMap { $0 }.max()
+    }
     var syncMaintenanceMessage: String?
     var cacheMaintenanceMessage: String?
     var dataResetStatus: DataResetStatus = .idle
@@ -114,24 +122,32 @@ final class AppSession {
          traktRedirectURI: String,
          cacheService: CacheService,
          cloudExportMonitor: any CloudExportMonitoring,
+         cloudActivityDefaults: UserDefaults? = nil,
          invalidateLibrarySnapshots: @escaping @MainActor () -> Void = {}) {
         self.trakt = trakt
         self.syncEngine = syncEngine
         self.configuredTraktRedirectURI = traktRedirectURI
         self.cacheService = cacheService
+        self.cloudActivityDefaults = cloudActivityDefaults
+        self.lastCloudImportAt = cloudActivityDefaults?.object(forKey: "cloudLastImportAt") as? Date
+        self.lastCloudExportAt = cloudActivityDefaults?.object(forKey: "cloudLastExportAt") as? Date
         self.cloudExportMonitor = cloudExportMonitor
         self.invalidateLibrarySnapshots = invalidateLibrarySnapshots
         cloudExportMonitor.observeActivity { [weak self] activity in
             guard let self else { return }
             switch activity {
+            case .accountChanged:
+                self.lastCloudImportAt = nil
+                self.lastCloudExportAt = nil
+                self.cloudSyncStatus = .idle
             case .importing: self.cloudSyncStatus = .importing
             case let .imported(date):
-                self.lastCloudImportAt = date
+                self.lastCloudImportAt = max(self.lastCloudImportAt ?? date, date)
                 self.cloudSyncStatus = .imported(date)
                 self.scheduleLibraryInvalidation()
             case .exporting: self.cloudSyncStatus = .exporting
             case let .exported(date):
-                self.lastCloudExportAt = date
+                self.lastCloudExportAt = max(self.lastCloudExportAt ?? date, date)
                 self.cloudSyncStatus = .completed(date)
             case let .failed(message): self.cloudSyncStatus = .failed(message)
             }
@@ -357,6 +373,8 @@ final class AppSession {
             syncDiagnostics = .empty
             syncProgress = .idle
             cloudSyncStatus = .idle
+            lastCloudImportAt = nil
+            lastCloudExportAt = nil
             syncMaintenanceMessage = "All app data was erased. Trakt was disconnected on this device."
             cacheMaintenanceMessage = "Cleared local image and network caches."
             markLibraryUpdated()
@@ -499,6 +517,7 @@ final class AppSession {
             guard !Task.isCancelled else { return }
             switch confirmation {
             case let .completed(completedAt):
+                self.lastCloudExportAt = max(self.lastCloudExportAt ?? completedAt, completedAt)
                 self.cloudSyncStatus = .completed(completedAt)
             case let .unavailable(message):
                 self.cloudSyncStatus = .unavailable(message)

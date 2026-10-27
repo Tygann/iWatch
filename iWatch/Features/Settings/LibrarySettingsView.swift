@@ -22,7 +22,6 @@ struct LibrarySettingsView: View {
                     }
                 }
                 .padding(.vertical, 4)
-                NavigationLink("Details") { ICloudSyncDetailsView() }
             } header: {
                 Text("iCloud")
             } footer: {
@@ -48,19 +47,18 @@ struct LibrarySettingsView: View {
 
     private var title: String {
         switch session.cloudSyncStatus {
-        case .idle: "Recent Activity"
-        case .completed, .imported: "Recent Activity"
+        case .idle: "Last Activity"
+        case .completed, .imported: "Last Activity"
         default: session.cloudSyncStatus.title
         }
     }
 
     private var detail: String {
         switch session.cloudSyncStatus {
-        case .idle: "No transfers recorded this session."
+        case .idle, .completed, .imported:
+            session.lastCloudActivityAt.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "No completed transfers recorded on this device."
         case .importing: "Downloading library changes."
         case .exporting: "Uploading library changes."
-        case let .imported(date): "Downloaded " + date.formatted(date: .abbreviated, time: .shortened)
-        case let .completed(date): "Uploaded " + date.formatted(date: .abbreviated, time: .shortened)
         case .failed, .unavailable: "Check your connection and iCloud settings."
         case .timedOut: "An upload hasn’t been confirmed yet."
         }
@@ -94,12 +92,12 @@ struct ICloudSyncDetailsView: View {
                     SyncDateRow(title: "Last Upload", date: date)
                 }
                 if session.lastCloudImportAt == nil && session.lastCloudExportAt == nil {
-                    Text("No transfers recorded this session.").foregroundStyle(.secondary)
+                    Text("No completed transfers recorded on this device.").foregroundStyle(.secondary)
                 }
             } header: {
                 Text("Recent Activity")
             } footer: {
-                Text("Transfers are recorded on this device during this session. An upload doesn’t confirm that another device has downloaded your changes.")
+                Text("Completed transfers are recorded on this device. An upload doesn’t confirm that another device has downloaded your changes.")
             }
             if let message = errorDetail {
                 Section("Connection Details") {
@@ -112,7 +110,7 @@ struct ICloudSyncDetailsView: View {
                 Text("If changes haven’t appeared, check your connection and that iCloud is available for iWatch on each device.")
             }
         }
-        .navigationTitle("iCloud Details")
+        .navigationTitle("iCloud Diagnostics")
         .navigationBarTitleDisplayMode(.inline)
     }
 

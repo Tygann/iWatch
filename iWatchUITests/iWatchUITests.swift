@@ -126,17 +126,26 @@ final class iWatchUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["iCloud"].exists)
         XCTAssertFalse(app.buttons["Rebuild from Trakt"].exists)
         capture(app, "iCloud - " + contentSize)
-        let cloudDetails = app.buttons["Details"]
-        reveal(cloudDetails, in: app)
-        cloudDetails.tap()
-        XCTAssertTrue(app.navigationBars["iCloud Details"].waitForExistence(timeout: 5))
-        capture(app, "iCloud details - " + contentSize)
-        app.navigationBars["iCloud Details"].buttons.firstMatch.tap()
+        XCTAssertFalse(app.buttons["Details"].exists)
         let included = app.staticTexts["Included"]
         reveal(included, in: app)
         XCTAssertTrue(included.exists)
         app.navigationBars["Your Library"].buttons.firstMatch.tap()
+        let storage = app.buttons["Storage & Data"]
+        reveal(storage, in: app)
+        storage.tap()
+        let cloudDetails = app.buttons["iCloud Diagnostics"]
+        reveal(cloudDetails, in: app)
+        cloudDetails.tap()
+        XCTAssertTrue(app.navigationBars["iCloud Diagnostics"].waitForExistence(timeout: 5))
+        capture(app, "iCloud diagnostics - " + contentSize)
+        app.navigationBars["iCloud Diagnostics"].buttons.firstMatch.tap()
+        app.navigationBars["Storage & Data"].buttons.firstMatch.tap()
         let trakt = app.buttons["settings-trakt-sync"]
+        for _ in 0..<15 {
+            if trakt.isHittable { break }
+            app.swipeDown()
+        }
         reveal(trakt, in: app)
         trakt.tap()
         XCTAssertTrue(app.navigationBars["Trakt Sync"].waitForExistence(timeout: 5))

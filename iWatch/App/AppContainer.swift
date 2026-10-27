@@ -124,6 +124,7 @@ final class AppContainer {
             traktRedirectURI: config.traktRedirectURI,
             cacheService: cacheService,
             cloudExportMonitor: cloudExportMonitor,
+            cloudActivityDefaults: .standard,
             invalidateLibrarySnapshots: { libraryRepository.invalidateSnapshots() }
         )
         libraryRepository.onMetadataChanged = { [weak session] in session?.scheduleLibraryInvalidation() }

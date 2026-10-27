@@ -944,12 +944,15 @@ struct FoundationRewriteTests {
             lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now), watchlist: [], history: [])
         let engine = SyncEngine(persistence: persistence, trakt: remote,
             deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { nil })
+        let suite = "cloud-activity-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
         let monitor = ActivityTestMonitor()
         var invalidations = 0
         let session = AppSession(
             trakt: TraktService(apiClient: APIClient(session: .shared), clientId: "fixture", clientSecret: "fixture", authStore: InMemoryTraktAuthStore()),
             syncEngine: engine, traktRedirectURI: "com.tyler.iWatch://oauth/callback", cacheService: CacheService(),
-            cloudExportMonitor: monitor, invalidateLibrarySnapshots: { invalidations += 1 })
+            cloudExportMonitor: monitor, cloudActivityDefaults: defaults, invalidateLibrarySnapshots: { invalidations += 1 })
         let date = Date()
         monitor.handler?(.imported(date))
         monitor.handler?(.imported(date))
@@ -963,6 +966,21 @@ struct FoundationRewriteTests {
         #expect(!session.traktConnected)
         monitor.handler?(.exported(date))
         #expect(session.lastCloudExportAt == date)
+        let older = date.addingTimeInterval(-60)
+        monitor.handler?(.exported(older))
+        monitor.handler?(.failed("Offline"))
+        #expect(session.lastCloudActivityAt == date)
+        let reopened = AppSession(
+            trakt: TraktService(apiClient: APIClient(session: .shared), clientId: "fixture", clientSecret: "fixture", authStore: InMemoryTraktAuthStore()),
+            syncEngine: engine, traktRedirectURI: "com.tyler.iWatch://oauth/callback", cacheService: CacheService(),
+            cloudExportMonitor: ActivityTestMonitor(), cloudActivityDefaults: UserDefaults(suiteName: suite)!)
+        #expect(reopened.lastCloudImportAt == date)
+        #expect(reopened.lastCloudExportAt == date)
+        #expect(reopened.lastCloudActivityAt == date)
+        monitor.handler?(.accountChanged)
+        #expect(session.lastCloudActivityAt == nil)
+        #expect(defaults.object(forKey: "cloudLastImportAt") == nil)
+        #expect(defaults.object(forKey: "cloudLastExportAt") == nil)
     }
 
     @Test

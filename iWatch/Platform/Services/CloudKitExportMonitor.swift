@@ -12,6 +12,7 @@ enum CloudExportConfirmation: Sendable, Equatable {
 }
 
 enum CloudStoreActivity: Sendable {
+    case accountChanged
     case importing
     case imported(Date)
     case exporting
@@ -47,12 +48,18 @@ final class CloudKitExportMonitor: CloudExportMonitoring {
 
     private let container: CKContainer
     private var observer: NSObjectProtocol?
+    private var accountObserver: NSObjectProtocol?
     private var activityHandler: (@MainActor (CloudStoreActivity) -> Void)?
     private var recentEvents: [ExportEvent] = []
     private var waiters: [UUID: Waiter] = [:]
 
     init(containerIdentifier: String) {
         self.container = CKContainer(identifier: containerIdentifier)
+        accountObserver = NotificationCenter.default.addObserver(
+            forName: .CKAccountChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.activityHandler?(.accountChanged) }
+        }
         observer = NotificationCenter.default.addObserver(
             forName: NSPersistentCloudKitContainer.eventChangedNotification,
             object: nil,
@@ -65,6 +72,7 @@ final class CloudKitExportMonitor: CloudExportMonitoring {
     }
 
     deinit {
+        if let accountObserver { NotificationCenter.default.removeObserver(accountObserver) }
         if let observer {
             NotificationCenter.default.removeObserver(observer)
         }

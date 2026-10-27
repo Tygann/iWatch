@@ -46,6 +46,10 @@ struct AdvancedSettingsView: View {
                 }
             }
 
+            Section("Diagnostics") {
+                NavigationLink("iCloud Diagnostics") { ICloudSyncDetailsView() }
+            }
+
             Section {
                 if canStartReset {
                     Button(role: .destructive) {
