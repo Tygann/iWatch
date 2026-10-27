@@ -5,6 +5,18 @@ import Testing
 @Suite
 struct SettingsPresentationTests {
     @Test
+    func includedCountsExplainEmptyAndSingularLibraries() {
+        let empty = LibraryCounts(watchlistMovies: 0, watchlistShows: 0, watchedPlays: 0, showsInProgress: 0)
+        #expect(empty.watchlistDescription == "No items yet")
+        #expect(empty.historyDescription == "No watched plays yet")
+        #expect(empty.progressDescription == "No shows in progress")
+        let single = LibraryCounts(watchlistMovies: 1, watchlistShows: 1, watchedPlays: 1, showsInProgress: 1)
+        #expect(single.watchlistDescription == "1 movie · 1 show")
+        #expect(single.historyDescription == "1 play")
+        #expect(single.progressDescription == "1 show in progress")
+    }
+
+    @Test
     func homeSectionsFollowUserFacingHierarchy() {
         #expect(SettingsHomeSection.allCases.map(\.rawValue) == [
             "Preferences"

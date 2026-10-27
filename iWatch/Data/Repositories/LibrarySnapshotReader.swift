@@ -22,6 +22,25 @@ actor LibrarySnapshotReader {
         return counts
     }
 
+    func libraryCounts() async throws -> LibraryCounts {
+        let movies = try movieItems()
+        let shows = try showItems()
+        let context = persistence.makeContext()
+        let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
+        let includesLegacyRows = generationID == LibraryGenerationPolicy.legacyGenerationID
+        let plays = try context.fetchCount(FetchDescriptor<WatchedEventRecord>(
+            predicate: #Predicate {
+                ($0.generationID == generationID || (includesLegacyRows && $0.generationID == "")) && !$0.tombstoned
+            }
+        ))
+        return await MainActor.run {
+            let snapshot = ShowLibrarySnapshot(items: shows)
+            return LibraryCounts(watchlistMovies: movies.filter(\.isInWatchlist).count,
+                watchlistShows: snapshot.watchlist.count, watchedPlays: plays,
+                showsInProgress: snapshot.continueWatching.count)
+        }
+    }
+
     // MARK: Release Notifications
 
     func releaseNotificationSnapshot(referenceDate: Date = .now) throws -> ReleaseNotificationSnapshot {

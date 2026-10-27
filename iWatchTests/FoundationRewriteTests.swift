@@ -119,6 +119,38 @@ struct FoundationRewriteTests {
         #expect(rows[0].dirty == true)
     }
 
+    @Test
+    func librarySettingsCountsUseLocalMembershipAndPreserveRepeatPlays() async throws {
+        let persistence = makePersistence()
+        let reader = LibrarySnapshotReader(persistence: persistence)
+        #expect(try await reader.libraryCounts() == LibraryCounts(watchlistMovies: 0, watchlistShows: 0, watchedPlays: 0, showsInProgress: 0))
+        let context = persistence.makeContext()
+        context.insert(WatchlistRecord(mediaID: MediaID(kind: .movie, id: 11), isInWatchlist: true))
+        context.insert(WatchlistRecord(mediaID: MediaID(kind: .show, id: 22), isInWatchlist: true))
+        context.insert(WatchlistRecord(mediaID: MediaID(kind: .movie, id: 33), isInWatchlist: false))
+        for offset in [0.0, 60.0] {
+            context.insert(WatchedEventRecord(kind: .movie, tmdbID: 44, watchedAt: Date().addingTimeInterval(offset)))
+        }
+        let deleted = WatchedEventRecord(kind: .movie, tmdbID: 55, watchedAt: .now)
+        deleted.tombstoned = true
+        context.insert(deleted)
+        let old = WatchedEventRecord(kind: .movie, tmdbID: 66, watchedAt: .now)
+        old.generationID = "obsolete-generation"
+        context.insert(old)
+        context.insert(WatchedEventRecord(kind: .episode, tmdbID: 77, showTMDbID: 77,
+            seasonNumber: 1, episodeNumber: 1, watchedAt: .now))
+        context.insert(EpisodeRecord(showTMDbID: 77, tmdbID: 78, seasonNumber: 1,
+            episodeNumber: 2, name: "Next episode", airDate: Date().addingTimeInterval(-86400)))
+        try context.save()
+        let counts = try await reader.libraryCounts()
+        let shows = try await reader.showItems()
+        #expect(counts.watchlistMovies == 1)
+        #expect(counts.watchlistShows == 1)
+        #expect(counts.watchedPlays == 3)
+        #expect(counts.showsInProgress == 1)
+        #expect(counts.showsInProgress == ShowLibrarySnapshot(items: shows).continueWatching.count)
+    }
+
     // MARK: History and Library Mutations
 
     @Test

@@ -130,6 +130,9 @@ final class iWatchUITests: XCTestCase {
         let included = app.staticTexts["Included"]
         reveal(included, in: app)
         XCTAssertTrue(included.exists)
+        let progressCount = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Show Progress'")).firstMatch
+        reveal(progressCount, in: app)
+        capture(app, "Included library counts - " + contentSize)
         app.navigationBars["Your Library"].buttons.firstMatch.tap()
         let storage = app.buttons["Storage & Data"]
         reveal(storage, in: app)

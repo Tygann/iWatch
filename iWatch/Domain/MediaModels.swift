@@ -391,3 +391,22 @@ struct ShowLibrarySnapshot: Equatable, Sendable {
             }
     }
 }
+
+// Counts describe the current local library, not confirmed cloud uploads.
+struct LibraryCounts: Equatable, Sendable {
+    let watchlistMovies: Int
+    let watchlistShows: Int
+    let watchedPlays: Int
+    let showsInProgress: Int
+
+    var watchlistDescription: String {
+        guard watchlistMovies + watchlistShows > 0 else { return "No items yet" }
+        return "\(watchlistMovies.formatted()) \(watchlistMovies == 1 ? "movie" : "movies") · \(watchlistShows.formatted()) \(watchlistShows == 1 ? "show" : "shows")"
+    }
+    var historyDescription: String {
+        watchedPlays == 0 ? "No watched plays yet" : "\(watchedPlays.formatted()) \(watchedPlays == 1 ? "play" : "plays")"
+    }
+    var progressDescription: String {
+        showsInProgress == 0 ? "No shows in progress" : "\(showsInProgress.formatted()) \(showsInProgress == 1 ? "show" : "shows") in progress"
+    }
+}

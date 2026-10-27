@@ -2,6 +2,9 @@ import SwiftUI
 
 struct LibrarySettingsView: View {
     @Environment(AppSession.self) private var session
+    @Environment(AppContainer.self) private var container
+    @State private var counts: LibraryCounts?
+    @State private var countsFailed = false
 
     var body: some View {
         Form {
@@ -9,30 +12,32 @@ struct LibrarySettingsView: View {
                 LabeledContent("iCloud Sync") {
                     SettingsCapsule(title: capsuleTitle, tint: needsAttention ? .orange : .accentColor)
                 }
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(title)
-                        Text(detail).font(.caption).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .accessibilityElement(children: .combine)
-                    if isWorking {
-                        Spacer(minLength: 8)
-                        ProgressView().accessibilityLabel(title)
+                if let date = session.lastCloudActivityAt {
+                    SyncDateRow(title: "Last Activity", date: date)
+                } else {
+                    LabeledContent("Last Activity", value: "Not recorded yet")
+                }
+                if isWorking || needsAttention {
+                    HStack {
+                        Text(detail).font(.subheadline).foregroundStyle(.secondary)
+                        if isWorking { ProgressView().accessibilityLabel(session.cloudSyncStatus.title) }
                     }
                 }
-                .padding(.vertical, 4)
             } header: {
                 Text("iCloud")
             } footer: {
                 Text("Your library syncs automatically across devices using the same Apple Account.")
             }
             Section("Included") {
-                Label("Watchlist", systemImage: "bookmark")
-                Label("Watched History", systemImage: "clock")
-                Label("Show Progress", systemImage: "play.rectangle")
+                includedRow("Watchlist", symbol: "bookmark", detail: counts?.watchlistDescription)
+                includedRow("Watched History", symbol: "clock", detail: counts?.historyDescription)
+                includedRow("Show Progress", symbol: "play.rectangle", detail: counts?.progressDescription)
+                if countsFailed {
+                    Button("Try Again") { Task { await loadCounts() } }
+                }
             }
         }
+        .task(id: session.libraryRevision) { await loadCounts() }
         .navigationTitle("Your Library")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -45,11 +50,29 @@ struct LibrarySettingsView: View {
         }
     }
 
-    private var title: String {
-        switch session.cloudSyncStatus {
-        case .idle: "Last Activity"
-        case .completed, .imported: "Last Activity"
-        default: session.cloudSyncStatus.title
+    private func includedRow(_ title: String, symbol: String, detail: String?) -> some View {
+        Label {
+            VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
+                Text(title)
+                Text(detail ?? (countsFailed ? "Count unavailable" : "Loading…"))
+                    .font(.subheadline).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } icon: {
+            Image(systemName: symbol)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func loadCounts() async {
+        do {
+            let updated = try await container.libraryRepository.libraryCounts()
+            try Task.checkCancellation()
+            counts = updated
+            countsFailed = false
+        } catch is CancellationError {
+        } catch {
+            if !Task.isCancelled { countsFailed = true }
         }
     }
 

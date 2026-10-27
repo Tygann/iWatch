@@ -582,6 +582,10 @@ final class LibraryRepository {
         try await snapshotReader.movieItems()
     }
 
+    func libraryCounts() async throws -> LibraryCounts {
+        try await snapshotReader.libraryCounts()
+    }
+
     func releaseNotificationSnapshot(referenceDate: Date = .now) async throws -> ReleaseNotificationSnapshot {
         try await snapshotReader.releaseNotificationSnapshot(referenceDate: referenceDate)
     }
