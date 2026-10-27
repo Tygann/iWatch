@@ -42,11 +42,14 @@ final class iWatchUITests: XCTestCase {
         XCTAssertTrue(movieTile.waitForExistence(timeout: 5))
         movieTile.tap()
 
-        XCTAssertTrue(app.buttons["Remove from watchlist"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["Mark as watched"].exists)
-        if app.buttons["Close"].exists {
-            app.buttons["Close"].tap()
-        }
+        let status = app.buttons["Viewing status: Watchlist"]
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        status.tap()
+        XCTAssertTrue(app.buttons["Remove from Watchlist"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Mark as Watched"].exists)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1)).tap()
+        app.navigationBars.buttons["Movies"].tap()
+        XCTAssertTrue(movieTile.waitForExistence(timeout: 5))
 
         movieTile.press(forDuration: 1)
         XCTAssertTrue(app.buttons["Mark as Watched"].waitForExistence(timeout: 5))
@@ -353,6 +356,32 @@ final class iWatchUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Notifications"].waitForExistence(timeout: 5))
         capture(app, "Notification access - \(accessibility)")
         XCTAssertFalse(app.buttons["Notification Settings"].isEnabled)
+    }
+
+    @MainActor
+    func testLibraryStartupRecoveryStandard() throws { verifyStartupRecovery(accessibility: false) }
+
+    @MainActor
+    func testLibraryStartupRecoveryAccessibility() throws { verifyStartupRecovery(accessibility: true) }
+
+    @MainActor
+    private func verifyStartupRecovery(accessibility: Bool) {
+        let app = XCUIApplication()
+        app.launchArguments += ["UITEST_MODE", "UITEST_STORE_OPEN_FAILURE", "-appTheme", accessibility ? "2" : "1"]
+        if accessibility {
+            app.launchArguments += ["UITEST_ACCESSIBILITY_TEXT", "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"]
+        }
+        app.launch()
+        let retry = app.buttons["Try Again"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 8))
+        XCTAssertFalse(app.tabBars.buttons["Movies"].exists)
+        XCTAssertFalse(app.buttons["Reset"].exists)
+        capture(app, "Library startup recovery - \(accessibility)")
+        reveal(retry, in: app)
+        retry.tap()
+        XCTAssertTrue(app.buttons["Try Again"].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.tabBars.buttons["Movies"].exists)
     }
 
     @MainActor

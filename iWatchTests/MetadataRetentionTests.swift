@@ -7,7 +7,7 @@ import Testing
 struct MetadataRetentionTests {
     @Test
     func expirationRemovesOnlyMetadataAndDoesNotRenewOnEdits() throws {
-        let persistence = Persistence(inMemory: true)
+        let persistence = try Persistence(inMemory: true)
         let context = persistence.makeContext()
         let now = Date()
         let old = now.addingTimeInterval(-151 * 86400)
@@ -31,7 +31,7 @@ struct MetadataRetentionTests {
 
     @Test
     func unknownLegacyAndFutureDatesExpireAtBoundary() throws {
-        let persistence = Persistence(inMemory: true)
+        let persistence = try Persistence(inMemory: true)
         let context = persistence.makeContext()
         let now = Date()
         for (id, date) in [(1, Date.distantPast), (2, now.addingTimeInterval(60)),

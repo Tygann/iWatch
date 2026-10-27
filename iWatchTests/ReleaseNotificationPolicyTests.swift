@@ -94,7 +94,7 @@ struct ReleaseNotificationPolicyTests {
 
     @Test
     func snapshotIncludesOnlyEligibleLibraryReleases() async throws {
-        let persistence = Persistence(
+        let persistence = try Persistence(
             inMemory: true,
             cloudKitDatabase: ModelConfiguration.CloudKitDatabase.none
         )

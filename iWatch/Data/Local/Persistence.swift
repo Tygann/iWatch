@@ -6,7 +6,7 @@ nonisolated final class Persistence: @unchecked Sendable {
 
     init(inMemory: Bool = false,
          storeURL: URL? = nil,
-         cloudKitDatabase: ModelConfiguration.CloudKitDatabase? = nil) {
+         cloudKitDatabase: ModelConfiguration.CloudKitDatabase? = nil) throws {
         let schema = Schema([
             MediaRecord.self,
             EpisodeRecord.self,
@@ -39,11 +39,8 @@ nonisolated final class Persistence: @unchecked Sendable {
             }
         }()
 
-        do {
-            self.modelContainer = try ModelContainer(for: schema, configurations: [config])
-        } catch {
-            fatalError("Failed to create ModelContainer: \(error)")
-        }
+        // Opening errors propagate to startup. Never replace, remove, or reroute this store.
+        self.modelContainer = try ModelContainer(for: schema, configurations: [config])
     }
 
     // Only provider metadata is disposable. Library/history/outbox rows are never touched.

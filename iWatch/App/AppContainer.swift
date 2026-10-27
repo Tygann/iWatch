@@ -68,7 +68,7 @@ final class AppContainer {
 
     // MARK: Construction
 
-    static func bootstrap() -> AppContainer {
+    static func bootstrap() async throws -> AppContainer {
         if isRunningTests {
             return testHost()
         }
@@ -78,19 +78,26 @@ final class AppContainer {
         }
 
         if ProcessInfo.processInfo.arguments.contains("UITEST_MODE") {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("UITEST_STORE_OPEN_FAILURE") {
+                throw CocoaError(.fileWriteOutOfSpace)
+            }
+            #endif
             return uiTest()
         }
 
-        return live()
+        let persistence = try await Task.detached(priority: .userInitiated) {
+            try Persistence()
+        }.value
+        return live(persistence: persistence)
     }
 
-    static func live() -> AppContainer {
+    private static func live(persistence: Persistence) -> AppContainer {
         let config = AppConfig.load()
         let cacheService = CacheService.default
         let apiClient = APIClient.makeDefault(cacheService: cacheService)
 
         let imageService = ImageService()
-        let persistence = Persistence()
         let tmdb = TMDbService(apiClient: apiClient, apiKey: config.tmdbKey)
         let trakt = TraktService(
             apiClient: apiClient,
@@ -148,7 +155,7 @@ final class AppContainer {
         let apiClient = APIClient.makeDefault(cacheService: cacheService)
 
         let imageService = ImageService()
-        let persistence = Persistence(
+        let persistence = try! Persistence(
             inMemory: true,
             cloudKitDatabase: ModelConfiguration.CloudKitDatabase.none
         )
@@ -206,7 +213,7 @@ final class AppContainer {
         let apiClient = APIClient.makeDefault(cacheService: cacheService)
 
         let imageService = ImageService()
-        let persistence = Persistence(
+        let persistence = try! Persistence(
             inMemory: true,
             cloudKitDatabase: ModelConfiguration.CloudKitDatabase.none
         )
@@ -260,7 +267,7 @@ final class AppContainer {
         let apiClient = APIClient.makeDefault(cacheService: cacheService)
 
         let imageService = ImageService()
-        let persistence = Persistence(
+        let persistence = try! Persistence(
             inMemory: true,
             cloudKitDatabase: ModelConfiguration.CloudKitDatabase.none
         )

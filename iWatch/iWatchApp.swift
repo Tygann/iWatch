@@ -7,39 +7,23 @@
 
 import BackgroundTasks
 import SwiftUI
-import SwiftData
 
 @main
 struct iWatchApp: App {
     @UIApplicationDelegateAdaptor(ReleaseNotificationAppDelegate.self) private var appDelegate
-    @Environment(\.scenePhase) private var scenePhase
-    @State private var container = AppContainer.bootstrap()
+    @State private var startup = AppStartupController()
 
     @AppStorage("appTheme") private var appTheme: AppTheme = .system
 
      var body: some Scene {
          WindowGroup {
-             ContentView()
-                 .environment(container)
-                 .environment(container.session)
-                 .environment(container.router)
-                 .modelContainer(container.persistence.modelContainer)
+             AppStartupView(startup: startup)
                  .appTheme(appTheme)
                  .modifier(UITestDynamicType())
-                 .task { container.maintainMetadataCache() }
-                 .onChange(of: scenePhase) { _, phase in
-                     switch phase {
-                     case .active:
-                         container.maintainMetadataCache()
-                         container.session.appDidBecomeActive()
-                     case .background:
-                         container.session.appDidEnterBackground()
-                     default:
-                         break
-                     }
-                 }
          }
          .backgroundTask(.appRefresh(BackgroundRefresh.appRefreshIdentifier)) {
+             await startup.open()
+             guard let container = await startup.container else { return }
              await container.session.handleBackgroundRefresh()
              await container.releaseNotificationCoordinator.reconcile()
          }

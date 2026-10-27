@@ -7,7 +7,7 @@ import XCTest
 final class LibraryPerformanceTests: XCTestCase {
     func testRepresentativeLibrarySnapshotBaseline() async throws {
         // Synthetic scale from the tester-visible library counts, never the live store.
-        let persistence = Persistence(inMemory: true, cloudKitDatabase: ModelConfiguration.CloudKitDatabase.none)
+        let persistence = try Persistence(inMemory: true, cloudKitDatabase: ModelConfiguration.CloudKitDatabase.none)
         let context = persistence.makeContext()
         for movie in 1...49 {
             context.insert(MediaRecord(kind: .movie, tmdbID: movie, title: "Fixture Movie \(movie)"))

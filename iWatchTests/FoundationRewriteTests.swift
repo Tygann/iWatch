@@ -335,7 +335,7 @@ struct FoundationRewriteTests {
             try context.save()
         }
 
-        let migrated = Persistence(
+        let migrated = try Persistence(
             storeURL: storeURL,
             cloudKitDatabase: ModelConfiguration.CloudKitDatabase.none
         )
@@ -1780,7 +1780,7 @@ struct FoundationRewriteTests {
             .appendingPathComponent("iWatch-cloudkit-\(UUID().uuidString).store")
         defer { removeStoreArtifacts(at: storeURL) }
 
-        let persistence = Persistence(
+        let persistence = try! Persistence(
             inMemory: false,
             storeURL: storeURL,
             cloudKitDatabase: .private("iCloud.com.tyler.iWatch")
@@ -1924,7 +1924,7 @@ struct FoundationRewriteTests {
 // MARK: - Fixtures
 
 private func makePersistence() -> Persistence {
-    Persistence(inMemory: true, cloudKitDatabase: ModelConfiguration.CloudKitDatabase.none)
+    try! Persistence(inMemory: true, cloudKitDatabase: ModelConfiguration.CloudKitDatabase.none)
 }
 
 @MainActor
