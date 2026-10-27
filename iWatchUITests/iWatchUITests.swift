@@ -133,13 +133,12 @@ final class iWatchUITests: XCTestCase {
         XCTAssertFalse(app.buttons["iCloud Diagnostics"].exists)
         capture(app, "Manage data - " + contentSize)
         app.navigationBars["Manage Data"].buttons.firstMatch.tap()
-        let trakt = app.buttons["settings-trakt-sync"]
+        let connection = app.descendants(matching: .any)["trakt-connection"]
         for _ in 0..<15 {
-            if trakt.isHittable { break }
+            if connection.isHittable { break }
             app.swipeDown()
         }
-        trakt.tap()
-        XCTAssertTrue(app.navigationBars["Trakt"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Your Library"].exists)
         XCTAssertFalse(app.buttons["Advanced"].exists)
         XCTAssertFalse(app.staticTexts["Included"].exists)
         reveal(app.staticTexts["Waiting for Confirmation"], in: app)
@@ -196,6 +195,14 @@ final class iWatchUITests: XCTestCase {
         reveal(share, in: app)
         XCTAssertTrue(share.exists)
         capture(app, "Support report - " + contentSize)
+        app.navigationBars["Contact Support"].buttons.firstMatch.tap()
+        let credits = app.buttons["Acknowledgments"]
+        reveal(credits, in: app)
+        credits.tap()
+        XCTAssertTrue(app.navigationBars["Acknowledgments"].waitForExistence(timeout: 5))
+        let attribution = app.staticTexts["This product uses the TMDB API but is not endorsed or certified by TMDB."]
+        reveal(attribution, in: app)
+        capture(app, "Acknowledgments - " + contentSize)
     }
 
     @MainActor
@@ -205,15 +212,22 @@ final class iWatchUITests: XCTestCase {
             reveal(library, in: app)
             library.tap()
         }
-        let trakt = app.buttons["settings-trakt-sync"]
-        reveal(trakt, in: app)
-        trakt.tap()
+        let connection = app.descendants(matching: .any)["trakt-connection"]
+        let connect = app.buttons["Connect Trakt"]
+        var labels = Set<String>()
+        for _ in 0..<15 {
+            if connection.isHittable || connect.isHittable { return }
+            labels.formUnion(app.buttons.allElementsBoundByIndex.map(\.label))
+            app.swipeUp()
+        }
+        XCTFail("Expected inline Trakt controls. Buttons: " + labels.sorted().joined(separator: " | "))
     }
 
     @MainActor
     func testTraktSetupCanStillDisconnect() throws {
         let app = launchSyncSettings(contentSize: "UICTContentSizeCategoryL", state: "setup")
         openTrakt(in: app)
+        app.buttons["library-options"].tap()
         let disconnect = app.buttons["Disconnect Trakt"]
         reveal(disconnect, in: app)
         XCTAssertTrue(disconnect.waitForExistence(timeout: 5))
@@ -224,9 +238,9 @@ final class iWatchUITests: XCTestCase {
         if app.buttons["Cancel"].exists {
             app.buttons["Cancel"].tap()
         } else {
-            app.navigationBars["Trakt"].tap()
+            app.navigationBars["Your Library"].tap()
         }
-        XCTAssertTrue(app.navigationBars["Trakt"].exists)
+        XCTAssertTrue(app.navigationBars["Your Library"].exists)
     }
 
     @MainActor
@@ -247,7 +261,7 @@ final class iWatchUITests: XCTestCase {
         for state in ["normal", "offline", "syncing", "setup"] {
             let app = launchSyncSettings(contentSize: "UICTContentSizeCategoryL", state: state)
             openTrakt(in: app)
-            XCTAssertTrue(app.navigationBars["Trakt"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.navigationBars["Your Library"].waitForExistence(timeout: 5))
             let expected = ["normal": "Trakt", "offline": "Connection Interrupted",
                             "syncing": "Syncing…", "setup": "Finish Setup"][state]!
             if state == "normal" {
@@ -316,11 +330,10 @@ final class iWatchUITests: XCTestCase {
         XCTAssertTrue(app.buttons["settings-library"].exists)
 
         openTrakt(in: app)
-        XCTAssertTrue(app.navigationBars["Trakt"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Your Library"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Connect Trakt"].exists)
         capture(app, "Disconnected Trakt")
 
-        app.navigationBars["Trakt"].buttons.firstMatch.tap()
         app.navigationBars["Your Library"].buttons.firstMatch.tap()
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Appearance,'")).firstMatch.tap()
         XCTAssertTrue(app.buttons["System"].waitForExistence(timeout: 5))
@@ -340,6 +353,8 @@ final class iWatchUITests: XCTestCase {
         openTrakt(in: app)
         let connect = app.buttons["Connect Trakt"]
         XCTAssertTrue(connect.waitForExistence(timeout: 5))
+        reveal(connect, in: app)
+        XCTAssertTrue(connect.isHittable)
         XCTAssertGreaterThanOrEqual(connect.frame.height, 44)
         capture(app, "Disconnected Trakt - accessibility")
     }

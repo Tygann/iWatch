@@ -1,14 +1,13 @@
 import SwiftUI
 
-struct TraktSettingsView: View {
+struct TraktSettingsSections: View {
     @Environment(AppSession.self) private var session
     @State private var showImport = false
-    @State private var showDisconnect = false
 
     private var health: TraktSyncPresentation { session.traktSyncPresentation }
 
     var body: some View {
-        Form {
+        Group {
             Section {
                 TraktConnectionRow()
                 if session.traktConnected && session.pendingTraktAccountKey == nil {
@@ -17,10 +16,13 @@ struct TraktSettingsView: View {
             } header: {
                 Text("Trakt")
             } footer: {
-                if session.traktConnected && session.pendingTraktAccountKey == nil {
-                    Text("Changes sync automatically. Use Sync Now to check for updates.")
+                if session.pendingTraktAccountKey != nil {
+                    Text("Finish setup to start syncing this Trakt account.")
+                } else {
+                    Text(session.traktConnected ? "Syncs your Watchlist and watched history automatically." : "Sync your Watchlist and watched history with Trakt.")
                 }
             }
+            .task { await session.refreshSyncDiagnostics() }
 
             if health.needsAttention || (health.isWorking && !session.isSyncing && session.traktConnected) || health.title == "Changes Pending" {
                 Section(health.needsAttention ? "Needs Attention" : "Activity") {
@@ -42,27 +44,7 @@ struct TraktSettingsView: View {
                     }
                 }
             }
-            if session.traktConnected {
-                Section {
-                    Button("Disconnect Trakt", role: .destructive) { showDisconnect = true }
-                        .disabled(session.syncActionsUnavailable)
-                }
-            }
         }
-        .navigationTitle("Trakt")
-        .confirmationDialog("Disconnect Trakt?", isPresented: $showDisconnect, titleVisibility: .visible) {
-            Button("Disconnect Trakt", role: .destructive) { session.logoutTrakt() }
-        } message: {
-            Text("Your iWatch library will remain. Future changes won’t sync with Trakt until you reconnect.")
-        }
-        .navigationBarTitleDisplayMode(.inline)
-        .alert("Replace Library from Trakt?", isPresented: $showImport) {
-            Button("Replace and Import", role: .destructive) { Task { await session.importTraktLibrary() } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This removes your iWatch Watchlist, watched history, show progress, and pending uploads before importing this account. Removals can sync through iCloud. Unsynced changes will be lost.")
-        }
-        .task { await session.refreshSyncDiagnostics() }
     }
 
     private var setupSection: some View {
@@ -89,27 +71,46 @@ struct TraktSettingsView: View {
             Text("You can finish setup later.")
         }
         .disabled(session.syncActionsUnavailable)
+        .alert("Replace Library from Trakt?", isPresented: $showImport) {
+            Button("Replace and Import", role: .destructive) { Task { await session.importTraktLibrary() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes your iWatch Watchlist, watched history, show progress, and pending uploads before importing this account. Removals can sync through iCloud. Unsynced changes will be lost.")
+        }
     }
 }
 
 struct TraktConnectionRow: View {
     @Environment(AppSession.self) private var session
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        if session.traktConnected {
-            LabeledContent("Trakt") {
-                SettingsCapsule(title: "Connected")
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("trakt-connection")
-        } else {
-            SettingsStatusRow(title: "Trakt", detail: "Sync your Watchlist and watched history.", symbol: "person.crop.circle") {
-                if session.traktIsConnecting {
-                    ProgressView().accessibilityLabel("Connecting…")
-                } else {
-                    TraktSyncActionButton()
+        Group {
+            if session.traktConnected {
+                LabeledContent("Trakt Sync") { SettingsCapsule(title: "Connected") }
+                    .accessibilityElement(children: .combine)
+            } else if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: AppSpacing.small) {
+                    Text("Trakt Sync")
+                    action
+                }
+            } else {
+                HStack {
+                    Text("Trakt Sync")
+                    Spacer(minLength: AppSpacing.small)
+                    action
                 }
             }
+        }
+        .accessibilityIdentifier("trakt-connection")
+    }
+
+    @ViewBuilder
+    private var action: some View {
+        if session.traktIsConnecting {
+            ProgressView().accessibilityLabel("Connecting…")
+        } else {
+            TraktSyncActionButton()
         }
     }
 }
@@ -230,7 +231,18 @@ struct TraktSyncActionButton: View {
     }
 }
 
+#if DEBUG
+struct TraktSettingsView: View {
+    var body: some View {
+        Form { TraktSettingsSections() }
+            .navigationTitle("Trakt")
+            .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 #Preview {
     let container = AppContainer.preview()
     NavigationStack { TraktSettingsView() }.environment(container.session).environment(container)
 }
+
+#endif

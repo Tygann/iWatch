@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LibrarySettingsView: View {
     @Environment(AppSession.self) private var session
+    @State private var showDisconnect = false
 
     var body: some View {
         Form {
@@ -28,29 +29,32 @@ struct LibrarySettingsView: View {
             } footer: {
                 Text("Your library syncs automatically across devices using the same Apple Account.")
             }
-            Section {
-                NavigationLink {
-                    TraktSettingsView()
-                } label: {
-                    SettingsNavigationLabel(title: "Trakt", systemImage: "checkmark.arrow.trianglehead.clockwise",
-                        detail: traktDetail)
-                }
-                .accessibilityIdentifier("settings-trakt-sync")
-            }
+            TraktSettingsSections()
             LibraryIncludedSection()
             Section {
                 NavigationLink("Manage Data") { AdvancedSettingsView() }
             }
         }
+        .toolbar {
+            if session.traktConnected {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button("Disconnect Trakt", role: .destructive) { showDisconnect = true }
+                            .disabled(session.syncActionsUnavailable)
+                    } label: {
+                        Label("Library Options", systemImage: "ellipsis")
+                    }
+                    .accessibilityIdentifier("library-options")
+                }
+            }
+        }
+        .confirmationDialog("Disconnect Trakt?", isPresented: $showDisconnect, titleVisibility: .visible) {
+            Button("Disconnect Trakt", role: .destructive) { session.logoutTrakt() }
+        } message: {
+            Text("Your iWatch library will remain. Future changes won’t sync with Trakt until you reconnect.")
+        }
         .navigationTitle("Your Library")
         .navigationBarTitleDisplayMode(.inline)
-    }
-
-    private var traktDetail: String {
-        let health = session.traktSyncPresentation
-        if health.needsAttention { return "Needs Attention" }
-        if health.isWorking { return health.title }
-        return session.traktConnected ? "Connected" : "Not Connected"
     }
 
     private var capsuleTitle: String {

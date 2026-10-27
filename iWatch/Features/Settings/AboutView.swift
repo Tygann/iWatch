@@ -17,10 +17,10 @@ struct AboutView: View {
         List {
             appIdentity
 
-            Section("Help") {
-                NavigationLink("Contact Support") { SyncSupportView() }
-            }
             Section {
+                NavigationLink { SyncSupportView() } label: {
+                    Label("Contact Support", systemImage: "questionmark.circle")
+                }
                 ShareLink(item: AppDistributionPresentation.shareText) {
                     Label("Share iWatch", systemImage: "square.and.arrow.up")
                 }
@@ -29,6 +29,43 @@ struct AboutView: View {
                 }
             }
 
+            Section {
+                Link(destination: URL(string: "https://tylerkeegan.com/iwatch/privacy/")!) {
+                    Label("Privacy Policy", systemImage: "hand.raised")
+                }
+                NavigationLink {
+                    AcknowledgmentsView()
+                } label: {
+                    Label("Acknowledgments", systemImage: "info.circle")
+                }
+            }
+        }
+        .navigationTitle("Help & About")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var appIdentity: some View {
+        Section {
+            HStack(spacing: AppSpacing.medium) {
+                Image("iWatchLogo")
+                    .resizable().scaledToFit().frame(width: 48, height: 48)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
+                    Text("iWatch").font(.headline)
+                    Text("Version \(version) (\(build))")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, AppSpacing.small)
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+}
+
+struct AcknowledgmentsView: View {
+    var body: some View {
+        List {
             Section {
                 Link(destination: URL(string: "https://www.themoviedb.org/")!) {
                     VStack(alignment: .leading, spacing: 12) {
@@ -55,12 +92,6 @@ struct AboutView: View {
                 Text("iWatch uses Trakt but is not endorsed or certified by Trakt.")
             }
 
-            Section("Privacy") {
-                Link(destination: URL(string: "https://tylerkeegan.com/iwatch/privacy/")!) {
-                    Label("Privacy Policy", systemImage: "hand.raised")
-                }
-            }
-
             Section {
                 Text("© 2026 Tyler Keegan. All rights reserved.")
                     .foregroundStyle(.secondary)
@@ -68,28 +99,9 @@ struct AboutView: View {
             }
             .listRowBackground(Color.clear)
         }
-        .navigationTitle("Help & About")
+        .navigationTitle("Acknowledgments")
         .navigationBarTitleDisplayMode(.inline)
     }
-
-    private var appIdentity: some View {
-        Section {
-            HStack(spacing: AppSpacing.medium) {
-                Image("iWatchLogo")
-                    .resizable().scaledToFit().frame(width: 48, height: 48)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
-                    Text("iWatch").font(.headline)
-                    Text("Version \(version) (\(build))")
-                        .font(.subheadline).foregroundStyle(.secondary)
-                }
-            }
-            .padding(.vertical, AppSpacing.small)
-            .accessibilityElement(children: .combine)
-        }
-        .listRowBackground(Color.clear)
-    }
-
 }
 
 // MARK: - Previews
