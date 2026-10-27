@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TraktAdvancedSettingsView: View {
     @Environment(AppSession.self) private var session
+    @State private var showDisconnect = false
 
     var body: some View {
         Form {
@@ -11,10 +12,18 @@ struct TraktAdvancedSettingsView: View {
                 NavigationLink("Move Pending Uploads") { TraktRecoveryView() }
                 NavigationLink("Rebuild from Trakt") { TraktRebuildView() }
             }
-
+            Section {
+                Button("Disconnect Trakt", role: .destructive) { showDisconnect = true }
+                    .disabled(session.syncActionsUnavailable)
+            }
         }
         .navigationTitle("Advanced")
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog("Disconnect Trakt?", isPresented: $showDisconnect, titleVisibility: .visible) {
+            Button("Disconnect Trakt", role: .destructive) { session.logoutTrakt() }
+        } message: {
+            Text("Your iWatch library will remain. Future changes won’t sync with Trakt until you reconnect.")
+        }
         .task { await session.refreshSyncDiagnostics() }
     }
 }

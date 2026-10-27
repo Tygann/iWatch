@@ -139,6 +139,8 @@ struct FoundationRewriteTests {
         context.insert(old)
         context.insert(WatchedEventRecord(kind: .episode, tmdbID: 77, showTMDbID: 77,
             seasonNumber: 1, episodeNumber: 1, watchedAt: .now))
+        context.insert(EpisodeRecord(showTMDbID: 77, tmdbID: 77, seasonNumber: 1,
+            episodeNumber: 1, name: "Watched episode", airDate: Date().addingTimeInterval(-172800)))
         context.insert(EpisodeRecord(showTMDbID: 77, tmdbID: 78, seasonNumber: 1,
             episodeNumber: 2, name: "Next episode", airDate: Date().addingTimeInterval(-86400)))
         try context.save()

@@ -2,9 +2,6 @@ import SwiftUI
 
 struct LibrarySettingsView: View {
     @Environment(AppSession.self) private var session
-    @Environment(AppContainer.self) private var container
-    @State private var counts: LibraryCounts?
-    @State private var countsFailed = false
 
     var body: some View {
         Form {
@@ -28,16 +25,8 @@ struct LibrarySettingsView: View {
             } footer: {
                 Text("Your library syncs automatically across devices using the same Apple Account.")
             }
-            Section("Included") {
-                includedRow("Watchlist", symbol: "bookmark", detail: counts?.watchlistDescription)
-                includedRow("Watched History", symbol: "clock", detail: counts?.historyDescription)
-                includedRow("Show Progress", symbol: "play.rectangle", detail: counts?.progressDescription)
-                if countsFailed {
-                    Button("Try Again") { Task { await loadCounts() } }
-                }
-            }
+            LibraryIncludedSection()
         }
-        .task(id: session.libraryRevision) { await loadCounts() }
         .navigationTitle("Your Library")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -47,32 +36,6 @@ struct LibrarySettingsView: View {
         case .importing, .exporting: "Syncing"
         case .failed, .unavailable, .timedOut: "Needs Attention"
         default: "Automatic"
-        }
-    }
-
-    private func includedRow(_ title: String, symbol: String, detail: String?) -> some View {
-        Label {
-            VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
-                Text(title)
-                Text(detail ?? (countsFailed ? "Count unavailable" : "Loading…"))
-                    .font(.subheadline).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        } icon: {
-            Image(systemName: symbol)
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    private func loadCounts() async {
-        do {
-            let updated = try await container.libraryRepository.libraryCounts()
-            try Task.checkCancellation()
-            counts = updated
-            countsFailed = false
-        } catch is CancellationError {
-        } catch {
-            if !Task.isCancelled { countsFailed = true }
         }
     }
 
@@ -144,4 +107,53 @@ struct ICloudSyncDetailsView: View {
         default: nil
         }
     }
+}
+
+struct LibraryIncludedSection: View {
+    @Environment(AppSession.self) private var session
+    @Environment(AppContainer.self) private var container
+    @State private var counts: LibraryCounts?
+    @State private var countsFailed = false
+    var includesShowProgress = true
+
+    var body: some View {
+        Section("Included") {
+            includedRow("Watchlist", symbol: "bookmark", detail: counts?.watchlistDescription)
+            includedRow("Watched History", symbol: "clock", detail: counts?.historyDescription)
+            if includesShowProgress {
+                includedRow("Show Progress", symbol: "play.rectangle", detail: counts?.progressDescription)
+            }
+            if countsFailed {
+                Button("Try Again") { Task { await loadCounts() } }
+            }
+        }
+        .task(id: session.libraryRevision) { await loadCounts() }
+    }
+
+    private func includedRow(_ title: String, symbol: String, detail: String?) -> some View {
+        Label {
+            VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
+                Text(title)
+                Text(detail ?? (countsFailed ? "Count unavailable" : "Loading…"))
+                    .font(.subheadline).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } icon: {
+            Image(systemName: symbol)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func loadCounts() async {
+        do {
+            let updated = try await container.libraryRepository.libraryCounts()
+            try Task.checkCancellation()
+            counts = updated
+            countsFailed = false
+        } catch is CancellationError {
+        } catch {
+            if !Task.isCancelled { countsFailed = true }
+        }
+    }
+
 }

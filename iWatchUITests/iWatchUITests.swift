@@ -152,6 +152,7 @@ final class iWatchUITests: XCTestCase {
         reveal(trakt, in: app)
         trakt.tap()
         XCTAssertTrue(app.navigationBars["Trakt Sync"].waitForExistence(timeout: 5))
+        reveal(app.staticTexts["Waiting for Confirmation"], in: app)
         XCTAssertTrue(app.staticTexts["Waiting for Confirmation"].exists)
         reveal(app.buttons["Check Again"], in: app)
         XCTAssertTrue(app.buttons["Check Again"].exists)
@@ -213,6 +214,44 @@ final class iWatchUITests: XCTestCase {
     }
 
     @MainActor
+    func testTraktSetupCanStillDisconnect() throws {
+        let app = launchSyncSettings(contentSize: "UICTContentSizeCategoryL", state: "setup")
+        let trakt = app.buttons["settings-trakt-sync"]
+        reveal(trakt, in: app)
+        trakt.tap()
+        let advanced = app.buttons["Advanced"]
+        reveal(advanced, in: app)
+        advanced.tap()
+        let disconnect = app.buttons["Disconnect Trakt"]
+        XCTAssertTrue(disconnect.waitForExistence(timeout: 5))
+        XCTAssertTrue(disconnect.isEnabled)
+        disconnect.tap()
+        XCTAssertTrue(app.staticTexts["Disconnect Trakt?"].waitForExistence(timeout: 5))
+        capture(app, "Trakt setup disconnect confirmation")
+        if app.buttons["Cancel"].exists {
+            app.buttons["Cancel"].tap()
+        } else {
+            app.navigationBars["Advanced"].tap()
+        }
+        XCTAssertTrue(app.navigationBars["Advanced"].exists)
+    }
+
+    @MainActor
+    func testTraktConnectedAtAccessibilityTextSize() throws {
+        let app = launchSyncSettings(contentSize: "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge", state: "normal")
+        let trakt = app.buttons["settings-trakt-sync"]
+        reveal(trakt, in: app)
+        trakt.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["trakt-connection"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["trakt-connection"].label.contains("Connected"))
+        let sync = app.buttons["Sync Now"]
+        reveal(sync, in: app)
+        XCTAssertTrue(sync.isEnabled)
+        XCTAssertGreaterThanOrEqual(sync.frame.height, 44)
+        capture(app, "Connected Trakt - accessibility")
+    }
+
+    @MainActor
     func testSyncNormalOfflineAndSetupStates() throws {
         for state in ["normal", "offline", "syncing", "setup"] {
             let app = launchSyncSettings(contentSize: "UICTContentSizeCategoryL", state: state)
@@ -223,6 +262,9 @@ final class iWatchUITests: XCTestCase {
             let expected = ["normal": "Trakt", "offline": "Connection Interrupted",
                             "syncing": "Syncing…", "setup": "Finish Setup"][state]!
             if state == "normal" {
+                XCTAssertTrue(app.descendants(matching: .any)["trakt-connection"].waitForExistence(timeout: 5))
+                XCTAssertTrue(app.descendants(matching: .any)["trakt-connection"].label.contains("Connected"))
+                XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Last Sync'")).firstMatch.exists)
                 XCTAssertTrue(app.buttons["Sync Now"].waitForExistence(timeout: 5))
                 XCTAssertFalse(app.staticTexts["Signed In to Trakt"].exists)
                 XCTAssertFalse(app.staticTexts["Last Successful Sync"].exists)
