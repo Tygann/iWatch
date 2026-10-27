@@ -60,4 +60,12 @@ struct SettingsPresentationTests {
         #expect(health.needsAttention)
         #expect(health.action == .check)
     }
+    @Test
+    @MainActor
+    func confirmationSummaryDescribesTheAffectedChanges() {
+        #expect(TraktSyncPresentation.confirmationSummary(count: 0) == "A watched change needs checking.")
+        #expect(TraktSyncPresentation.confirmationSummary(count: 1) == "1 watched change needs checking.")
+        #expect(TraktSyncPresentation.confirmationSummary(count: 3) == "3 watched changes need checking.")
+    }
+
 }

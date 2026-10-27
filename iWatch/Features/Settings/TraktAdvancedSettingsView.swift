@@ -6,6 +6,27 @@ struct TraktAdvancedSettingsView: View {
     var body: some View {
         Form {
             Section {
+                NavigationLink("Check Library Data") { TraktLibraryCheckView() }
+                NavigationLink("Diagnostics") { SyncDiagnosticsView() }
+                NavigationLink("Move Pending Uploads") { TraktRecoveryView() }
+                NavigationLink("Rebuild from Trakt") { TraktRebuildView() }
+            }
+
+        }
+        .navigationTitle("Advanced")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await session.refreshSyncDiagnostics() }
+    }
+}
+
+struct TraktLibraryCheckView: View {
+    @Environment(AppSession.self) private var session
+
+    var body: some View {
+        Form {
+            Section {
+                Text("Checks local records for duplicates and inconsistent links, and repairs issues it can resolve.")
+                    .font(.subheadline).foregroundStyle(.secondary)
                 Button {
                     Task { await session.repairLocalSyncData() }
                 } label: {
@@ -17,24 +38,14 @@ struct TraktAdvancedSettingsView: View {
                 }
                 .disabled(session.syncActionsUnavailable)
             } footer: {
-                Text("Checks local records for duplicates and inconsistent links, and repairs issues it can resolve. This doesn’t verify every item against Trakt.")
+                Text("This doesn’t compare every library item with Trakt.")
             }
             if let result = session.syncMaintenanceMessage {
                 Section("Latest Result") { Text(result) }
             }
-            Section {
-                NavigationLink("Diagnostics") { SyncDiagnosticsView() }
-                NavigationLink("Move Pending Uploads") { TraktRecoveryView() }
-            }
-            Section {
-                NavigationLink("Rebuild from Trakt") { TraktRebuildView() }
-            } footer: {
-                Text("Rebuilding replaces your iWatch Watchlist, watched history, and show progress, and discards pending uploads. Review the consequences before continuing.")
-            }
         }
-        .navigationTitle("Advanced")
+        .navigationTitle("Check Library Data")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await session.refreshSyncDiagnostics() }
     }
 }
 
@@ -45,15 +56,14 @@ struct TraktRecoveryView: View {
     var body: some View {
         Form {
             Section {
-                Text("Continue Uploads on This Device").font(.headline)
-                Text("Use this if changes are stuck on a device you no longer use. Pending uploads for this Trakt account will be assigned to this device.")
-                Text("First stop Trakt sync on your other devices to prevent both devices trying to upload the same changes.")
+                Text("Move this account’s unfinished uploads from another device to this one.")
+                Text("First stop Trakt sync on your other devices.")
             }
             Section {
                 Button("Move Pending Uploads Here") { showConfirmation = true }
                     .disabled(session.syncActionsUnavailable || !session.traktConnected || session.pendingTraktAccountKey != nil)
             } footer: {
-                Text("Unconfirmed watched uploads will be checked without sending another play. Moving them doesn’t guarantee they can be confirmed.")
+                Text("Unconfirmed watched plays are checked without being uploaded again.")
             }
             if let result = session.syncMaintenanceMessage {
                 Section("Latest Result") { Text(result) }
@@ -76,7 +86,6 @@ struct TraktRebuildView: View {
     var body: some View {
         Form {
             Section {
-                Text("Replace Your iWatch Library").font(.headline)
                 Text("Rebuilding removes your iWatch Watchlist, watched history, and show progress, discards pending uploads, then imports your Trakt library again.")
                 Label("Unsynced changes will be lost.", systemImage: "exclamationmark.triangle")
                 Text("These removals can sync to your other devices through iCloud. Your Trakt account’s library isn’t deleted.")

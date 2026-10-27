@@ -86,12 +86,10 @@ struct SettingsView: View {
             NavigationLink {
                 ICloudSyncSettingsView()
             } label: {
-                SettingsNavigationLabel(title: "iCloud Sync", systemImage: "icloud", detail: session.cloudSyncStatus.title)
+                SettingsNavigationLabel(title: "iCloud", systemImage: "icloud", detail: cloudStatus)
             }
         } header: {
             Text(SettingsHomeSection.sync.rawValue)
-        } footer: {
-            Text("iCloud syncs your library across Apple devices. Trakt sync is optional.")
         }
     }
 
@@ -133,8 +131,19 @@ struct SettingsView: View {
     }
 
     // MARK: - Helpers
-    private var traktStatus: String {
-        session.traktSyncPresentation.title
+    private var traktStatus: String? {
+        let health = session.traktSyncPresentation
+        if health.needsAttention { return "Needs Attention" }
+        if health.isWorking { return health.title }
+        return session.traktConnected ? nil : "Not Connected"
+    }
+
+    private var cloudStatus: String? {
+        switch session.cloudSyncStatus {
+        case .importing, .exporting: session.cloudSyncStatus.title
+        case .failed, .unavailable, .timedOut: "Needs Attention"
+        default: nil
+        }
     }
 
     private var notificationStatus: String {

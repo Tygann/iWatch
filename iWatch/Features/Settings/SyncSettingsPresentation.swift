@@ -13,12 +13,12 @@ struct TraktSyncPresentation: Equatable {
     static func resolve(connected: Bool, connecting: Bool, settingUp: Bool, syncing: Bool,
                         progress: SyncProgress, diagnostics: SyncDiagnostics, error: String?, maintenanceTitle: String? = nil) -> Self {
         if connecting {
-            return Self(title: "Connecting…", detail: "Finish signing in to Trakt to continue.", symbol: "person.crop.circle", needsAttention: false, isWorking: true, action: .connect)
+            return Self(title: "Connecting…", detail: "Finish signing in to continue.", symbol: "person.crop.circle", needsAttention: false, isWorking: true, action: .connect)
         }
         if !connected {
             return Self(title: error == nil ? "Not Connected" : "Sign In to Trakt", detail: error == nil
-                ? "Connect Trakt to sync your Watchlist and watched history. Your library stays available in iWatch."
-                : "Your Trakt connection needs attention. Sign in to continue syncing.", symbol: "person.crop.circle", needsAttention: error != nil, isWorking: false, action: .connect)
+                ? "Sync your Watchlist and watched history."
+                : "Sign in again to continue syncing.", symbol: "person.crop.circle", needsAttention: error != nil, isWorking: false, action: .connect)
         }
         if let maintenanceTitle, !syncing {
             return Self(title: maintenanceTitle, detail: "Keep iWatch open while this finishes.", symbol: "arrow.triangle.2.circlepath", needsAttention: false, isWorking: true, action: .sync)
@@ -30,26 +30,31 @@ struct TraktSyncPresentation: Equatable {
             return Self(title: "Syncing…", detail: [progress.title, progress.detail].compactMap { $0 }.joined(separator: "\n"), symbol: "arrow.triangle.2.circlepath", needsAttention: false, isWorking: true, action: .sync)
         }
         if diagnostics.failure == .offline {
-            return Self(title: "Connection Interrupted", detail: "iWatch couldn’t reach Trakt. Your local changes are saved. Try again when your connection is available.", symbol: "wifi.exclamationmark", needsAttention: true, isWorking: false, action: .sync)
+            return Self(title: "Connection Interrupted", detail: "Try again when your connection is available.", symbol: "wifi.exclamationmark", needsAttention: true, isWorking: false, action: .sync)
         }
         if diagnostics.failure == .ambiguous {
-            return Self(title: "Review Watched History", detail: "iWatch couldn’t match a watched change to a single Trakt play. Review your history on Trakt. iWatch won’t send the play again.", symbol: "exclamationmark.triangle", needsAttention: true, isWorking: false, action: .check)
+            return Self(title: "Review Watched History", detail: "Review the matching plays on Trakt.", symbol: "exclamationmark.triangle", needsAttention: true, isWorking: false, action: .check)
         }
         if diagnostics.changes.contains(where: { $0.state == .confirming }) || diagnostics.failure == .confirmation {
-            return Self(title: "Waiting for Confirmation", detail: "A watched change is saved in iWatch, but its upload hasn’t been confirmed. Checking again won’t send another watched play.", symbol: "clock.badge.exclamationmark", needsAttention: true, isWorking: false, action: .check)
+            return Self(title: "Waiting for Confirmation", detail: confirmationSummary(count: diagnostics.changes.filter { $0.state == .confirming }.count), symbol: "clock.badge.exclamationmark", needsAttention: true, isWorking: false, action: .check)
         }
         if diagnostics.deadletterOperationCount > 0 || error != nil || diagnostics.lastErrorDescription != nil {
-            return Self(title: "Sync Needs Attention", detail: "Some changes couldn’t be synced. Review pending changes or try again. Your library remains available in iWatch.", symbol: "exclamationmark.triangle", needsAttention: true, isWorking: false,
+            return Self(title: "Sync Needs Attention", detail: "Review pending changes or try again.", symbol: "exclamationmark.triangle", needsAttention: true, isWorking: false,
                         action: diagnostics.changes.contains { $0.state == .failed && $0.isOnThisDevice } ? .retry : .sync)
         }
         if diagnostics.duplicateCandidateCount > 0 {
-            return Self(title: "Library Check Recommended", detail: "Local library data may need attention. You can check it in Advanced.", symbol: "exclamationmark.triangle", needsAttention: true, isWorking: false, action: .sync)
+            return Self(title: "Library Check Recommended", detail: "Check local library data in Advanced.", symbol: "exclamationmark.triangle", needsAttention: true, isWorking: false, action: .sync)
         }
         if diagnostics.hasPendingWork {
-            return Self(title: "Changes Pending", detail: "Your changes are saved in iWatch and waiting to sync. Changes made on another device upload from that device.", symbol: "clock", needsAttention: false, isWorking: false, action: .sync)
+            return Self(title: "Changes Pending", detail: "Saved changes are waiting to upload.", symbol: "clock", needsAttention: false, isWorking: false, action: .sync)
         }
         return Self(title: diagnostics.initialBaselineComplete ? "Sync Complete" : "Ready to Sync",
-                    detail: "Your Watchlist and watched history sync automatically with Trakt.", symbol: "checkmark.circle", needsAttention: false, isWorking: false, action: .sync)
+                    detail: "Changes sync automatically.", symbol: "checkmark.circle", needsAttention: false, isWorking: false, action: .sync)
+    }
+
+    static func confirmationSummary(count: Int) -> String {
+        count == 1 ? "1 watched change needs checking." : count > 1
+            ? "\(count) watched changes need checking." : "A watched change needs checking."
     }
 }
 
@@ -67,30 +72,64 @@ extension AppSession {
     }
 }
 
-/// Full-width explanatory content avoids squeezing messages into trailing value columns.
-struct SyncStatusContent: View {
+/// Keep status and its action together; stack the accessory at accessibility sizes.
+struct SyncSettingsRow<Accessory: View>: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     let title: String
     let detail: String
     let symbol: String
     var needsAttention = false
-    var isWorking = false
+    @ViewBuilder var accessory: () -> Accessory
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label {
-                Text(title).font(.headline)
-            } icon: {
-                Image(systemName: symbol)
-                    .foregroundStyle(needsAttention ? Color.orange : Color.accentColor)
-            }
-            Text(detail).font(.subheadline).foregroundStyle(.secondary)
-            if isWorking {
-                ProgressView().accessibilityLabel(title)
+        Group {
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    copy
+                    accessory()
+                }
+            } else {
+                HStack(spacing: 12) {
+                    copy
+                    Spacer(minLength: 8)
+                    accessory()
+                }
             }
         }
         .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private var copy: some View {
+        Group {
+            if typeSize.isAccessibilitySize {
+                statusCopy
+            } else {
+                Label {
+                    statusCopy
+                } icon: {
+                    Image(systemName: symbol)
+                        .foregroundStyle(needsAttention ? Color.orange : Color.accentColor)
+                        .frame(width: 28)
+                        .accessibilityHidden(true)
+                }
+            }
+        }
         .accessibilityElement(children: .combine)
     }
+
+    private var statusCopy: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).foregroundStyle(.primary)
+            if !detail.isEmpty {
+                Text(detail).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .multilineTextAlignment(.leading)
+    }
+
 }
 
 struct SyncDateRow: View {

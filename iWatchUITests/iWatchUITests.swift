@@ -113,14 +113,23 @@ final class iWatchUITests: XCTestCase {
     @MainActor
     private func verifySyncDiagnostics(contentSize: String) throws {
         let app = launchSyncSettings(contentSize: contentSize, state: "confirmation")
-        let cloud = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'iCloud Sync,'")).firstMatch
+        let cloud = app.buttons.matching(NSPredicate(format: "label == 'iCloud' OR label BEGINSWITH 'iCloud,'")).firstMatch
         reveal(cloud, in: app)
         cloud.tap()
-        XCTAssertTrue(app.navigationBars["iCloud Sync"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["iCloud"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["Rebuild from Trakt"].exists)
         capture(app, "iCloud - " + contentSize)
-        app.navigationBars["iCloud Sync"].buttons.firstMatch.tap()
-        let trakt = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Trakt,'")).firstMatch
+        let cloudDetails = app.buttons["Details"]
+        reveal(cloudDetails, in: app)
+        cloudDetails.tap()
+        XCTAssertTrue(app.navigationBars["iCloud Details"].waitForExistence(timeout: 5))
+        capture(app, "iCloud details - " + contentSize)
+        app.navigationBars["iCloud Details"].buttons.firstMatch.tap()
+        let included = app.staticTexts["Included"]
+        reveal(included, in: app)
+        XCTAssertTrue(included.exists)
+        app.navigationBars["iCloud"].buttons.firstMatch.tap()
+        let trakt = app.buttons.matching(NSPredicate(format: "label == 'Trakt' OR label BEGINSWITH 'Trakt,'")).firstMatch
         reveal(trakt, in: app)
         trakt.tap()
         XCTAssertTrue(app.navigationBars["Trakt"].waitForExistence(timeout: 5))
@@ -142,6 +151,13 @@ final class iWatchUITests: XCTestCase {
         advanced.tap()
         XCTAssertTrue(app.navigationBars["Advanced"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["Discard Changes and Rebuild"].exists)
+        capture(app, "Compact advanced tools - " + contentSize)
+        let checkLibrary = app.buttons["Check Library Data"]
+        reveal(checkLibrary, in: app)
+        checkLibrary.tap()
+        XCTAssertTrue(app.navigationBars["Check Library Data"].waitForExistence(timeout: 5))
+        capture(app, "Library check - " + contentSize)
+        app.navigationBars["Check Library Data"].buttons.firstMatch.tap()
         let diagnostics = app.buttons["Diagnostics"]
         reveal(diagnostics, in: app)
         diagnostics.tap()
@@ -181,13 +197,19 @@ final class iWatchUITests: XCTestCase {
     func testSyncNormalOfflineAndSetupStates() throws {
         for state in ["normal", "offline", "syncing", "setup"] {
             let app = launchSyncSettings(contentSize: "UICTContentSizeCategoryL", state: state)
-            let trakt = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Trakt,'")).firstMatch
+            let trakt = app.buttons.matching(NSPredicate(format: "label == 'Trakt' OR label BEGINSWITH 'Trakt,'")).firstMatch
             reveal(trakt, in: app)
             trakt.tap()
             XCTAssertTrue(app.navigationBars["Trakt"].waitForExistence(timeout: 5))
-            let expected = ["normal": "Sync Complete", "offline": "Connection Interrupted",
+            let expected = ["normal": "Trakt", "offline": "Connection Interrupted",
                             "syncing": "Syncing…", "setup": "Finish Setup"][state]!
-            XCTAssertTrue(app.staticTexts[expected].waitForExistence(timeout: 5))
+            if state == "normal" {
+                XCTAssertTrue(app.buttons["Sync Now"].waitForExistence(timeout: 5))
+                XCTAssertFalse(app.staticTexts["Signed In to Trakt"].exists)
+                XCTAssertFalse(app.staticTexts["Last Successful Sync"].exists)
+            } else {
+                XCTAssertTrue(app.staticTexts[expected].waitForExistence(timeout: 5))
+            }
             if state == "setup" {
                 XCTAssertTrue(app.buttons["Use Trakt Library"].exists)
                 XCTAssertTrue(app.buttons["Upload Pending Changes"].exists)
@@ -245,12 +267,31 @@ final class iWatchUITests: XCTestCase {
         app.buttons["Trakt, Not Connected"].tap()
         XCTAssertTrue(app.navigationBars["Trakt"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Connect Trakt"].exists)
+        capture(app, "Disconnected Trakt")
 
         app.navigationBars["Trakt"].buttons.firstMatch.tap()
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Appearance,'")).firstMatch.tap()
         XCTAssertTrue(app.buttons["System"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Light"].exists)
         XCTAssertTrue(app.buttons["Dark"].exists)
+    }
+
+    @MainActor
+    func testTraktConnectAtAccessibilityTextSize() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["UITEST_MODE", "UITEST_ACCESSIBILITY_TEXT", "-appTheme", "2",
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"]
+        app.launch()
+        let settings = app.buttons["Settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        settings.tap()
+        let trakt = app.buttons["Trakt, Not Connected"]
+        reveal(trakt, in: app)
+        trakt.tap()
+        let connect = app.buttons["Connect Trakt"]
+        XCTAssertTrue(connect.waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(connect.frame.height, 44)
+        capture(app, "Disconnected Trakt - accessibility")
     }
 
     @MainActor
