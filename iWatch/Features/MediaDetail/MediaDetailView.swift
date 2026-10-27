@@ -21,6 +21,7 @@ private final class MediaDetailScreenModel {
     private let session: AppSession
 
     var loadState: LoadState = .idle
+    var operationError: String?
     var expandedSeason: Int?
     var isInWatchlist = false
     var overviewExpanded = false
@@ -65,8 +66,17 @@ private final class MediaDetailScreenModel {
         self.session = session
     }
 
+    private func present(_ error: Error, context: UserFacingError.Context = .action) {
+        guard !error.isCancelled else { return }
+        let message = UserFacingError.message(for: error, context: context)
+        if currentDetails == nil { loadState = .failed(message) }
+        else { operationError = message }
+    }
+
     func load(forceRefresh: Bool = false) async {
-        loadState = .loading
+        let previous = loadState
+        operationError = nil
+        if currentDetails == nil { loadState = .loading }
 
         do {
             let details = try await contentRepository.details(for: ref, forceRefresh: forceRefresh)
@@ -108,8 +118,8 @@ private final class MediaDetailScreenModel {
                 await loadSeason(expandedSeason)
             }
         } catch {
-            guard !error.isCancelled else { return }
-            loadState = .failed(error.localizedDescription)
+            guard !error.isCancelled else { loadState = previous; return }
+            present(error, context: .details)
         }
     }
 
@@ -123,7 +133,6 @@ private final class MediaDetailScreenModel {
         } catch {
             // Core details remain useful offline or when optional TMDb blocks fail.
             guard !error.isCancelled else { return }
-            supplementaryDetails = nil
         }
     }
 
@@ -183,7 +192,7 @@ private final class MediaDetailScreenModel {
             await refreshLibraryState()
         } catch {
             guard !error.isCancelled else { return }
-            loadState = .failed(error.localizedDescription)
+            present(error, context: .details)
         }
     }
 
@@ -192,17 +201,19 @@ private final class MediaDetailScreenModel {
     }
 
     func toggleWatchlist() async {
+        operationError = nil
         do {
             try await libraryRepository.setWatchlist(!isInWatchlist, for: ref)
             isInWatchlist.toggle()
             session.markLibraryUpdated(syncIfConnected: true)
         } catch {
             guard !error.isCancelled else { return }
-            loadState = .failed(error.localizedDescription)
+            present(error)
         }
     }
 
     func toggleMovieWatched() async {
+        operationError = nil
         do {
             if let movieWatchEventID {
                 try await libraryRepository.removeWatchEvent(eventID: movieWatchEventID)
@@ -213,29 +224,31 @@ private final class MediaDetailScreenModel {
             await refreshLibraryState()
         } catch {
             guard !error.isCancelled else { return }
-            loadState = .failed(error.localizedDescription)
+            present(error)
         }
     }
 
     func addMovieRewatch() async {
+        operationError = nil
         do {
             try await libraryRepository.addWatchEvent(for: ref, watchedAt: Date())
             session.markLibraryUpdated(syncIfConnected: true)
             await refreshLibraryState()
         } catch {
             guard !error.isCancelled else { return }
-            loadState = .failed(error.localizedDescription)
+            present(error)
         }
     }
 
     func setShowDisposition(_ disposition: ShowDisposition) async {
+        operationError = nil
         do {
             try await libraryRepository.setShowDisposition(disposition, for: ref)
             session.markLibraryUpdated(syncIfConnected: true)
             await refreshLibraryState()
         } catch {
             guard !error.isCancelled else { return }
-            loadState = .failed(error.localizedDescription)
+            present(error)
         }
     }
 
@@ -285,7 +298,7 @@ private final class MediaDetailScreenModel {
             await refreshLibraryState()
         } catch {
             guard !error.isCancelled else { return }
-            loadState = .failed(error.localizedDescription)
+            present(error)
         }
     }
 
@@ -301,7 +314,7 @@ private final class MediaDetailScreenModel {
             await refreshLibraryState()
         } catch {
             guard !error.isCancelled else { return }
-            loadState = .failed(error.localizedDescription)
+            present(error)
         }
     }
 
@@ -427,14 +440,17 @@ private struct MediaDetailBody: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             case .failed(let message):
-                ContentUnavailableView("Unable to Load",
-                                       systemImage: "exclamationmark.triangle",
-                                       description: Text(message))
+                RetryUnavailableView(title: "Unable to Load", message: message) {
+                    Task { await model.load(forceRefresh: true) }
+                }
 
             case .loaded(let details):
                 ScrollView {
                     VStack(spacing: 16) {
                         bannerSection(details)
+                        if let message = model.operationError {
+                            RecoveryNotice(message: message, actionTitle: "Dismiss") { model.operationError = nil }
+                        }
 
                         VStack(alignment: .leading, spacing: 16) {
                             introSection(details)

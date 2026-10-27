@@ -17,6 +17,7 @@ private final class PersonDetailScreenModel {
     private let repository: PeopleRepository
 
     var loadState: LoadState = .idle
+    var operationError: String?
 
     var person: PersonDetails? {
         guard case let .loaded(person) = loadState else { return nil }
@@ -28,15 +29,25 @@ private final class PersonDetailScreenModel {
         self.repository = repository
     }
 
+    private func present(_ error: Error, context: UserFacingError.Context = .action) {
+        guard !error.isCancelled else { return }
+        let message = UserFacingError.message(for: error, context: context)
+        if person == nil { loadState = .failed(message) }
+        else { operationError = message }
+    }
+
     func load() async {
-        loadState = .loading
+        let previous = loadState
+        operationError = nil
+        if person == nil { loadState = .loading }
 
         do {
             loadState = .loaded(try await repository.personDetails(id: personID))
         } catch is CancellationError {
+            loadState = previous
             return
         } catch {
-            loadState = .failed(error.localizedDescription)
+            present(error, context: .details)
         }
     }
 }
@@ -95,7 +106,12 @@ private struct PersonDetailBody: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case let .loaded(person):
-            personContent(person)
+            VStack(spacing: 0) {
+                if let message = model.operationError {
+                    RecoveryNotice(message: message, actionTitle: "Dismiss") { model.operationError = nil }
+                }
+                personContent(person)
+            }
 
         case let .failed(message):
             ContentUnavailableView {

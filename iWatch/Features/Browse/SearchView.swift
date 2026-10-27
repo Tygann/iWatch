@@ -4,7 +4,7 @@ import SwiftData
 
 // MARK: - Search State
 
-private enum SearchMediaScope: String, CaseIterable, Identifiable {
+enum SearchMediaScope: String, CaseIterable, Identifiable {
     case all = "All"
     case movies = "Movies"
     case shows = "Shows"
@@ -22,9 +22,12 @@ private enum SearchMediaScope: String, CaseIterable, Identifiable {
 
 @MainActor
 @Observable
-private final class SearchScreenModel {
+final class SearchScreenModel {
     private let repository: LibraryRepository
     private var searchTask: Task<Void, Never>?
+    private let search: @MainActor (String) async throws -> [SearchItem]
+    private var queryRevision = 0
+    private var resultsQuery: String?
 
     var query = ""
     var isSearching = false
@@ -36,9 +39,11 @@ private final class SearchScreenModel {
 
     let regionCode: String
 
-    init(repository: LibraryRepository, regionCode: String) {
+    init(repository: LibraryRepository, regionCode: String,
+         search: (@MainActor (String) async throws -> [SearchItem])? = nil) {
         self.repository = repository
         self.regionCode = regionCode
+        self.search = search ?? { try await repository.search(query: $0) }
     }
 
     func bootstrap() async {
@@ -51,6 +56,11 @@ private final class SearchScreenModel {
 
     func updateQuery(_ newValue: String) {
         query = newValue
+        queryRevision += 1
+        if newValue.trimmingCharacters(in: .whitespacesAndNewlines) != resultsQuery {
+            results = []
+            errorText = nil
+        }
         searchTask?.cancel()
         searchTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(300))
@@ -67,16 +77,20 @@ private final class SearchScreenModel {
             return
         }
 
+        if resultsQuery != trimmed { results = [] }
+        let revision = queryRevision
         isSearching = true
-        defer { isSearching = false }
+        defer { if queryRevision == revision { isSearching = false } }
 
         do {
-            results = try await repository.search(query: trimmed)
+            let response = try await search(trimmed)
+            guard queryRevision == revision, query.trimmingCharacters(in: .whitespacesAndNewlines) == trimmed, !Task.isCancelled else { return }
+            results = response
+            resultsQuery = trimmed
             errorText = nil
         } catch {
-            guard !error.isCancelled else { return }
-            results = []
-            errorText = error.localizedDescription
+            guard !error.isCancelled, queryRevision == revision, query.trimmingCharacters(in: .whitespacesAndNewlines) == trimmed else { return }
+            errorText = UserFacingError.message(for: error, context: .search)
         }
     }
 
@@ -274,13 +288,13 @@ private struct SearchViewBody: View {
 
     @ViewBuilder
     private var resultsSection: some View {
-        if model.isSearching {
+        if model.isSearching && model.results.isEmpty {
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let errorText = model.errorText {
-            ContentUnavailableView("Search Error",
-                                   systemImage: "exclamationmark.triangle",
-                                   description: Text(errorText))
+        } else if model.results.isEmpty, let errorText = model.errorText {
+            RetryUnavailableView(title: "Search Unavailable", message: errorText) {
+                Task { await model.performSearch() }
+            }
         } else if model.results.isEmpty {
             ContentUnavailableView("No Results",
                                    systemImage: "magnifyingglass",
@@ -288,6 +302,9 @@ private struct SearchViewBody: View {
         } else {
             ScrollView {
                 VStack(spacing: 16) {
+                    if let errorText = model.errorText {
+                        RecoveryNotice(message: errorText) { Task { await model.performSearch() } }
+                    }
                     DiscoveryScopePicker("Filter", selection: $model.selectedFilter) {
                         ForEach(SearchMediaScope.allCases) { filter in
                             Text(filter.rawValue).tag(filter)

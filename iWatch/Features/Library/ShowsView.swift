@@ -6,9 +6,10 @@ import SwiftData
 
 @MainActor
 @Observable
-private final class ShowsScreenModel {
+final class ShowsScreenModel {
     private let repository: LibraryRepository
     private let session: AppSession
+    private let loadSnapshot: @MainActor (Int, Bool) async throws -> ShowLibrarySnapshot
 
     var snapshot = ShowLibrarySnapshot.empty
     var isLoading = false
@@ -17,9 +18,13 @@ private final class ShowsScreenModel {
     private var loadedRevision: Int?
     private var enrichedRevision: Int?
 
-    init(repository: LibraryRepository, session: AppSession) {
+    init(repository: LibraryRepository, session: AppSession,
+         loadSnapshot: (@MainActor (Int, Bool) async throws -> ShowLibrarySnapshot)? = nil) {
         self.repository = repository
         self.session = session
+        self.loadSnapshot = loadSnapshot ?? { revision, force in
+            try await repository.showLibrarySnapshot(revision: revision, forceRefresh: force)
+        }
     }
 
     func load(revision: Int, forceRefresh: Bool = false) async {
@@ -29,16 +34,12 @@ private final class ShowsScreenModel {
         defer { isLoading = false }
 
         do {
-            snapshot = try await repository.showLibrarySnapshot(
-                revision: revision,
-                forceRefresh: forceRefresh
-            )
+            snapshot = try await loadSnapshot(revision, forceRefresh)
             loadedRevision = revision
             errorText = nil
         } catch {
             guard !error.isCancelled else { return }
-            snapshot = .empty
-            errorText = error.localizedDescription
+            errorText = UserFacingError.message(for: error, context: .library)
         }
     }
 
@@ -129,7 +130,7 @@ private final class ShowsScreenModel {
             session.markLibraryUpdated(syncIfConnected: true)
             await load(revision: session.libraryRevision)
         } catch {
-            errorText = error.localizedDescription
+            errorText = UserFacingError.message(for: error, context: .library)
         }
     }
 
@@ -139,7 +140,7 @@ private final class ShowsScreenModel {
             session.markLibraryUpdated(syncIfConnected: true)
             await load(revision: session.libraryRevision)
         } catch {
-            errorText = error.localizedDescription
+            errorText = UserFacingError.message(for: error, context: .library)
         }
     }
 }
@@ -180,10 +181,10 @@ private struct ShowsViewBody: View {
                 if model.isLoading {
                     ProgressView()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let errorText = model.errorText {
-                    ContentUnavailableView("Shows Error",
-                                           systemImage: "exclamationmark.triangle",
-                                           description: Text(errorText))
+                } else if model.snapshot.all.isEmpty, let errorText = model.errorText {
+                    RetryUnavailableView(title: "Unable to Load Shows", message: errorText) {
+                        Task { await model.load(revision: session.libraryRevision, forceRefresh: true) }
+                    }
                 } else if model.snapshot.all.isEmpty {
                     ContentUnavailableView(
                         "No shows yet",
@@ -193,6 +194,11 @@ private struct ShowsViewBody: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
+                        if let errorText = model.errorText {
+                            RecoveryNotice(message: errorText) {
+                                Task { await model.load(revision: session.libraryRevision, forceRefresh: true) }
+                            }
+                        }
                         continueWatchingSection
                         comingUpSection
                         librarySection(title: "Not Started", items: model.snapshot.watchlist)

@@ -21,6 +21,7 @@ private final class EpisodeScreenModel {
     private let session: AppSession
 
     var loadState: LoadState = .idle
+    var operationError: String?
     var showTitle = ""
     var watchEventID: UUID?
     var isWatched = false
@@ -57,8 +58,17 @@ private final class EpisodeScreenModel {
         MediaID(kind: .show, id: ref.showId, traktID: ref.showTraktID)
     }
 
+    private func present(_ error: Error, context: UserFacingError.Context = .action) {
+        guard !error.isCancelled else { return }
+        let message = UserFacingError.message(for: error, context: context)
+        if details == nil { loadState = .failed(message) }
+        else { operationError = message }
+    }
+
     func load(forceRefresh: Bool = false) async {
-        loadState = .loading
+        let previous = loadState
+        operationError = nil
+        if details == nil { loadState = .loading }
 
         do {
             let details = try await contentRepository.episodeDetails(for: ref, forceRefresh: forceRefresh)
@@ -73,8 +83,8 @@ private final class EpisodeScreenModel {
 
             await refreshLibraryState()
         } catch {
-            guard !error.isCancelled else { return }
-            loadState = .failed(error.localizedDescription)
+            guard !error.isCancelled else { loadState = previous; return }
+            present(error, context: .details)
         }
     }
 
@@ -88,6 +98,7 @@ private final class EpisodeScreenModel {
     }
 
     func requestToggleWatched() async {
+        operationError = nil
         do {
             if let watchEventID {
                 try await libraryRepository.removeWatchEvent(eventID: watchEventID)
@@ -112,11 +123,12 @@ private final class EpisodeScreenModel {
             await refreshLibraryState()
         } catch {
             guard !error.isCancelled else { return }
-            loadState = .failed(error.localizedDescription)
+            present(error)
         }
     }
 
     func confirmWatched(_ confirmation: EpisodeWatchConfirmation, includePrevious: Bool) async {
+        operationError = nil
         watchConfirmation = nil
 
         do {
@@ -128,7 +140,7 @@ private final class EpisodeScreenModel {
             await refreshLibraryState()
         } catch {
             guard !error.isCancelled else { return }
-            loadState = .failed(error.localizedDescription)
+            present(error)
         }
     }
 }
@@ -224,14 +236,17 @@ private struct EpisodeViewBody: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             case .failed(let message):
-                ContentUnavailableView("Episode Error",
-                                       systemImage: "exclamationmark.triangle",
-                                       description: Text(message))
+                RetryUnavailableView(title: "Unable to Load Episode", message: message) {
+                    Task { await model.load(forceRefresh: true) }
+                }
 
             case .loaded(let details):
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         bannerSection(details)
+                        if let message = model.operationError {
+                            RecoveryNotice(message: message, actionTitle: "Dismiss") { model.operationError = nil }
+                        }
                         VStack(alignment: .leading, spacing: 16) {
                             metadataSection(details)
                             actionsSection(details)

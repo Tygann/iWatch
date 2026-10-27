@@ -28,7 +28,7 @@ private final class ProviderBrowseModel {
         } catch {
             guard !error.isCancelled else { return }
             providers = []
-            errorText = error.localizedDescription
+            errorText = UserFacingError.message(for: error)
         }
     }
 }
@@ -198,7 +198,7 @@ private final class ProviderResultsModel {
             guard !error.isCancelled else { return }
             guard requestedScope == mediaScope, requestedOfferType == offerType else { return }
             items = []
-            errorText = error.localizedDescription
+            errorText = UserFacingError.message(for: error)
         }
         guard requestedScope == mediaScope, requestedOfferType == offerType else { return }
         isLoading = false

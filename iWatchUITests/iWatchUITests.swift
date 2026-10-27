@@ -295,6 +295,28 @@ final class iWatchUITests: XCTestCase {
     }
 
     @MainActor
+    func testRetainedLibraryErrorStandard() throws { verifyRetainedLibraryError(accessibility: false) }
+
+    @MainActor
+    func testRetainedLibraryErrorAccessibility() throws { verifyRetainedLibraryError(accessibility: true) }
+
+    @MainActor
+    private func verifyRetainedLibraryError(accessibility: Bool) {
+        let app = XCUIApplication()
+        app.launchArguments += ["UITEST_MODE", "UITEST_RETAINED_LIBRARY_ERROR", "-appTheme", accessibility ? "2" : "1"]
+        if accessibility { app.launchArguments.append("UITEST_ACCESSIBILITY_TEXT") }
+        app.launch()
+        let retry = app.buttons["Try Again"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 5))
+        capture(app, "Retained library - \(accessibility ? "accessibility" : "standard")")
+        retry.tap()
+        let movie = app.buttons["UI Test Movie"]
+        reveal(movie, in: app)
+        XCTAssertTrue(movie.exists)
+        XCTAssertFalse(app.staticTexts["Unable to Load Movies"].exists)
+    }
+
+    @MainActor
     func testAboutLightStandard() throws {
         try verifyAbout(theme: "light", accessibility: false)
     }

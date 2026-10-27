@@ -111,9 +111,10 @@ enum MovieLibrarySorter {
 
 @MainActor
 @Observable
-private final class MoviesScreenModel {
+final class MoviesScreenModel {
     private let repository: LibraryRepository
     private let session: AppSession
+    private let loadItems: @MainActor (Int, Bool) async throws -> [LibraryMovieItem]
 
     var items: [LibraryMovieItem] = []
     var isLoading = false
@@ -122,9 +123,13 @@ private final class MoviesScreenModel {
     private var loadedRevision: Int?
     private var enrichedRevision: Int?
 
-    init(repository: LibraryRepository, session: AppSession) {
+    init(repository: LibraryRepository, session: AppSession,
+         loadItems: (@MainActor (Int, Bool) async throws -> [LibraryMovieItem])? = nil) {
         self.repository = repository
         self.session = session
+        self.loadItems = loadItems ?? { revision, force in
+            try await repository.movieLibraryItems(revision: revision, forceRefresh: force)
+        }
     }
 
     func load(revision: Int, forceRefresh: Bool = false) async {
@@ -134,13 +139,12 @@ private final class MoviesScreenModel {
         defer { isLoading = false }
 
         do {
-            items = try await repository.movieLibraryItems(revision: revision, forceRefresh: forceRefresh)
+            items = try await loadItems(revision, forceRefresh)
             loadedRevision = revision
             errorText = nil
         } catch {
             guard !error.isCancelled else { return }
-            errorText = error.localizedDescription
-            items = []
+            errorText = UserFacingError.message(for: error, context: .library)
         }
     }
 
@@ -191,7 +195,7 @@ private final class MoviesScreenModel {
             session.markLibraryUpdated(syncIfConnected: true)
             await load(revision: session.libraryRevision)
         } catch {
-            errorText = error.localizedDescription
+            errorText = UserFacingError.message(for: error, context: .library)
         }
     }
 
@@ -202,7 +206,7 @@ private final class MoviesScreenModel {
                 session.markLibraryUpdated(syncIfConnected: true)
             await load(revision: session.libraryRevision)
             } catch {
-                errorText = error.localizedDescription
+                errorText = UserFacingError.message(for: error, context: .library)
             }
         }
     }
@@ -267,10 +271,10 @@ private struct MoviesViewBody: View {
                 if model.isLoading {
                     ProgressView()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let errorText = model.errorText {
-                    ContentUnavailableView("Movies Error",
-                                           systemImage: "exclamationmark.triangle",
-                                           description: Text(errorText))
+                } else if model.items.isEmpty, let errorText = model.errorText {
+                    RetryUnavailableView(title: "Unable to Load Movies", message: errorText) {
+                        Task { await model.load(revision: session.libraryRevision, forceRefresh: true) }
+                    }
                 } else if model.items.isEmpty {
                     ContentUnavailableView(
                         "No movies yet",
@@ -280,6 +284,11 @@ private struct MoviesViewBody: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
+                        if let errorText = model.errorText {
+                            RecoveryNotice(message: errorText) {
+                                Task { await model.load(revision: session.libraryRevision, forceRefresh: true) }
+                            }
+                        }
                         toWatchSection
                         watchedSection
                     }
@@ -305,6 +314,12 @@ private struct MoviesViewBody: View {
             .task(id: session.libraryRevision) {
                 await model.load(revision: session.libraryRevision)
                 await model.enrichMissingMetadata()
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("UITEST_MODE"),
+                   ProcessInfo.processInfo.arguments.contains("UITEST_RETAINED_LIBRARY_ERROR") {
+                    model.errorText = UserFacingError.message(for: URLError(.notConnectedToInternet))
+                }
+                #endif
             }
         }
     }

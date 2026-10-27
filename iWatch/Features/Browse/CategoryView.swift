@@ -51,7 +51,7 @@ private final class BrowseCategoryModel {
                 case .failure(let error):
                     guard !error.isCancelled else { continue }
                     sections[index].items = []
-                    sections[index].errorText = error.localizedDescription
+                    sections[index].errorText = UserFacingError.message(for: error)
                 }
             }
         }
