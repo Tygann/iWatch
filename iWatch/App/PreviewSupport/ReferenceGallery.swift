@@ -96,8 +96,7 @@ private struct ReferenceSettingsView: View {
         Group {
             switch scenario {
             case .notifications: ReleaseNotificationsSettingsView()
-            case .cloud: LibrarySettingsView()
-            default: TraktSettingsView()
+            default: LibrarySettingsView()
             }
         }
         .environment(container)

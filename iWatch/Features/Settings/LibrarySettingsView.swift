@@ -29,17 +29,7 @@ struct LibrarySettingsView: View {
             } footer: {
                 Text("Your library syncs automatically across devices using the same Apple Account.")
             }
-            Section {
-                NavigationLink {
-                    TraktSettingsView()
-                } label: {
-                    SettingsNavigationLabel(title: "Trakt", systemImage: "arrow.triangle.2.circlepath",
-                        detail: session.traktSyncPresentation.title == "Sync Complete" ? "Connected" : session.traktSyncPresentation.title)
-                }
-                .accessibilityIdentifier("settings-trakt")
-            } footer: {
-                Text("Optionally sync your Watchlist and watched history with Trakt.")
-            }
+            TraktSettingsSection()
             Section {
                 NavigationLink { AdvancedSettingsView() } label: {
                     SettingsNavigationLabel(title: "Manage Data", systemImage: "externaldrive")
