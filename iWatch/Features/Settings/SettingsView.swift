@@ -6,6 +6,8 @@ import SwiftUI
 
 enum SettingsHomeSection: String, CaseIterable {
     case preferences = "Preferences"
+    case support = "Support"
+    case app = "App"
 }
 
 // MARK: - Settings Screen
@@ -13,6 +15,7 @@ enum SettingsHomeSection: String, CaseIterable {
 struct SettingsView: View {
     @Environment(AppContainer.self) private var container
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.requestReview) private var requestReview
     @AppStorage(ReleaseNotificationPreferences.enabledKey) private var notificationsEnabled = false
     @Environment(AppSession.self) private var session
     @Environment(AppRouter.self) private var router
@@ -24,6 +27,7 @@ struct SettingsView: View {
         Form {
             librarySection
             preferencesSection
+            supportSection
             appSection
             #if DEBUG
             Section("Development") {
@@ -93,14 +97,27 @@ struct SettingsView: View {
         }
     }
 
-    private var appSection: some View {
-        Section {
-            NavigationLink {
-                AboutView()
-            } label: {
-                SettingsNavigationLabel(title: "Help & About", systemImage: "questionmark.circle")
+    private var supportSection: some View {
+        Section(SettingsHomeSection.support.rawValue) {
+            NavigationLink { SyncSupportView() } label: {
+                SettingsNavigationLabel(title: "Contact Support", systemImage: "questionmark.circle")
             }
-            .accessibilityIdentifier("settings-help")
+            .accessibilityIdentifier("settings-support")
+        }
+    }
+
+    private var appSection: some View {
+        Section(SettingsHomeSection.app.rawValue) {
+            ShareLink(item: AppDistributionPresentation.shareText) {
+                SettingsNavigationLabel(title: "Share iWatch", systemImage: "square.and.arrow.up")
+            }
+            Button { requestReview() } label: {
+                SettingsNavigationLabel(title: "Rate iWatch", systemImage: "star")
+            }
+            NavigationLink { AboutView() } label: {
+                SettingsNavigationLabel(title: "About", systemImage: "info.circle")
+            }
+            .accessibilityIdentifier("settings-about")
         }
     }
 

@@ -35,7 +35,7 @@ struct SettingsPresentationTests {
     @Test
     func homeSectionsFollowUserFacingHierarchy() {
         #expect(SettingsHomeSection.allCases.map(\.rawValue) == [
-            "Preferences"
+            "Preferences", "Support", "App"
         ])
     }
 

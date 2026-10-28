@@ -1,10 +1,8 @@
 import SwiftUI
-import StoreKit
 
 // MARK: - About Screen
 
 struct AboutView: View {
-    @Environment(\.requestReview) private var requestReview
     private var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
     }
@@ -18,18 +16,6 @@ struct AboutView: View {
             appIdentity
 
             Section {
-                NavigationLink { SyncSupportView() } label: {
-                    SettingsNavigationLabel(title: "Contact Support", systemImage: "questionmark.circle")
-                }
-                ShareLink(item: AppDistributionPresentation.shareText) {
-                    SettingsNavigationLabel(title: "Share iWatch", systemImage: "square.and.arrow.up")
-                }
-                Button { requestReview() } label: {
-                    SettingsNavigationLabel(title: "Rate iWatch", systemImage: "star")
-                }
-            }
-
-            Section {
                 Link(destination: URL(string: "https://tylerkeegan.com/iwatch/privacy/")!) {
                     SettingsNavigationLabel(title: "Privacy Policy", systemImage: "hand.raised")
                 }
@@ -40,7 +26,7 @@ struct AboutView: View {
                 }
             }
         }
-        .navigationTitle("Help & About")
+        .navigationTitle("About")
         .navigationBarTitleDisplayMode(.inline)
     }
 

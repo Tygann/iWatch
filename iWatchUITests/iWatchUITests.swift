@@ -176,13 +176,9 @@ final class iWatchUITests: XCTestCase {
     @MainActor
     private func verifySupport(contentSize: String) {
         let app = launchSyncSettings(contentSize: contentSize, state: "normal")
-        let help = app.buttons["settings-help"]
-        reveal(help, in: app)
-        help.tap()
-        XCTAssertTrue(app.navigationBars["Help & About"].waitForExistence(timeout: 5))
-        let support = app.buttons["Contact Support"]
+        let support = app.buttons["settings-support"]
         reveal(support, in: app)
-        capture(app, "Help and about - " + contentSize)
+        capture(app, "Settings support section - " + contentSize)
         support.tap()
         XCTAssertTrue(app.navigationBars["Contact Support"].waitForExistence(timeout: 5))
         let share = app.buttons["Share Diagnostic Report"]
@@ -190,6 +186,16 @@ final class iWatchUITests: XCTestCase {
         XCTAssertTrue(share.exists)
         capture(app, "Support report - " + contentSize)
         app.navigationBars["Contact Support"].buttons.firstMatch.tap()
+        let about = app.buttons["settings-about"]
+        reveal(about, in: app)
+        XCTAssertTrue(app.buttons["Share iWatch"].exists)
+        XCTAssertTrue(app.buttons["Rate iWatch"].exists)
+        capture(app, "Settings app section - " + contentSize)
+        about.tap()
+        XCTAssertTrue(app.navigationBars["About"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Contact Support"].exists)
+        XCTAssertFalse(app.buttons["Share iWatch"].exists)
+        XCTAssertFalse(app.buttons["Rate iWatch"].exists)
         let credits = app.buttons["Acknowledgments"]
         reveal(credits, in: app)
         credits.tap()
@@ -557,13 +563,16 @@ final class iWatchUITests: XCTestCase {
         identity.lifetime = .keepAlways
         add(identity)
 
-        for label in ["The Movie Database (TMDB)", "Trakt", "Privacy Policy", "Support"] {
-            let link = app.buttons[label]
-            for _ in 0..<8 {
-                if link.isHittable { break }
-                app.swipeUp()
-            }
-            XCTAssertTrue(link.isHittable, "About link must remain reachable: " + label)
+        XCTAssertFalse(app.buttons["Contact Support"].exists)
+        XCTAssertFalse(app.buttons["Share iWatch"].exists)
+        XCTAssertFalse(app.buttons["Rate iWatch"].exists)
+        reveal(app.buttons["Privacy Policy"], in: app)
+        let credits = app.buttons["Acknowledgments"]
+        reveal(credits, in: app)
+        credits.tap()
+        XCTAssertTrue(app.navigationBars["Acknowledgments"].waitForExistence(timeout: 5))
+        for label in ["The Movie Database (TMDB)", "Trakt"] {
+            reveal(app.buttons[label], in: app)
         }
         let links = XCTAttachment(screenshot: app.screenshot())
         links.name = "About links - \(theme) - \(accessibility ? "accessibility" : "standard")"
