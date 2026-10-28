@@ -14,6 +14,20 @@ struct AboutView: View {
     var body: some View {
         List {
             appIdentity
+            Section {
+                Text("Keep track of movies and shows, follow your watchlist, and pick up where you left off.")
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+            }
+            .listRowBackground(Color.clear)
+
+            Section {
+                NavigationLink { SyncSupportView() } label: {
+                    SettingsNavigationLabel(title: "Contact Support", systemImage: "questionmark.circle")
+                }
+                .accessibilityIdentifier("about-support")
+            }
 
             Section {
                 Link(destination: URL(string: "https://tylerkeegan.com/iwatch/privacy/")!) {
@@ -25,6 +39,15 @@ struct AboutView: View {
                     SettingsNavigationLabel(title: "Acknowledgments", systemImage: "info.circle")
                 }
             }
+            Section {
+                Text("© 2026 Tyler Keegan. All rights reserved.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+            }
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
         }
         .navigationTitle("About")
         .navigationBarTitleDisplayMode(.inline)
@@ -32,19 +55,23 @@ struct AboutView: View {
 
     private var appIdentity: some View {
         Section {
-            HStack(spacing: AppSpacing.medium) {
+            VStack {
                 Image("iWatchLogo")
-                    .resizable().scaledToFit().frame(width: 48, height: 48)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 120, height: 120)
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
-                    Text("iWatch").font(.headline)
-                    Text("Version \(version) (\(build))")
-                        .font(.subheadline).foregroundStyle(.secondary)
-                }
+                Text("iWatch")
+                    .font(.largeTitle.bold())
+                Text("Version \(version) (\(build))")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
-            .padding(.vertical, AppSpacing.small)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
             .accessibilityElement(children: .combine)
         }
+        .listRowBackground(Color.clear)
     }
 
 }
@@ -78,12 +105,6 @@ struct AcknowledgmentsView: View {
                 Text("iWatch uses Trakt but is not endorsed or certified by Trakt.")
             }
 
-            Section {
-                Text("© 2026 Tyler Keegan. All rights reserved.")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-            }
-            .listRowBackground(Color.clear)
         }
         .navigationTitle("Acknowledgments")
         .navigationBarTitleDisplayMode(.inline)

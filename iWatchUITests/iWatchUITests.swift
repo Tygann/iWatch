@@ -176,16 +176,7 @@ final class iWatchUITests: XCTestCase {
     @MainActor
     private func verifySupport(contentSize: String) {
         let app = launchSyncSettings(contentSize: contentSize, state: "normal")
-        let support = app.buttons["settings-support"]
-        reveal(support, in: app)
-        capture(app, "Settings support section - " + contentSize)
-        support.tap()
-        XCTAssertTrue(app.navigationBars["Contact Support"].waitForExistence(timeout: 5))
-        let share = app.buttons["Share Diagnostic Report"]
-        reveal(share, in: app)
-        XCTAssertTrue(share.exists)
-        capture(app, "Support report - " + contentSize)
-        app.navigationBars["Contact Support"].buttons.firstMatch.tap()
+        XCTAssertFalse(app.buttons["Contact Support"].exists)
         let about = app.buttons["settings-about"]
         reveal(about, in: app)
         XCTAssertTrue(app.buttons["Share iWatch"].exists)
@@ -193,7 +184,15 @@ final class iWatchUITests: XCTestCase {
         capture(app, "Settings app section - " + contentSize)
         about.tap()
         XCTAssertTrue(app.navigationBars["About"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["Contact Support"].exists)
+        let support = app.buttons["about-support"]
+        reveal(support, in: app)
+        capture(app, "About support - " + contentSize)
+        support.tap()
+        XCTAssertTrue(app.navigationBars["Contact Support"].waitForExistence(timeout: 5))
+        let share = app.buttons["Share Diagnostic Report"]
+        reveal(share, in: app)
+        capture(app, "Support report - " + contentSize)
+        app.navigationBars["Contact Support"].buttons.firstMatch.tap()
         XCTAssertFalse(app.buttons["Share iWatch"].exists)
         XCTAssertFalse(app.buttons["Rate iWatch"].exists)
         let credits = app.buttons["Acknowledgments"]
@@ -563,7 +562,7 @@ final class iWatchUITests: XCTestCase {
         identity.lifetime = .keepAlways
         add(identity)
 
-        XCTAssertFalse(app.buttons["Contact Support"].exists)
+        reveal(app.buttons["about-support"], in: app)
         XCTAssertFalse(app.buttons["Share iWatch"].exists)
         XCTAssertFalse(app.buttons["Rate iWatch"].exists)
         reveal(app.buttons["Privacy Policy"], in: app)

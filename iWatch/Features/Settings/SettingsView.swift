@@ -6,7 +6,6 @@ import SwiftUI
 
 enum SettingsHomeSection: String, CaseIterable {
     case preferences = "Preferences"
-    case support = "Support"
     case app = "App"
 }
 
@@ -27,7 +26,6 @@ struct SettingsView: View {
         Form {
             librarySection
             preferencesSection
-            supportSection
             appSection
             #if DEBUG
             Section("Development") {
@@ -97,23 +95,18 @@ struct SettingsView: View {
         }
     }
 
-    private var supportSection: some View {
-        Section(SettingsHomeSection.support.rawValue) {
-            NavigationLink { SyncSupportView() } label: {
-                SettingsNavigationLabel(title: "Contact Support", systemImage: "questionmark.circle")
-            }
-            .accessibilityIdentifier("settings-support")
-        }
-    }
-
     private var appSection: some View {
         Section(SettingsHomeSection.app.rawValue) {
             ShareLink(item: AppDistributionPresentation.shareText) {
                 SettingsNavigationLabel(title: "Share iWatch", systemImage: "square.and.arrow.up")
+                    .foregroundStyle(Color.primary)
             }
+            .buttonStyle(.plain)
             Button { requestReview() } label: {
                 SettingsNavigationLabel(title: "Rate iWatch", systemImage: "star")
+                    .foregroundStyle(Color.primary)
             }
+            .buttonStyle(.plain)
             NavigationLink { AboutView() } label: {
                 SettingsNavigationLabel(title: "About", systemImage: "info.circle")
             }
