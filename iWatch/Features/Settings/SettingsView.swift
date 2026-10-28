@@ -11,6 +11,9 @@ enum SettingsHomeSection: String, CaseIterable {
 // MARK: - Settings Screen
 
 struct SettingsView: View {
+    @Environment(AppContainer.self) private var container
+    @Environment(\.scenePhase) private var scenePhase
+    @AppStorage(ReleaseNotificationPreferences.enabledKey) private var notificationsEnabled = false
     @Environment(AppSession.self) private var session
     @Environment(AppRouter.self) private var router
 
@@ -31,6 +34,12 @@ struct SettingsView: View {
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: session.libraryRevision) { await session.refreshSyncDiagnostics() }
+        .task { await container.releaseNotificationCoordinator.refreshStatus() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                Task { await container.releaseNotificationCoordinator.refreshStatus() }
+            }
+        }
     }
 
     // MARK: - Library
@@ -54,20 +63,20 @@ struct SettingsView: View {
                         .tag(theme)
                 }
             } label: {
-                Label("Appearance", systemImage: "circle.righthalf.filled")
+                SettingsNavigationLabel(title: "Appearance", systemImage: "circle.righthalf.filled")
             }
             .pickerStyle(.menu)
             .tint(.secondary)
 
             Picker(selection: Binding(
-                get: { router.selectedTab.rawValue },
+                get: { router.defaultTab.rawValue },
                 set: { router.updateDefaultTab($0) }
             )) {
                 Text("Movies").tag(AppRouter.Tab.movies.rawValue)
                 Text("Shows").tag(AppRouter.Tab.shows.rawValue)
                 Text("Search").tag(AppRouter.Tab.search.rawValue)
             } label: {
-                Label("Start Page", systemImage: "platter.filled.bottom.iphone")
+                SettingsNavigationLabel(title: "Start Page", systemImage: "platter.filled.bottom.iphone")
             }
             .pickerStyle(.menu)
             .tint(.secondary)
@@ -89,24 +98,26 @@ struct SettingsView: View {
             NavigationLink {
                 AboutView()
             } label: {
-                Label("Help & About", systemImage: "questionmark.circle")
+                SettingsNavigationLabel(title: "Help & About", systemImage: "questionmark.circle")
             }
             .accessibilityIdentifier("settings-help")
         }
     }
 
     private var cloudStatus: String? {
-        if session.traktSyncPresentation.needsAttention { return "Needs Attention" }
-        if session.traktSyncPresentation.isWorking { return session.traktSyncPresentation.title }
+        if session.pendingTraktAccountKey != nil { return "Finish Trakt Setup" }
+        if session.traktSyncPresentation.needsAttention { return "Trakt Needs Attention" }
+        if session.traktSyncPresentation.isWorking { return "Trakt: " + session.traktSyncPresentation.title }
         switch session.cloudSyncStatus {
-        case .importing, .exporting: return session.cloudSyncStatus.title
-        case .failed, .unavailable, .timedOut: return "Needs Attention"
+        case .importing, .exporting: return "iCloud: " + session.cloudSyncStatus.title
+        case .failed, .unavailable, .timedOut: return "iCloud Needs Attention"
         default: return nil
         }
     }
 
     private var notificationStatus: String {
-        ReleaseNotificationPreferences.enabled ? "On" : "Off"
+        NotificationPermissionPresentation.summary(enabled: notificationsEnabled,
+            status: container.releaseNotificationCoordinator.authorizationStatus)
     }
 }
 
@@ -128,48 +139,13 @@ private struct SettingsLibraryLabel: View {
             }
             VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
                 Text("Your Library").font(.headline)
-                Text("Library & sync").font(.subheadline).foregroundStyle(.secondary)
-                if let status {
-                    Text(status).font(.caption).foregroundStyle(.secondary)
-                }
+                Text(status ?? "Watchlist, history, and sync")
+                    .font(.subheadline).foregroundStyle(.secondary)
             }
             .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.vertical, AppSpacing.small)
         .accessibilityElement(children: .combine)
-    }
-}
-
-struct SettingsNavigationLabel: View {
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    let title: String
-    let systemImage: String
-    var detail: String?
-
-    var body: some View {
-        if dynamicTypeSize.isAccessibilitySize {
-            VStack(alignment: .leading, spacing: 4) {
-                Image(systemName: systemImage)
-                    .foregroundStyle(.tint)
-                    .accessibilityHidden(true)
-                Text(title)
-                if let detail {
-                    Text(detail)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        } else {
-            LabeledContent {
-                if let detail {
-                    Text(detail)
-                        .foregroundStyle(.secondary)
-                }
-            } label: {
-                Label(title, systemImage: systemImage)
-            }
-        }
     }
 }
 

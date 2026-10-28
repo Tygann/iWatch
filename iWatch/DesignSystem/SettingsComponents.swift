@@ -27,3 +27,45 @@ struct SettingsCapsule: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 }
+
+struct SettingsNavigationLabel: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    let title: String
+    let systemImage: String
+    var detail: String?
+
+    var body: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            stackedCopy
+        } else {
+            Label {
+                ViewThatFits(in: .horizontal) {
+                    HStack {
+                        Text(title).fixedSize()
+                        Spacer(minLength: AppSpacing.medium)
+                        if let detail {
+                            Text(detail).foregroundStyle(.secondary).fixedSize()
+                        }
+                    }
+                    stackedCopy
+                }
+            } icon: {
+                Image(systemName: systemImage)
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 28)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
+    private var stackedCopy: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
+            Text(title)
+            if let detail {
+                Text(detail).font(.subheadline).foregroundStyle(.secondary)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}

@@ -10,11 +10,14 @@ struct TraktSettingsSections: View {
         Group {
             Section {
                 TraktConnectionRow()
+                if health.needsAttention || health.isWorking || health.title == "Changes Pending" {
+                    TraktStatusRow()
+                }
                 if session.traktConnected && session.pendingTraktAccountKey == nil {
                     TraktLastSyncRow()
                 }
             } header: {
-                Text("Trakt")
+                Text("Connection")
             } footer: {
                 if session.pendingTraktAccountKey != nil {
                     Text("Finish setup to start syncing this Trakt account.")
@@ -24,23 +27,15 @@ struct TraktSettingsSections: View {
             }
             .task { await session.refreshSyncDiagnostics() }
 
-            if health.needsAttention || (health.isWorking && !session.isSyncing && session.traktConnected) || health.title == "Changes Pending" {
-                Section(health.needsAttention ? "Needs Attention" : "Activity") {
-                    TraktStatusRow(showsPrimaryAction: false)
-                }
-            }
-
             if session.pendingTraktAccountKey != nil {
                 setupSection
             } else if session.traktConnected && (!session.syncDiagnostics.changes.isEmpty || health.needsAttention) {
                 Section {
-                    if !session.syncDiagnostics.changes.isEmpty || health.needsAttention {
-                        NavigationLink {
-                            TraktPendingChangesView()
-                        } label: {
-                            SettingsNavigationLabel(title: "Pending Changes", systemImage: "clock",
-                                detail: session.syncDiagnostics.changes.isEmpty ? "Review" : session.syncDiagnostics.changes.count.formatted())
-                        }
+                    NavigationLink {
+                        TraktPendingChangesView()
+                    } label: {
+                        SettingsNavigationLabel(title: "Pending Changes", systemImage: "clock",
+                            detail: session.syncDiagnostics.changes.isEmpty ? "Review" : session.syncDiagnostics.changes.count.formatted())
                     }
                 }
             }
@@ -49,16 +44,28 @@ struct TraktSettingsSections: View {
 
     private var setupSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 6) {
-                Button("Use Trakt Library") { showImport = true }
-                Text("Replace your iWatch library and discard pending uploads.")
-                    .font(.subheadline).foregroundStyle(.secondary)
+            Button(role: .destructive) { showImport = true } label: {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Replace iWatch Library from Trakt").foregroundStyle(.red)
+                    Text("Replace your iWatch library and discard pending uploads.")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
             }
-            VStack(alignment: .leading, spacing: 6) {
-                Button("Upload Pending Changes") { Task { await session.uploadLocalLibrary() } }
-                Text("Send pending changes from this device, then download Trakt.")
-                    .font(.subheadline).foregroundStyle(.secondary)
+            .buttonStyle(.plain)
+            Button { Task { await session.uploadLocalLibrary() } } label: {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Upload Pending Changes").foregroundStyle(Color.accentColor)
+                    Text("Send pending changes from this device, then download Trakt.")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
             if let error = session.traktLastError {
                 DisclosureGroup("Error Details") {
                     Text(error).font(.subheadline).textSelection(.enabled)
@@ -92,13 +99,13 @@ struct TraktConnectionRow: View {
             } else if typeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: AppSpacing.small) {
                     Text("Trakt Sync")
-                    action
+                    if !session.traktSyncPresentation.needsAttention { action }
                 }
             } else {
                 HStack {
                     Text("Trakt Sync")
                     Spacer(minLength: AppSpacing.small)
-                    action
+                    if !session.traktSyncPresentation.needsAttention { action }
                 }
             }
         }
@@ -124,17 +131,22 @@ struct TraktLastSyncRow: View {
             if typeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: AppSpacing.small) {
                     copy
-                    action
+                    if showsSyncAction { action }
                 }
             } else {
                 HStack(spacing: AppSpacing.medium) {
                     copy
                     Spacer(minLength: 8)
-                    action
+                    if showsSyncAction { action }
                 }
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private var showsSyncAction: Bool {
+        let health = session.traktSyncPresentation
+        return !health.needsAttention && !health.isWorking && !session.syncDiagnostics.hasPendingWork
     }
 
     private var copy: some View {
@@ -147,34 +159,20 @@ struct TraktLastSyncRow: View {
         .accessibilityElement(children: .combine)
     }
 
-    @ViewBuilder
     private var action: some View {
-        if session.isSyncing {
-            ProgressView("Syncing…")
-        } else {
-            Button {
-                Task { await session.runSync(reason: .userInitiated) }
-            } label: {
-                SettingsCapsule(title: "Sync Now")
-                    .frame(minWidth: 44, minHeight: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .disabled(session.syncActionsUnavailable || session.traktSyncPresentation.action != .sync)
-        }
+        TraktSyncActionButton()
     }
 }
 
 struct TraktStatusRow: View {
     @Environment(AppSession.self) private var session
-    var showsPrimaryAction = true
 
     var body: some View {
         let health = session.traktSyncPresentation
         SettingsStatusRow(title: health.rowTitle, detail: detail, symbol: health.symbol, needsAttention: health.needsAttention) {
             if health.isWorking {
                 ProgressView().accessibilityLabel(health.title)
-            } else if health.action != .setup && (showsPrimaryAction || health.action == .check || health.action == .retry) {
+            } else if health.action != .setup {
                 TraktSyncActionButton()
             }
         }
@@ -204,16 +202,7 @@ struct TraktSyncActionButton: View {
                 }
             }
         } label: {
-            if session.traktSyncPresentation.action == .sync {
-                SettingsCapsule(title: "Sync Now")
-                    .frame(minWidth: 44, minHeight: 44)
-            } else if session.traktSyncPresentation.action == .connect {
-                SettingsCapsule(title: "Connect")
-                    .frame(minWidth: 44, minHeight: 44)
-                    .contentShape(Rectangle())
-            } else {
-                Text(title).frame(minHeight: 44)
-            }
+            Text(title).frame(minWidth: 44, minHeight: 44)
         }
         .buttonStyle(.borderless)
         .accessibilityLabel(title)
@@ -231,15 +220,36 @@ struct TraktSyncActionButton: View {
     }
 }
 
-#if DEBUG
 struct TraktSettingsView: View {
+    @Environment(AppSession.self) private var session
+    @State private var showDisconnect = false
+
     var body: some View {
-        Form { TraktSettingsSections() }
-            .navigationTitle("Trakt")
-            .navigationBarTitleDisplayMode(.inline)
+        Form {
+            TraktSettingsSections()
+            if session.traktConnected && session.pendingTraktAccountKey == nil {
+                Section {
+                    NavigationLink("Help with Sync") { TraktTroubleshootingView() }
+                }
+            }
+            if session.traktConnected {
+                Section {
+                    Button("Disconnect Trakt", role: .destructive) { showDisconnect = true }
+                        .disabled(session.syncActionsUnavailable)
+                }
+            }
+        }
+        .navigationTitle("Trakt")
+        .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog("Disconnect Trakt?", isPresented: $showDisconnect, titleVisibility: .visible) {
+            Button("Disconnect Trakt", role: .destructive) { session.logoutTrakt() }
+        } message: {
+            Text("Your iWatch library will remain. Future changes won’t sync with Trakt until you reconnect.")
+        }
     }
 }
 
+#if DEBUG
 #Preview {
     let container = AppContainer.preview()
     NavigationStack { TraktSettingsView() }.environment(container.session).environment(container)

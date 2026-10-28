@@ -2,10 +2,10 @@ import SwiftUI
 
 struct LibrarySettingsView: View {
     @Environment(AppSession.self) private var session
-    @State private var showDisconnect = false
 
     var body: some View {
         Form {
+            LibraryIncludedSection()
             Section {
                 LabeledContent("iCloud Sync") {
                     SettingsCapsule(title: capsuleTitle, tint: needsAttention ? .orange : .accentColor)
@@ -29,29 +29,22 @@ struct LibrarySettingsView: View {
             } footer: {
                 Text("Your library syncs automatically across devices using the same Apple Account.")
             }
-            TraktSettingsSections()
-            LibraryIncludedSection()
             Section {
-                NavigationLink("Manage Data") { AdvancedSettingsView() }
+                NavigationLink {
+                    TraktSettingsView()
+                } label: {
+                    SettingsNavigationLabel(title: "Trakt", systemImage: "arrow.triangle.2.circlepath",
+                        detail: session.traktSyncPresentation.title == "Sync Complete" ? "Connected" : session.traktSyncPresentation.title)
+                }
+                .accessibilityIdentifier("settings-trakt")
+            } footer: {
+                Text("Optionally sync your Watchlist and watched history with Trakt.")
             }
-        }
-        .toolbar {
-            if session.traktConnected {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button("Disconnect Trakt", role: .destructive) { showDisconnect = true }
-                            .disabled(session.syncActionsUnavailable)
-                    } label: {
-                        Label("Library Options", systemImage: "ellipsis")
-                    }
-                    .accessibilityIdentifier("library-options")
+            Section {
+                NavigationLink { AdvancedSettingsView() } label: {
+                    SettingsNavigationLabel(title: "Manage Data", systemImage: "externaldrive")
                 }
             }
-        }
-        .confirmationDialog("Disconnect Trakt?", isPresented: $showDisconnect, titleVisibility: .visible) {
-            Button("Disconnect Trakt", role: .destructive) { session.logoutTrakt() }
-        } message: {
-            Text("Your iWatch library will remain. Future changes won’t sync with Trakt until you reconnect.")
         }
         .navigationTitle("Your Library")
         .navigationBarTitleDisplayMode(.inline)

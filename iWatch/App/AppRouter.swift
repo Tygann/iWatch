@@ -10,20 +10,26 @@ final class AppRouter {
         case search = 2
     }
 
+    private let defaults: UserDefaults
+    private(set) var defaultTab: Tab
     var selectedTab: Tab
     var isShowingSettings = false
 
-    init(defaultTab: Int = UserDefaults.standard.integer(forKey: "defaultTab")) {
-        self.selectedTab = Tab(rawValue: defaultTab) ?? .movies
+    init(defaultTab: Int? = nil, defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        let tab = Tab(rawValue: defaultTab ?? defaults.integer(forKey: "defaultTab")) ?? .movies
+        self.defaultTab = tab
+        self.selectedTab = tab
     }
 
     func updateDefaultTab(_ value: Int) {
-        UserDefaults.standard.set(value, forKey: "defaultTab")
-        selectedTab = Tab(rawValue: value) ?? .movies
+        defaultTab = Tab(rawValue: value) ?? .movies
+        defaults.set(defaultTab.rawValue, forKey: "defaultTab")
     }
 
     func resetToDefaults() {
-        UserDefaults.standard.removeObject(forKey: "defaultTab")
+        defaults.removeObject(forKey: "defaultTab")
+        defaultTab = .movies
         selectedTab = .movies
     }
 }

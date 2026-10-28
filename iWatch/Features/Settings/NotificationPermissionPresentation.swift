@@ -5,6 +5,17 @@ struct NotificationPermissionPresentation: Equatable {
     let detail: String
     let action: Action
 
+    static func summary(enabled: Bool, status: UNAuthorizationStatus) -> String {
+        guard enabled else { return "Off" }
+        switch status {
+        case .authorized, .ephemeral: return "On"
+        case .provisional: return "Delivered Quietly"
+        case .denied: return "Blocked in iOS Settings"
+        case .notDetermined: return "Permission Needed"
+        @unknown default: return "Check iOS Settings"
+        }
+    }
+
     static func resolve(_ status: UNAuthorizationStatus) -> Self {
         switch status {
         case .notDetermined: Self(detail: "Permission hasn’t been requested.", action: .allow)

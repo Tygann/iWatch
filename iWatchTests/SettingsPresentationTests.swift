@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import UserNotifications
 @testable import iWatch
 
 @Suite
@@ -110,6 +111,34 @@ struct SettingsPresentationTests {
         let pending = TraktSyncPresentation.resolve(connected: true, connecting: false, settingUp: false,
             syncing: false, progress: .idle, diagnostics: diagnostics, error: nil)
         #expect(pending.rowTitle == "Waiting for Confirmation")
+    }
+
+    @Test
+    @MainActor
+    func startPagePersistsIndependentlyOfNavigation() throws {
+        let name = "SettingsPresentationTests." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let router = AppRouter(defaults: defaults)
+        router.selectedTab = .shows
+        #expect(router.defaultTab == .movies)
+        router.updateDefaultTab(AppRouter.Tab.search.rawValue)
+        #expect(router.selectedTab == .shows)
+        #expect(router.defaultTab == .search)
+        #expect(AppRouter(defaults: defaults).selectedTab == .search)
+        router.resetToDefaults()
+        #expect(router.defaultTab == .movies)
+        #expect(router.selectedTab == .movies)
+        #expect(defaults.object(forKey: "defaultTab") == nil)
+    }
+
+    @Test
+    func notificationSummaryRespectsSystemPermission() {
+        #expect(NotificationPermissionPresentation.summary(enabled: false, status: .authorized) == "Off")
+        #expect(NotificationPermissionPresentation.summary(enabled: true, status: .authorized) == "On")
+        #expect(NotificationPermissionPresentation.summary(enabled: true, status: .denied) == "Blocked in iOS Settings")
+        #expect(NotificationPermissionPresentation.summary(enabled: true, status: .provisional) == "Delivered Quietly")
+        #expect(NotificationPermissionPresentation.summary(enabled: true, status: .notDetermined) == "Permission Needed")
     }
 
 }

@@ -27,22 +27,16 @@ struct ReleaseNotificationsSettingsView: View {
                                   needsAttention: coordinator.authorizationStatus == .denied) {
                     if isUpdatingAuthorization {
                         ProgressView().accessibilityLabel("Updating notification access")
-                    } else if permission.action != .none {
+                    } else if permission.action == .settings {
                         Button {
-                            if permission.action == .allow {
-                                isUpdatingAuthorization = true
-                                Task {
-                                    await coordinator.requestPermission()
-                                    isUpdatingAuthorization = false
-                                }
-                            } else { openNotificationSettings() }
+                            openNotificationSettings()
                         } label: {
-                            SettingsCapsule(title: permission.action == .allow ? "Allow" : "Settings")
+                            Text("Settings")
                                 .frame(minWidth: 44, minHeight: 44)
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.borderless)
-                        .accessibilityLabel(permission.action == .allow ? "Allow Notifications" : "Notification Settings")
+                        .accessibilityLabel("Notification Settings")
                         .disabled(container.session.isReadOnlyPreview)
                     }
                 }
@@ -51,8 +45,6 @@ struct ReleaseNotificationsSettingsView: View {
                     set: updateEnabled
                 ))
                 .disabled(isUpdatingAuthorization || container.session.isReadOnlyPreview)
-
-
             } footer: {
                 Text("Get reminders for releases already in your iWatch library.")
             }
@@ -82,7 +74,7 @@ struct ReleaseNotificationsSettingsView: View {
 
             if isEnabled {
                 Section("Status") {
-                    LabeledContent("Scheduled", value: "\(coordinator.scheduledCount)")
+                    LabeledContent("Scheduled Reminders", value: "\(coordinator.scheduledCount)")
                 }
             }
         }

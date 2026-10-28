@@ -133,14 +133,8 @@ final class iWatchUITests: XCTestCase {
         XCTAssertFalse(app.buttons["iCloud Diagnostics"].exists)
         capture(app, "Manage data - " + contentSize)
         app.navigationBars["Manage Data"].buttons.firstMatch.tap()
-        let connection = app.descendants(matching: .any)["trakt-connection"]
-        for _ in 0..<15 {
-            if connection.isHittable { break }
-            app.swipeDown()
-        }
-        XCTAssertTrue(app.navigationBars["Your Library"].exists)
+        openTrakt(in: app)
         XCTAssertFalse(app.buttons["Advanced"].exists)
-        XCTAssertFalse(app.staticTexts["Included"].exists)
         reveal(app.staticTexts["Waiting for Confirmation"], in: app)
         reveal(app.buttons["Check Again"], in: app)
         capture(app, "Contextual Trakt issue - " + contentSize)
@@ -207,27 +201,22 @@ final class iWatchUITests: XCTestCase {
 
     @MainActor
     private func openTrakt(in app: XCUIApplication) {
+        if app.navigationBars["Trakt"].exists { return }
         if !app.navigationBars["Your Library"].exists {
             let library = app.buttons["settings-library"]
             reveal(library, in: app)
             library.tap()
         }
-        let connection = app.descendants(matching: .any)["trakt-connection"]
-        let connect = app.buttons["Connect Trakt"]
-        var labels = Set<String>()
-        for _ in 0..<15 {
-            if connection.isHittable || connect.isHittable { return }
-            labels.formUnion(app.buttons.allElementsBoundByIndex.map(\.label))
-            app.swipeUp()
-        }
-        XCTFail("Expected inline Trakt controls. Buttons: " + labels.sorted().joined(separator: " | "))
+        let trakt = app.buttons["settings-trakt"]
+        reveal(trakt, in: app)
+        trakt.tap()
+        XCTAssertTrue(app.navigationBars["Trakt"].waitForExistence(timeout: 5))
     }
 
     @MainActor
     func testTraktSetupCanStillDisconnect() throws {
         let app = launchSyncSettings(contentSize: "UICTContentSizeCategoryL", state: "setup")
         openTrakt(in: app)
-        app.buttons["library-options"].tap()
         let disconnect = app.buttons["Disconnect Trakt"]
         reveal(disconnect, in: app)
         XCTAssertTrue(disconnect.waitForExistence(timeout: 5))
@@ -238,9 +227,9 @@ final class iWatchUITests: XCTestCase {
         if app.buttons["Cancel"].exists {
             app.buttons["Cancel"].tap()
         } else {
-            app.navigationBars["Your Library"].tap()
+            app.navigationBars["Trakt"].tap()
         }
-        XCTAssertTrue(app.navigationBars["Your Library"].exists)
+        XCTAssertTrue(app.navigationBars["Trakt"].exists)
     }
 
     @MainActor
@@ -261,7 +250,7 @@ final class iWatchUITests: XCTestCase {
         for state in ["normal", "offline", "syncing", "setup"] {
             let app = launchSyncSettings(contentSize: "UICTContentSizeCategoryL", state: state)
             openTrakt(in: app)
-            XCTAssertTrue(app.navigationBars["Your Library"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.navigationBars["Trakt"].waitForExistence(timeout: 5))
             let expected = ["normal": "Trakt", "offline": "Connection Interrupted",
                             "syncing": "Syncing…", "setup": "Finish Setup"][state]!
             if state == "normal" {
@@ -275,8 +264,8 @@ final class iWatchUITests: XCTestCase {
                 XCTAssertTrue(app.staticTexts[expected].waitForExistence(timeout: 5))
             }
             if state == "setup" {
-                XCTAssertTrue(app.buttons["Use Trakt Library"].exists)
-                XCTAssertTrue(app.buttons["Upload Pending Changes"].exists)
+                XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Replace iWatch Library from Trakt'")).firstMatch.exists)
+                XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Upload Pending Changes'")).firstMatch.exists)
             }
             capture(app, "Trakt - " + state)
             app.terminate()
@@ -330,15 +319,54 @@ final class iWatchUITests: XCTestCase {
         XCTAssertTrue(app.buttons["settings-library"].exists)
 
         openTrakt(in: app)
-        XCTAssertTrue(app.navigationBars["Your Library"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Trakt"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Connect Trakt"].exists)
         capture(app, "Disconnected Trakt")
 
+        app.navigationBars["Trakt"].buttons.firstMatch.tap()
         app.navigationBars["Your Library"].buttons.firstMatch.tap()
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Appearance,'")).firstMatch.tap()
         XCTAssertTrue(app.buttons["System"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Light"].exists)
         XCTAssertTrue(app.buttons["Dark"].exists)
+    }
+
+    @MainActor
+    func testStartPageDoesNotFollowOrSwitchTheActiveTab() throws {
+        let app = launchSyncSettings(contentSize: "UICTContentSizeCategoryL", state: "normal")
+        let startPage = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Start Page,'")).firstMatch
+        startPage.tap()
+        app.collectionViews.buttons["Search"].tap()
+        app.buttons["Close Settings"].tap()
+        XCTAssertTrue(app.navigationBars["Movies"].waitForExistence(timeout: 5))
+        app.tabBars.buttons["Shows"].tap()
+        app.buttons["Settings"].tap()
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Start Page,' AND label CONTAINS 'Search'")).firstMatch.exists)
+    }
+
+    @MainActor
+    func testNotificationSettingsAtStandardTextSize() throws {
+        verifyNotificationSettings(contentSize: "UICTContentSizeCategoryL")
+    }
+
+    @MainActor
+    func testNotificationSettingsAtAccessibilityTextSize() throws {
+        verifyNotificationSettings(contentSize: "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge")
+    }
+
+    @MainActor
+    private func verifyNotificationSettings(contentSize: String) {
+        let app = launchSyncSettings(contentSize: contentSize, state: "normal")
+        let notifications = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Notifications'")).firstMatch
+        reveal(notifications, in: app)
+        notifications.tap()
+        XCTAssertTrue(app.navigationBars["Notifications"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.switches["Release Notifications"].exists)
+        XCTAssertFalse(app.buttons["Allow Notifications"].exists)
+        capture(app, "Notification preferences - " + contentSize)
+        let timing = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Notify Me'")).firstMatch
+        reveal(timing, in: app)
+        capture(app, "Notification timing - " + contentSize)
     }
 
     @MainActor

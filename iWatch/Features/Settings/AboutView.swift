@@ -19,24 +19,24 @@ struct AboutView: View {
 
             Section {
                 NavigationLink { SyncSupportView() } label: {
-                    Label("Contact Support", systemImage: "questionmark.circle")
+                    SettingsNavigationLabel(title: "Contact Support", systemImage: "questionmark.circle")
                 }
                 ShareLink(item: AppDistributionPresentation.shareText) {
-                    Label("Share iWatch", systemImage: "square.and.arrow.up")
+                    SettingsNavigationLabel(title: "Share iWatch", systemImage: "square.and.arrow.up")
                 }
                 Button { requestReview() } label: {
-                    Label("Rate iWatch", systemImage: "star")
+                    SettingsNavigationLabel(title: "Rate iWatch", systemImage: "star")
                 }
             }
 
             Section {
                 Link(destination: URL(string: "https://tylerkeegan.com/iwatch/privacy/")!) {
-                    Label("Privacy Policy", systemImage: "hand.raised")
+                    SettingsNavigationLabel(title: "Privacy Policy", systemImage: "hand.raised")
                 }
                 NavigationLink {
                     AcknowledgmentsView()
                 } label: {
-                    Label("Acknowledgments", systemImage: "info.circle")
+                    SettingsNavigationLabel(title: "Acknowledgments", systemImage: "info.circle")
                 }
             }
         }

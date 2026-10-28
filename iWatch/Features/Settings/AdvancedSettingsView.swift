@@ -34,20 +34,17 @@ struct AdvancedSettingsView: View {
                     }
                 }
                 .disabled(session.isClearingCache || session.isErasingAllData)
+                if let message = session.cacheMaintenanceMessage {
+                    Text(message).font(.subheadline).foregroundStyle(.secondary)
+                }
             } header: {
                 Text(AdvancedSettingsSection.storage.rawValue)
             } footer: {
                 Text("Removes downloaded artwork and cached network responses. Your library, preferences, iCloud data, and Trakt data are not affected.")
             }
 
-            if let message = session.cacheMaintenanceMessage {
-                Section("Latest Result") {
-                    Text(message)
-                }
-            }
-
-            Section {
-                if canStartReset {
+            if canStartReset {
+                Section {
                     Button(role: .destructive) {
                         showEraseConfirmation = true
                     } label: {
@@ -55,11 +52,11 @@ struct AdvancedSettingsView: View {
                             .foregroundStyle(.red)
                     }
                     .disabled(session.syncActionsUnavailable)
+                } header: {
+                    Text(AdvancedSettingsSection.reset.rawValue)
+                } footer: {
+                    Text("Permanently removes your iWatch library and preferences from this app and iCloud, then disconnects Trakt on this device. Trakt account data is not deleted.")
                 }
-            } header: {
-                Text(AdvancedSettingsSection.reset.rawValue)
-            } footer: {
-                Text("Permanently removes your iWatch library and preferences from this app and iCloud, then disconnects Trakt on this device. Trakt account data is not deleted.")
             }
 
             resetStatusSection

@@ -6,7 +6,7 @@ struct TraktTroubleshootingView: View {
     var body: some View {
         Form {
             Section {
-                Text("Start by checking your library. Review the result before trying another recovery option.")
+                Text("Start by checking your library. The check can repair duplicate records and inconsistent links. Review the result before trying another recovery option.")
                 NavigationLink("Check Library Data") { TraktLibraryCheckView() }
             }
             if session.syncDiagnostics.changes.contains(where: { !$0.isOnThisDevice }) {
