@@ -3,6 +3,7 @@ import SwiftUI
 // MARK: - About Screen
 
 struct AboutView: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     private var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
     }
@@ -32,13 +33,11 @@ struct AboutView: View {
             Section {
                 Link(destination: URL(string: "https://tylerkeegan.com/iwatch/privacy/")!) {
                     SettingsNavigationLabel(title: "Privacy Policy", systemImage: "hand.raised")
+                        .foregroundStyle(Color.primary)
                 }
-                NavigationLink {
-                    AcknowledgmentsView()
-                } label: {
-                    SettingsNavigationLabel(title: "Acknowledgments", systemImage: "info.circle")
-                }
+                .buttonStyle(.plain)
             }
+            creditsSection
             Section {
                 Text("© 2026 Tyler Keegan. All rights reserved.")
                     .font(.footnote)
@@ -51,6 +50,68 @@ struct AboutView: View {
         }
         .navigationTitle("About")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var creditsSection: some View {
+        Section {
+            VStack {
+                Text("Data & Integrations")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if typeSize.isAccessibilitySize {
+                    VStack {
+                        tmdbLink
+                        traktLink
+                    }
+                } else {
+                    HStack {
+                        tmdbLink
+                        traktLink
+                    }
+                }
+                Text("This product uses the TMDB API but is not endorsed or certified by TMDB.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Text("iWatch uses Trakt but is not endorsed or certified by Trakt.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+        }
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+    }
+
+    private var tmdbLink: some View {
+        Link(destination: URL(string: "https://www.themoviedb.org/")!) {
+            Image("TMDBLogo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 88, height: 44)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("The Movie Database (TMDB)")
+        .accessibilityHint("Opens the TMDB website")
+    }
+
+    private var traktLink: some View {
+        Link(destination: URL(string: "https://trakt.tv/")!) {
+            HStack {
+                Image("TraktLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 44, height: 44)
+                Text("Trakt").font(.headline).foregroundStyle(Color.primary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Trakt")
+        .accessibilityHint("Opens the Trakt website")
     }
 
     private var appIdentity: some View {
@@ -75,42 +136,6 @@ struct AboutView: View {
     }
 
 }
-
-struct AcknowledgmentsView: View {
-    var body: some View {
-        List {
-            Section {
-                Link(destination: URL(string: "https://www.themoviedb.org/")!) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Image("TMDBLogo")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 80)
-                            .accessibilityHidden(true)
-
-                        Label("The Movie Database (TMDB)", systemImage: "arrow.up.right.square")
-                    }
-                }
-            } header: {
-                Text("Data & Attribution")
-            } footer: {
-                Text("This product uses the TMDB API but is not endorsed or certified by TMDB.")
-            }
-
-            Section {
-                Link(destination: URL(string: "https://trakt.tv/")!) {
-                    Label("Trakt", systemImage: "arrow.up.right.square")
-                }
-            } footer: {
-                Text("iWatch uses Trakt but is not endorsed or certified by Trakt.")
-            }
-
-        }
-        .navigationTitle("Acknowledgments")
-        .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
 // MARK: - Previews
 
 #Preview {

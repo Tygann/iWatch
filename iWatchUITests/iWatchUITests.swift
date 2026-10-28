@@ -195,13 +195,12 @@ final class iWatchUITests: XCTestCase {
         app.navigationBars["Contact Support"].buttons.firstMatch.tap()
         XCTAssertFalse(app.buttons["Share iWatch"].exists)
         XCTAssertFalse(app.buttons["Rate iWatch"].exists)
-        let credits = app.buttons["Acknowledgments"]
-        reveal(credits, in: app)
-        credits.tap()
-        XCTAssertTrue(app.navigationBars["Acknowledgments"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Acknowledgments"].exists)
+        reveal(app.buttons["The Movie Database (TMDB)"], in: app)
+        reveal(app.buttons["Trakt"], in: app)
         let attribution = app.staticTexts["This product uses the TMDB API but is not endorsed or certified by TMDB."]
         reveal(attribution, in: app)
-        capture(app, "Acknowledgments - " + contentSize)
+        capture(app, "Inline provider credits - " + contentSize)
     }
 
     @MainActor
@@ -566,10 +565,7 @@ final class iWatchUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Share iWatch"].exists)
         XCTAssertFalse(app.buttons["Rate iWatch"].exists)
         reveal(app.buttons["Privacy Policy"], in: app)
-        let credits = app.buttons["Acknowledgments"]
-        reveal(credits, in: app)
-        credits.tap()
-        XCTAssertTrue(app.navigationBars["Acknowledgments"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Acknowledgments"].exists)
         for label in ["The Movie Database (TMDB)", "Trakt"] {
             reveal(app.buttons[label], in: app)
         }
