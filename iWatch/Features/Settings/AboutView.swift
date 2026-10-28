@@ -70,10 +70,10 @@ struct AboutView: View {
                     }
                 }
                 Text("This product uses the TMDB API but is not endorsed or certified by TMDB.")
-                    .font(.footnote)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                 Text("iWatch uses Trakt but is not endorsed or certified by Trakt.")
-                    .font(.footnote)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
             .multilineTextAlignment(.center)
@@ -88,7 +88,7 @@ struct AboutView: View {
             Image("TMDBLogo")
                 .resizable()
                 .scaledToFit()
-                .frame(width: 88, height: 44)
+                .frame(width: 64, height: 28)
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .contentShape(Rectangle())
         }
@@ -99,15 +99,12 @@ struct AboutView: View {
 
     private var traktLink: some View {
         Link(destination: URL(string: "https://trakt.tv/")!) {
-            HStack {
-                Image("TraktLogo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 44, height: 44)
-                Text("Trakt").font(.headline).foregroundStyle(Color.primary)
-            }
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .contentShape(Rectangle())
+            Image("TraktLogo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 28, height: 28)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Trakt")
