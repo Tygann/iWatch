@@ -132,7 +132,8 @@ final class ShowsScreenModel {
         do {
             try await repository.addWatchEvent(
                 for: MediaID(kind: .episode, id: next.tmdbID, traktID: next.traktID),
-                watchedAt: Date()
+                watchedAt: Date(),
+                allowRewatch: false
             )
             if showsFeedback {
                 session.showEpisodeWatchSuccess(
@@ -213,19 +214,11 @@ private struct ShowsViewBody: View {
                                 Task { await model.load(revision: session.libraryRevision, forceRefresh: true) }
                             }
                         }
-                        if model.isShowingSavedSnapshot, model.errorText == nil {
-                            ProgressView("Updating Library…")
-                                .font(.footnote)
-                                .padding(.vertical, 8)
-                        }
-                        Group {
-                            continueWatchingSection
-                            comingUpSection
-                            librarySection(title: "Not Started", items: model.snapshot.watchlist)
-                            librarySection(title: "Caught Up", items: model.snapshot.caughtUp)
-                            completedSection
-                        }
-                        .disabled(model.isShowingSavedSnapshot)
+                        continueWatchingSection
+                        comingUpSection
+                        librarySection(title: "Not Started", items: model.snapshot.watchlist)
+                        librarySection(title: "Caught Up", items: model.snapshot.caughtUp)
+                        completedSection
                     }
                 }
             }
@@ -264,7 +257,7 @@ private struct ShowsViewBody: View {
                 WatchlistView(
                     kind: .show,
                     initialShowItems: model.snapshot.continueWatching,
-                    initialRevision: session.libraryRevision
+                    initialRevision: model.isShowingSavedSnapshot ? nil : session.libraryRevision
                 )
             } content: {
                 ForEach(model.snapshot.continueWatching) { item in

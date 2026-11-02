@@ -202,7 +202,7 @@ final class MoviesScreenModel {
 
     func markWatched(_ item: LibraryMovieItem, showsFeedback: Bool = false) async {
         do {
-            try await repository.addWatchEvent(for: item.mediaID, watchedAt: Date())
+            try await repository.addWatchEvent(for: item.mediaID, watchedAt: Date(), allowRewatch: item.isWatched)
             if showsFeedback {
                 session.showMovieWatchSuccess(title: item.title, isRewatch: item.isWatched)
             }
@@ -303,16 +303,8 @@ private struct MoviesViewBody: View {
                                 Task { await model.load(revision: session.libraryRevision, forceRefresh: true) }
                             }
                         }
-                        if model.isShowingSavedSnapshot, model.errorText == nil {
-                            ProgressView("Updating Library…")
-                                .font(.footnote)
-                                .padding(.vertical, 8)
-                        }
-                        Group {
-                            toWatchSection
-                            watchedSection
-                        }
-                        .disabled(model.isShowingSavedSnapshot)
+                        toWatchSection
+                        watchedSection
                     }
                 }
             }

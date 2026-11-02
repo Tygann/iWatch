@@ -331,11 +331,11 @@ final class LibraryRepository {
         try context.save()
     }
 
-    func addWatchEvent(for id: MediaID, watchedAt: Date) async throws {
-        try await addWatchEvents(for: [id], watchedAt: watchedAt)
+    func addWatchEvent(for id: MediaID, watchedAt: Date, allowRewatch: Bool = true) async throws {
+        try await addWatchEvents(for: [id], watchedAt: watchedAt, allowRewatch: allowRewatch)
     }
 
-    func addWatchEvents(for ids: [MediaID], watchedAt: Date) async throws {
+    func addWatchEvents(for ids: [MediaID], watchedAt: Date, allowRewatch: Bool = true) async throws {
         let deviceID = await deviceIdentityStore.currentDeviceID()
         guard await resetGate.allowsLibraryWork() else {
             throw AppError.unknown("Wait for the library reset to finish before making changes.")
@@ -346,6 +346,24 @@ final class LibraryRepository {
 
         for id in ids {
             let episodeMetadata = id.kind == .episode ? episodeRecord(forTMDbID: id.tmdbID, context: context) : nil
+            if !allowRewatch {
+                // Cached cards can be used before their refresh finishes. Check the
+                // current store inside the mutation, after all suspension points.
+                let kind = id.kind.rawValue
+                let tmdbID = id.tmdbID
+                let hasEpisode = episodeMetadata != nil
+                let showID = episodeMetadata?.showTMDbID
+                let season = episodeMetadata?.seasonNumber
+                let episode = episodeMetadata?.episodeNumber
+                let existing = try context.fetch(FetchDescriptor<WatchedEventRecord>(predicate: #Predicate {
+                    $0.kindRaw == kind && !$0.tombstoned &&
+                    ($0.tmdbID == tmdbID || (hasEpisode && $0.showTMDbID == showID &&
+                        $0.seasonNumber == season && $0.episodeNumber == episode))
+                }))
+                if existing.contains(where: {
+                    LibraryGenerationPolicy.belongsToCurrentGeneration($0.generationID, current: generationID)
+                }) { continue }
+            }
             let eventKey = WatchedEventRecord.makeEventKey(
                 kind: id.kind,
                 tmdbID: id.tmdbID,

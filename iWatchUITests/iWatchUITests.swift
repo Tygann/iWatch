@@ -46,11 +46,12 @@ final class iWatchUITests: XCTestCase {
         app.launchArguments.append("UITEST_DELAY_LIBRARY_REFRESH")
         app.launch()
         XCTAssertTrue(title.waitForExistence(timeout: 2))
-        XCTAssertFalse(title.isEnabled)
-        capture(app, "Saved Shows before local refresh - \(accessibility)")
-        XCTAssertTrue(NSPredicate(format: "enabled == true").evaluate(with: title)
-            || XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"),
-                object: title)], timeout: 10) == .completed)
+        XCTAssertTrue(title.isEnabled)
+        XCTAssertFalse(app.staticTexts["Updating Library…"].exists)
+        capture(app, "Interactive saved Shows before local refresh - \(accessibility)")
+        title.tap()
+        XCTAssertTrue(app.navigationBars.buttons["Shows"].waitForExistence(timeout: 3))
+        capture(app, "Opened saved episode during refresh - \(accessibility)")
         app.terminate()
     }
 

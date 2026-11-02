@@ -33,7 +33,7 @@ private final class WatchlistScreenModel {
 
     func load(revision: Int) async {
         guard loadedRevision != revision else { return }
-        isLoading = true
+        isLoading = movieItems.isEmpty && showItems.isEmpty
         defer { isLoading = false }
 
         do {
@@ -56,7 +56,7 @@ private final class WatchlistScreenModel {
     func markNextEpisodeWatched(for item: LibraryShowItem, showsFeedback: Bool = false) async {
         guard let next = item.progress.nextEpisode else { return }
         do {
-            try await repository.addWatchEvent(for: MediaID(kind: .episode, id: next.tmdbID, traktID: next.traktID), watchedAt: Date())
+            try await repository.addWatchEvent(for: MediaID(kind: .episode, id: next.tmdbID, traktID: next.traktID), watchedAt: Date(), allowRewatch: false)
             if showsFeedback {
                 session.showEpisodeWatchSuccess(
                     showTitle: item.title,
@@ -74,7 +74,7 @@ private final class WatchlistScreenModel {
 
     func markMovieWatched(_ item: LibraryMovieItem, showsFeedback: Bool = false) async {
         do {
-            try await repository.addWatchEvent(for: item.mediaID, watchedAt: Date())
+            try await repository.addWatchEvent(for: item.mediaID, watchedAt: Date(), allowRewatch: false)
             if showsFeedback {
                 session.showMovieWatchSuccess(title: item.title, isRewatch: item.isWatched)
             }

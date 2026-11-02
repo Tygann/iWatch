@@ -75,6 +75,47 @@ struct LibraryPreviewTests {
     }
 
     @Test
+    func cachedMarkWatchedDoesNotDuplicateAnAlreadyWatchedEpisode() async throws {
+        let directory = directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let container = AppContainer.preview()
+        let repository = LibraryRepository(persistence: container.persistence, tmdb: container.tmdb,
+            deviceIdentityStore: container.deviceIdentityStore,
+            accountKeyProvider: { nil }, previewStore: LibraryPreviewStore(directory: directory))
+        let saved = try await repository.showLibrarySnapshot(revision: 0)
+        let item = try #require(saved.continueWatching.first)
+        let next = try #require(item.progress.nextEpisode)
+        let episode = MediaID(kind: .episode, id: next.tmdbID, traktID: next.traktID)
+        // Another device/local action has watched the episode since the preview was saved.
+        try await repository.addWatchEvent(for: episode, watchedAt: Date().addingTimeInterval(-60))
+        let model = ShowsScreenModel(repository: repository, session: container.session)
+        #expect(model.isShowingSavedSnapshot)
+        await model.markNextEpisodeWatched(for: item)
+        let events = try container.persistence.makeContext().fetch(FetchDescriptor<WatchedEventRecord>())
+        #expect(events.filter { $0.tmdbID == episode.tmdbID && !$0.tombstoned }.count == 1)
+        #expect(model.snapshot.continueWatching.isEmpty)
+        // Explicit rewatch remains available and still records an additional play.
+        try await repository.addWatchEvent(for: episode, watchedAt: Date().addingTimeInterval(60))
+        let afterRewatch = try container.persistence.makeContext().fetch(FetchDescriptor<WatchedEventRecord>())
+        #expect(afterRewatch.filter { $0.tmdbID == episode.tmdbID && !$0.tombstoned }.count == 2)
+    }
+
+    @Test
+    func cachedMovieMarkWatchedIsIdempotentButExplicitRewatchIsPreserved() async throws {
+        let container = AppContainer.preview()
+        let item = try #require(try await container.libraryRepository.movieLibraryItems().first(where: { $0.isInWatchlist }))
+        try await container.libraryRepository.addWatchEvent(for: item.mediaID, watchedAt: Date().addingTimeInterval(-60))
+        let model = MoviesScreenModel(repository: container.libraryRepository, session: container.session)
+        await model.markWatched(item)
+        var events = try container.persistence.makeContext().fetch(FetchDescriptor<WatchedEventRecord>())
+        #expect(events.filter { $0.tmdbID == item.mediaID.tmdbID && !$0.tombstoned }.count == 1)
+        let watched = try #require(model.items.first(where: { $0.id == item.id }))
+        await model.markWatched(watched)
+        events = try container.persistence.makeContext().fetch(FetchDescriptor<WatchedEventRecord>())
+        #expect(events.filter { $0.tmdbID == item.mediaID.tmdbID && !$0.tombstoned }.count == 2)
+    }
+
+    @Test
     func invalidPreviewsFallBackWithoutTouchingLibrary() throws {
         let directory = directory()
         defer { try? FileManager.default.removeItem(at: directory) }
