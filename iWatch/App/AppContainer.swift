@@ -240,7 +240,7 @@ final class AppContainer {
             cloudExportMonitor: cloudExportMonitor,
             invalidateLibrarySnapshots: { libraryRepository.invalidateSnapshots() }
         )
-        let router = AppRouter(defaultTab: 0)
+        let router = AppRouter(defaultTab: ProcessInfo.processInfo.arguments.contains("UITEST_START_ON_SHOWS") ? 1 : 0)
 
         seedPreviewCatalog(into: persistence)
 

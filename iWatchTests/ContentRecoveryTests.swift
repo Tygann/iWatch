@@ -56,6 +56,49 @@ struct ContentRecoveryTests {
     }
 
     @Test
+    func olderShowLoadCannotReplaceNewerLibrary() async throws {
+        let container = AppContainer.preview()
+        let seeded = try await container.libraryRepository.showLibrarySnapshot(revision: 0)
+        let pending = TestValue<CheckedContinuation<ShowLibrarySnapshot, Never>?>(nil)
+        let model = ShowsScreenModel(repository: container.libraryRepository, session: container.session,
+            loadSnapshot: { revision, _ in
+                if revision == 0 {
+                    return await withCheckedContinuation { pending.value = $0 }
+                }
+                return seeded
+            })
+        let older = Task { await model.load(revision: 0) }
+        while pending.value == nil { await Task.yield() }
+        await model.load(revision: 1)
+        #expect(model.snapshot == seeded)
+        pending.value?.resume(returning: .empty)
+        await older.value
+        #expect(model.snapshot == seeded)
+        #expect(!model.isLoading)
+    }
+
+    @Test
+    func olderMovieLoadCannotReplaceNewerLibrary() async throws {
+        let container = AppContainer.preview()
+        let seeded = try await container.libraryRepository.movieLibraryItems()
+        let pending = TestValue<CheckedContinuation<[LibraryMovieItem], Never>?>(nil)
+        let model = MoviesScreenModel(repository: container.libraryRepository, session: container.session,
+            loadItems: { revision, _ in
+                if revision == 0 {
+                    return await withCheckedContinuation { pending.value = $0 }
+                }
+                return seeded
+            })
+        let older = Task { await model.load(revision: 0) }
+        while pending.value == nil { await Task.yield() }
+        await model.load(revision: 1)
+        pending.value?.resume(returning: [])
+        await older.value
+        #expect(model.items == seeded)
+        #expect(!model.isLoading)
+    }
+
+    @Test
     func searchIgnoresLateResponsesForAnotherQuery() async throws {
         let container = AppContainer.preview()
         let model = SearchScreenModel(repository: container.libraryRepository, regionCode: "US", search: { query in

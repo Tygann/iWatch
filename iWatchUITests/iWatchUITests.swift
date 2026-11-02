@@ -23,6 +23,40 @@ final class iWatchUITests: XCTestCase {
     }
 
     @MainActor
+    func testColdLaunchShowsStandard() throws {
+        verifyColdLaunchShows(accessibility: false)
+    }
+
+    @MainActor
+    func testColdLaunchShowsAccessibility() throws {
+        verifyColdLaunchShows(accessibility: true)
+    }
+
+    @MainActor
+    private func verifyColdLaunchShows(accessibility: Bool) {
+        let app = XCUIApplication()
+        app.launchArguments += ["UITEST_MODE", "UITEST_START_ON_SHOWS"]
+        if accessibility { app.launchArguments.append("UITEST_ACCESSIBILITY_TEXT") }
+        for attempt in 1...2 {
+            app.launch()
+            XCTAssertTrue(app.buttons["UI Test Show, Season 1 Episode 2, Continue Watching"]
+                .waitForExistence(timeout: 10), "Shows must load after cold launch \(attempt)")
+            capture(app, "Cold launch Shows - \(accessibility) - \(attempt)")
+            let moviesTab = app.tabBars.buttons["Movies"]
+            moviesTab.tap()
+            // The system tab bar can resize during the initial selection animation.
+            if !app.navigationBars["Movies"].waitForExistence(timeout: 2) { moviesTab.tap() }
+            XCTAssertTrue(app.buttons["UI Test Movie"].waitForExistence(timeout: 5))
+            let showsTab = app.tabBars.buttons["Shows"]
+            showsTab.tap()
+            if !app.navigationBars["Shows"].waitForExistence(timeout: 2) { showsTab.tap() }
+            XCTAssertTrue(app.buttons["UI Test Show, Season 1 Episode 2, Continue Watching"]
+                .waitForExistence(timeout: 5))
+            app.terminate()
+        }
+    }
+
+    @MainActor
     func testLaunchTabsAndMovieDetail() throws {
         let app = XCUIApplication()
         app.launchArguments.append("UITEST_MODE")

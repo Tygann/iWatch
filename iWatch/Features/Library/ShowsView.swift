@@ -15,6 +15,7 @@ final class ShowsScreenModel {
     var isLoading = false
     var isEnriching = false
     var errorText: String?
+    private var loadToken: UUID?
     private var loadedRevision: Int?
     private var enrichedRevision: Int?
 
@@ -29,16 +30,23 @@ final class ShowsScreenModel {
 
     func load(revision: Int, forceRefresh: Bool = false) async {
         guard forceRefresh || loadedRevision != revision else { return }
+        let token = UUID()
+        loadToken = token
         let shouldShowLoading = snapshot.all.isEmpty
         if shouldShowLoading { isLoading = true }
-        defer { isLoading = false }
+        defer {
+            if loadToken == token { isLoading = false }
+        }
 
         do {
-            snapshot = try await loadSnapshot(revision, forceRefresh)
+            let loaded = try await loadSnapshot(revision, forceRefresh)
+            try Task.checkCancellation()
+            guard loadToken == token else { return }
+            snapshot = loaded
             loadedRevision = revision
             errorText = nil
         } catch {
-            guard !error.isCancelled else { return }
+            guard loadToken == token, !error.isCancelled else { return }
             errorText = UserFacingError.message(for: error, context: .library)
         }
     }
@@ -221,7 +229,7 @@ private struct ShowsViewBody: View {
                 }
             }
             .task(id: session.libraryRevision) {
-                await model.load(revision: session.libraryRevision, forceRefresh: true)
+                await model.load(revision: session.libraryRevision)
                 await model.enrichLibrary()
             }
         }

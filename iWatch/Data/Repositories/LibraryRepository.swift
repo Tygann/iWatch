@@ -608,11 +608,9 @@ final class LibraryRepository {
             return cachedShowSnapshot.snapshot
         }
 
-        if forceRefresh {
-            showSnapshotTask?.task.cancel()
-            showSnapshotTask = nil
-        }
-
+        // A forced refresh bypasses the cache, but can still share a current read.
+        // Opening Shows must not cancel the launch prewarm (or another visible reader).
+        // Actual library/metadata changes invalidate the in-flight task separately.
         let pending: (revision: Int, token: UUID, task: Task<ShowLibrarySnapshot, Error>)
         if let existing = showSnapshotTask, existing.revision == revision {
             pending = existing
@@ -631,11 +629,13 @@ final class LibraryRepository {
 
         do {
             let snapshot = try await task.value
-            try Task.checkCancellation()
             if showSnapshotTask?.token == token {
                 cachedShowSnapshot = (revision, .now, snapshot)
                 showSnapshotTask = nil
             }
+            // A disappearing tab can cancel its waiter without discarding a valid
+            // shared result needed by the launch prewarm or another screen.
+            try Task.checkCancellation()
             return snapshot
         } catch {
             if showSnapshotTask?.token == token {
