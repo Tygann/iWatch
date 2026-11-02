@@ -1,0 +1,39 @@
+iWatch: Movies & Shows — version 1.0 (39)
+
+PURPOSE AND AUDIENCE
+iWatch helps movie and TV viewers organize a Watchlist, record watched movies and episodes, and follow show progress. It provides catalog details and regional viewing-availability links. It does not stream or download full movies or TV episodes. It is free and noncommercial, with no advertisements, paid features, subscriptions, or in-app purchases. It has no public posting, commenting, or messaging interface.
+
+SETUP AND REVIEW
+No iWatch account or sign-in is required for local tracking and discovery. Internet access is needed for searches and new catalog information. No sample files or special external hardware are needed.
+1. Launch iWatch and open Search. Find a movie or show and open its details.
+2. Use the viewing-status control to add it to the Watchlist. Open Movies or Shows to see the saved title.
+3. Mark a movie watched to update its viewing history. For a show, open a season and episode and mark the episode watched to update progress.
+4. Explore title details, cast/crew, trailers, and where-to-watch information. Trailers and provider destinations open external services.
+5. Optional release reminders are in Settings > Notifications. Provider credits, privacy, and support links are in Settings > About.
+
+iCloud sync uses the device's Apple Account when available. Settings > Your Library shows iCloud status and library counts. There is no separate iWatch iCloud login.
+
+OPTIONAL TRAKT SYNC
+Trakt is not required for local tracking or discovery. No Trakt demo account is supplied. Reviewers who wish to test optional sync can open Settings > Trakt Sync > Connect and authorize an existing Trakt account through Trakt's own sign-in page.
+If Choose How to Start appears, Upload Pending Changes sends local pending changes before downloading Trakt. Use Trakt Library replaces the iWatch library after confirmation and discards local contents/pending uploads; use it only with disposable review data. The sync control is available when appropriate. Settings > Trakt Sync > Disconnect Trakt stops future sync on this device and retains the iWatch library.
+
+iWatch does not create an iWatch account. Trakt authorization is handled by Trakt. Settings > Storage & Data > Erase All App Data removes the iWatch library/preferences and sends library deletion through iCloud, then disconnects Trakt on this device. It does not delete the separate Trakt account/history. Erasure is destructive and not needed for normal review.
+
+EXTERNAL SERVICES
+TMDB API/image CDN: title, episode, person metadata and artwork.
+Trakt API/OAuth: optional Watchlist and watched-history sync.
+Apple iCloud/CloudKit: private library replication between devices.
+JustWatch via TMDB: regional provider availability and links.
+YouTube: external trailer links.
+tylerkeegan.com: support/privacy pages and Trakt OAuth return URL.
+
+REGIONS
+Core library/tracking behavior is consistent. Provider availability, release information, certifications, and catalog coverage may differ by region. The device locale supplies the country/region; no GPS access is needed. External services/content have their own availability.
+
+THIRD-PARTY CONTENT
+iWatch uses TMDB under its published noncommercial developer API terms, subject to their conditions and attribution requirements: https://developer.themoviedb.org/docs/faq
+Trakt's policy permits user-authorized history/list integrations subject to its requirements: https://developer.trakt.tv/docs/api-use-policy
+TMDB and Trakt credits appear in About; availability credits JustWatch. API access does not convey ownership of third-party artwork.
+
+Privacy: https://tylerkeegan.com/iwatch/privacy/
+Support: https://tylerkeegan.com/iwatch/support/
