@@ -209,8 +209,8 @@ struct PersonDetails: Equatable, Sendable {
 
 // MARK: - Show Progress
 
-struct ShowStatusSnapshot: Equatable, Sendable {
-    enum Bucket: String, Equatable, Sendable {
+struct ShowStatusSnapshot: Codable, Equatable, Sendable {
+    enum Bucket: String, Codable, Equatable, Sendable {
         case airing
         case returning
         case ended
@@ -220,8 +220,8 @@ struct ShowStatusSnapshot: Equatable, Sendable {
     let nextAirDate: Date?
 }
 
-struct ShowProgress: Equatable, Sendable {
-    struct NextEpisode: Equatable, Sendable {
+struct ShowProgress: Codable, Equatable, Sendable {
+    struct NextEpisode: Codable, Equatable, Sendable {
         let tmdbID: Int
         let traktID: Int?
         let season: Int
@@ -295,7 +295,7 @@ struct WatchHistoryItem: Identifiable, Equatable, Sendable {
     let watchedAt: Date
 }
 
-struct LibraryMovieItem: Identifiable, Equatable, Sendable {
+struct LibraryMovieItem: Codable, Identifiable, Equatable, Sendable {
     let mediaID: MediaID
     let title: String
     let posterPath: String?
@@ -318,7 +318,7 @@ struct LibraryMovieItem: Identifiable, Equatable, Sendable {
     }
 }
 
-struct LibraryShowItem: Identifiable, Equatable, Sendable {
+struct LibraryShowItem: Codable, Identifiable, Equatable, Sendable {
     let mediaID: MediaID
     let title: String
     let posterPath: String?

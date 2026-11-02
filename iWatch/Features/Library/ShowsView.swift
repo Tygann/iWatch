@@ -12,6 +12,7 @@ final class ShowsScreenModel {
     private let loadSnapshot: @MainActor (Int, Bool) async throws -> ShowLibrarySnapshot
 
     var snapshot = ShowLibrarySnapshot.empty
+    var isShowingSavedSnapshot = false
     var isLoading = false
     var isEnriching = false
     var errorText: String?
@@ -22,6 +23,10 @@ final class ShowsScreenModel {
     init(repository: LibraryRepository, session: AppSession,
          loadSnapshot: (@MainActor (Int, Bool) async throws -> ShowLibrarySnapshot)? = nil) {
         self.repository = repository
+        if let saved = repository.savedShowLibrarySnapshot() {
+            self.snapshot = saved
+            self.isShowingSavedSnapshot = true
+        }
         self.session = session
         self.loadSnapshot = loadSnapshot ?? { revision, force in
             try await repository.showLibrarySnapshot(revision: revision, forceRefresh: force)
@@ -43,6 +48,7 @@ final class ShowsScreenModel {
             try Task.checkCancellation()
             guard loadToken == token else { return }
             snapshot = loaded
+            isShowingSavedSnapshot = false
             loadedRevision = revision
             errorText = nil
         } catch {
@@ -207,11 +213,19 @@ private struct ShowsViewBody: View {
                                 Task { await model.load(revision: session.libraryRevision, forceRefresh: true) }
                             }
                         }
-                        continueWatchingSection
-                        comingUpSection
-                        librarySection(title: "Not Started", items: model.snapshot.watchlist)
-                        librarySection(title: "Caught Up", items: model.snapshot.caughtUp)
-                        completedSection
+                        if model.isShowingSavedSnapshot, model.errorText == nil {
+                            ProgressView("Updating Library…")
+                                .font(.footnote)
+                                .padding(.vertical, 8)
+                        }
+                        Group {
+                            continueWatchingSection
+                            comingUpSection
+                            librarySection(title: "Not Started", items: model.snapshot.watchlist)
+                            librarySection(title: "Caught Up", items: model.snapshot.caughtUp)
+                            completedSection
+                        }
+                        .disabled(model.isShowingSavedSnapshot)
                     }
                 }
             }
@@ -229,6 +243,12 @@ private struct ShowsViewBody: View {
                 }
             }
             .task(id: session.libraryRevision) {
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("UITEST_MODE"),
+                   ProcessInfo.processInfo.arguments.contains("UITEST_DELAY_LIBRARY_REFRESH") {
+                    do { try await Task.sleep(for: .seconds(4)) } catch { return }
+                }
+                #endif
                 await model.load(revision: session.libraryRevision)
                 await model.enrichLibrary()
             }

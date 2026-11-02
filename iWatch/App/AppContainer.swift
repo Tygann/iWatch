@@ -112,7 +112,8 @@ final class AppContainer {
             tmdb: tmdb,
             airtimeProvider: trakt,
             resetGate: resetGate,
-            deviceIdentityStore: deviceIdentityStore
+            deviceIdentityStore: deviceIdentityStore,
+            previewStore: .live()
         )
         let contentRepository = ContentRepository(library: libraryRepository)
         let peopleRepository = PeopleRepository(tmdb: tmdb)
@@ -227,7 +228,11 @@ final class AppContainer {
         )
         let deviceIdentityStore = PreviewDeviceIdentityStore()
         let resetGate = AppDataResetGate()
-        let libraryRepository = LibraryRepository(persistence: persistence, tmdb: tmdb, resetGate: resetGate, deviceIdentityStore: deviceIdentityStore)
+        let previewStore: LibraryPreviewStore? = ProcessInfo.processInfo.arguments.contains("UITEST_LIBRARY_PREVIEW")
+            ? LibraryPreviewStore(directory: URL.cachesDirectory.appendingPathComponent("UITestLibraryPreviews")) : nil
+        if ProcessInfo.processInfo.arguments.contains("UITEST_CLEAR_LIBRARY_PREVIEW") { previewStore?.clear() }
+        let libraryRepository = LibraryRepository(persistence: persistence, tmdb: tmdb, resetGate: resetGate,
+            deviceIdentityStore: deviceIdentityStore, previewStore: previewStore)
         let contentRepository = ContentRepository(library: libraryRepository)
         let peopleRepository = PeopleRepository(tmdb: tmdb)
         let syncEngine = SyncEngine(persistence: persistence, trakt: trakt, deviceIdentityStore: deviceIdentityStore, resetGate: resetGate)

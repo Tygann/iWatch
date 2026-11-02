@@ -23,6 +23,38 @@ final class iWatchUITests: XCTestCase {
     }
 
     @MainActor
+    func testSavedShowsAppearBeforeRefreshStandard() throws {
+        verifySavedShowsAppearBeforeRefresh(accessibility: false)
+    }
+
+    @MainActor
+    func testSavedShowsAppearBeforeRefreshAccessibility() throws {
+        verifySavedShowsAppearBeforeRefresh(accessibility: true)
+    }
+
+    @MainActor
+    private func verifySavedShowsAppearBeforeRefresh(accessibility: Bool) {
+        let app = XCUIApplication()
+        app.launchArguments += ["UITEST_MODE", "UITEST_START_ON_SHOWS", "UITEST_LIBRARY_PREVIEW",
+                                "UITEST_CLEAR_LIBRARY_PREVIEW"]
+        if accessibility { app.launchArguments.append("UITEST_ACCESSIBILITY_TEXT") }
+        app.launch()
+        let title = app.buttons["UI Test Show, Season 1 Episode 2, Continue Watching"]
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+        app.terminate()
+        app.launchArguments.removeAll { $0 == "UITEST_CLEAR_LIBRARY_PREVIEW" }
+        app.launchArguments.append("UITEST_DELAY_LIBRARY_REFRESH")
+        app.launch()
+        XCTAssertTrue(title.waitForExistence(timeout: 2))
+        XCTAssertFalse(title.isEnabled)
+        capture(app, "Saved Shows before local refresh - \(accessibility)")
+        XCTAssertTrue(NSPredicate(format: "enabled == true").evaluate(with: title)
+            || XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"),
+                object: title)], timeout: 10) == .completed)
+        app.terminate()
+    }
+
+    @MainActor
     func testColdLaunchShowsStandard() throws {
         verifyColdLaunchShows(accessibility: false)
     }

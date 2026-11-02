@@ -11,10 +11,13 @@ final class LibraryRepository {
     private let resetGate: AppDataResetGate
     private let deviceIdentityStore: any DeviceIdentityStore
     private let accountKeyProvider: @Sendable () -> String?
+    private let previewStore: LibraryPreviewStore?
+    private var snapshotEpoch = UUID()
+    private var lastPreviewScope: LibraryPreviewStore.Scope?
     private let snapshotReader: LibrarySnapshotReader
-    private var cachedMovieSnapshot: (revision: Int, cachedAt: Date, items: [LibraryMovieItem])?
-    private var cachedShowSnapshot: (revision: Int, cachedAt: Date, snapshot: ShowLibrarySnapshot)?
-    private var showSnapshotTask: (revision: Int, token: UUID, task: Task<ShowLibrarySnapshot, Error>)?
+    private var cachedMovieSnapshot: (revision: Int, scope: LibraryPreviewStore.Scope?, cachedAt: Date, items: [LibraryMovieItem])?
+    private var cachedShowSnapshot: (revision: Int, scope: LibraryPreviewStore.Scope?, cachedAt: Date, snapshot: ShowLibrarySnapshot)?
+    private var showSnapshotTask: (revision: Int, scope: LibraryPreviewStore.Scope?, token: UUID, task: Task<ShowLibrarySnapshot, Error>)?
     private var detailRequests: [String: Task<MediaDetails, Error>] = [:]
     private let metadataFreshness: MetadataFreshnessStore
     private var refreshedSeasonArtworkKeys: Set<String> = []
@@ -26,8 +29,10 @@ final class LibraryRepository {
         resetGate: AppDataResetGate = AppDataResetGate(),
         deviceIdentityStore: any DeviceIdentityStore = KeychainDeviceIdentityStore(),
         accountKeyProvider: @escaping @Sendable () -> String? = { TraktLinkStore.activeAccountKey },
-        metadataFreshness: MetadataFreshnessStore? = nil
+        metadataFreshness: MetadataFreshnessStore? = nil,
+        previewStore: LibraryPreviewStore? = nil
     ) {
+        self.previewStore = previewStore
         self.persistence = persistence
         self.tmdb = tmdb
         self.airtimeProvider = airtimeProvider
@@ -36,11 +41,16 @@ final class LibraryRepository {
         self.accountKeyProvider = accountKeyProvider
         self.metadataFreshness = metadataFreshness ?? MetadataFreshnessStore()
         self.snapshotReader = LibrarySnapshotReader(persistence: persistence)
+        self.lastPreviewScope = previewScope()
     }
 
     var onMetadataChanged: (@MainActor () -> Void)?
 
     func invalidateSnapshots() {
+        snapshotEpoch = UUID()
+        let scope = previewScope()
+        if scope != lastPreviewScope { previewStore?.clear() }
+        lastPreviewScope = scope
         cachedMovieSnapshot = nil
         cachedShowSnapshot = nil
         showSnapshotTask?.task.cancel()
@@ -590,12 +600,40 @@ final class LibraryRepository {
         try await snapshotReader.releaseNotificationSnapshot(referenceDate: referenceDate)
     }
 
+    private func previewScope() -> LibraryPreviewStore.Scope? {
+        // Read without creating or repairing generation markers. Fail closed on errors.
+        guard let markers = try? persistence.makeContext().fetch(FetchDescriptor<LibraryGenerationRecord>()) else {
+            return nil
+        }
+        return .init(
+            generation: markers.max(by: { $0.changedAt < $1.changedAt })?.generationID
+                ?? LibraryGenerationPolicy.legacyGenerationID,
+            accountKey: accountKeyProvider()
+        )
+    }
+
+    func savedMovieLibraryItems() -> [LibraryMovieItem]? {
+        guard let scope = previewScope() else { return nil }
+        return previewStore?.movies(scope: scope)
+    }
+
+    func savedShowLibrarySnapshot() -> ShowLibrarySnapshot? {
+        guard let scope = previewScope(), let items = previewStore?.shows(scope: scope) else { return nil }
+        // Date-sensitive sections are rebuilt using today's date, not the save date.
+        return ShowLibrarySnapshot(items: items)
+    }
+
     func movieLibraryItems(revision: Int, forceRefresh: Bool = false) async throws -> [LibraryMovieItem] {
-        if !forceRefresh, let cachedMovieSnapshot, cachedMovieSnapshot.revision == revision, Date().timeIntervalSince(cachedMovieSnapshot.cachedAt) < 60 {
+        let scope = previewScope()
+        if !forceRefresh, let cachedMovieSnapshot, cachedMovieSnapshot.scope == scope, cachedMovieSnapshot.revision == revision, Date().timeIntervalSince(cachedMovieSnapshot.cachedAt) < 60 {
             return cachedMovieSnapshot.items
         }
+        let epoch = snapshotEpoch
         let items = try await movieLibraryItems()
-        cachedMovieSnapshot = (revision, .now, items)
+        try Task.checkCancellation()
+        guard snapshotEpoch == epoch, previewScope() == scope else { throw CancellationError() }
+        cachedMovieSnapshot = (revision, scope, .now, items)
+        if let scope { previewStore?.saveMovies(items, scope: scope) }
         return items
     }
 
@@ -604,15 +642,16 @@ final class LibraryRepository {
     }
 
     func showLibrarySnapshot(revision: Int, forceRefresh: Bool = false) async throws -> ShowLibrarySnapshot {
-        if !forceRefresh, let cachedShowSnapshot, cachedShowSnapshot.revision == revision, Date().timeIntervalSince(cachedShowSnapshot.cachedAt) < 60 {
+        let scope = previewScope()
+        if !forceRefresh, let cachedShowSnapshot, cachedShowSnapshot.scope == scope, cachedShowSnapshot.revision == revision, Date().timeIntervalSince(cachedShowSnapshot.cachedAt) < 60 {
             return cachedShowSnapshot.snapshot
         }
 
         // A forced refresh bypasses the cache, but can still share a current read.
         // Opening Shows must not cancel the launch prewarm (or another visible reader).
         // Actual library/metadata changes invalidate the in-flight task separately.
-        let pending: (revision: Int, token: UUID, task: Task<ShowLibrarySnapshot, Error>)
-        if let existing = showSnapshotTask, existing.revision == revision {
+        let pending: (revision: Int, scope: LibraryPreviewStore.Scope?, token: UUID, task: Task<ShowLibrarySnapshot, Error>)
+        if let existing = showSnapshotTask, existing.revision == revision, existing.scope == scope {
             pending = existing
         } else {
             let snapshotReader = snapshotReader
@@ -621,16 +660,19 @@ final class LibraryRepository {
                 try Task.checkCancellation()
                 return ShowLibrarySnapshot(items: items)
             }
-            pending = (revision, UUID(), task)
+            pending = (revision, scope, UUID(), task)
             showSnapshotTask = pending
         }
         let task = pending.task
         let token = pending.token
+        let epoch = snapshotEpoch
 
         do {
             let snapshot = try await task.value
+            guard snapshotEpoch == epoch, previewScope() == scope else { throw CancellationError() }
             if showSnapshotTask?.token == token {
-                cachedShowSnapshot = (revision, .now, snapshot)
+                if let scope { previewStore?.saveShows(snapshot.all, scope: scope) }
+                cachedShowSnapshot = (revision, scope, .now, snapshot)
                 showSnapshotTask = nil
             }
             // A disappearing tab can cancel its waiter without discarding a valid

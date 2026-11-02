@@ -117,6 +117,7 @@ final class MoviesScreenModel {
     private let loadItems: @MainActor (Int, Bool) async throws -> [LibraryMovieItem]
 
     var items: [LibraryMovieItem] = []
+    var isShowingSavedSnapshot = false
     var isLoading = false
     var isEnriching = false
     var errorText: String?
@@ -127,6 +128,10 @@ final class MoviesScreenModel {
     init(repository: LibraryRepository, session: AppSession,
          loadItems: (@MainActor (Int, Bool) async throws -> [LibraryMovieItem])? = nil) {
         self.repository = repository
+        if let saved = repository.savedMovieLibraryItems() {
+            self.items = saved
+            self.isShowingSavedSnapshot = true
+        }
         self.session = session
         self.loadItems = loadItems ?? { revision, force in
             try await repository.movieLibraryItems(revision: revision, forceRefresh: force)
@@ -148,6 +153,7 @@ final class MoviesScreenModel {
             try Task.checkCancellation()
             guard loadToken == token else { return }
             items = loaded
+            isShowingSavedSnapshot = false
             loadedRevision = revision
             errorText = nil
         } catch {
@@ -297,8 +303,16 @@ private struct MoviesViewBody: View {
                                 Task { await model.load(revision: session.libraryRevision, forceRefresh: true) }
                             }
                         }
-                        toWatchSection
-                        watchedSection
+                        if model.isShowingSavedSnapshot, model.errorText == nil {
+                            ProgressView("Updating Library…")
+                                .font(.footnote)
+                                .padding(.vertical, 8)
+                        }
+                        Group {
+                            toWatchSection
+                            watchedSection
+                        }
+                        .disabled(model.isShowingSavedSnapshot)
                     }
                 }
             }
