@@ -1,7 +1,6 @@
-iWatch: Movies & Shows — version 1.0 (39)
+DEMO: iWatch-Demo.mp4 attached. Recorded Nov 2, 2026 on iPhone 15 Pro, iOS 27.0.1, TestFlight 1.0 (39). Shows launch, tracking, library/sync status and About.
 
-PHYSICAL-DEVICE DEMONSTRATION
-Recorded November 2, 2026 on iPhone 15 Pro, iOS 27.0.1, TestFlight 1.0 (39). The 1m40s recording shows launch, core tracking, library/sync status, and About confirming the build.
+iWatch: Movies & Shows — version 1.0 (39)
 
 PURPOSE AND AUDIENCE
 iWatch helps movie and TV viewers organize a Watchlist, record watched movies and episodes, and follow show progress. It provides catalog details and regional viewing-availability links. It does not stream or download full movies or TV episodes. It is free and noncommercial, with no advertisements, paid features, subscriptions, or in-app purchases. It has no public posting, commenting, or messaging interface.
