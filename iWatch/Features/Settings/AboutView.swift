@@ -5,7 +5,7 @@ import UIKit
 
 struct AboutView: View {
     @Environment(\.dynamicTypeSize) private var typeSize
-    @ScaledMetric(relativeTo: .body) private var minimumDockedHeight = 680
+    @State private var creditsSpacing: CGFloat = 0
 
     private var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
@@ -16,19 +16,15 @@ struct AboutView: View {
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            let dockCredits = !typeSize.isAccessibilitySize && geometry.size.height >= minimumDockedHeight
-
-            aboutList(dockCredits: dockCredits)
-                .frame(maxWidth: 600)
-                .frame(maxWidth: .infinity)
-        }
-        .background(Color(uiColor: .systemGroupedBackground))
-        .navigationTitle("About")
-        .navigationBarTitleDisplayMode(.inline)
+        aboutList
+            .frame(maxWidth: 600)
+            .frame(maxWidth: .infinity)
+            .background(Color(uiColor: .systemGroupedBackground))
+            .navigationTitle("About")
+            .navigationBarTitleDisplayMode(.inline)
     }
 
-    private func aboutList(dockCredits: Bool) -> some View {
+    private var aboutList: some View {
         List {
             Section {
                 appIdentity
@@ -58,22 +54,32 @@ struct AboutView: View {
                 .buttonStyle(.plain)
             }
 
-            if !dockCredits {
-                Section {
-                    creditsSection
-                }
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-            }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if dockCredits {
+            Section {
                 creditsSection
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 16)
-                    .background(Color(uiColor: .systemGroupedBackground))
+                    .padding(.top, creditsSpacing)
+            }
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+        }
+        .onScrollGeometryChange(for: ListMetrics.self) { geometry in
+            ListMetrics(
+                availableHeight: geometry.containerSize.height
+                    - geometry.contentInsets.top - geometry.contentInsets.bottom,
+                contentHeight: geometry.contentSize.height
+            )
+        } action: { _, metrics in
+            // Subtract the space already rendered before measuring unused height.
+            let naturalHeight = metrics.contentHeight - creditsSpacing
+            let spacing = max(0, (metrics.availableHeight - naturalHeight).rounded(.down))
+            if abs(creditsSpacing - spacing) >= 1 {
+                creditsSpacing = spacing
             }
         }
+    }
+
+    private struct ListMetrics: Equatable {
+        var availableHeight: CGFloat
+        var contentHeight: CGFloat
     }
 
     private var creditsSection: some View {
@@ -96,12 +102,9 @@ struct AboutView: View {
                 }
             }
             .fixedSize(horizontal: true, vertical: false)
-            VStack(spacing: 8) {
-                Text("This product uses the TMDB API but is not endorsed or certified by TMDB.")
-                Text("iWatch uses Trakt but is not endorsed or certified by Trakt.")
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            Text("iWatch is not endorsed or certified by TMDB or Trakt.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .multilineTextAlignment(.center)
         .frame(maxWidth: .infinity)

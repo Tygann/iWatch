@@ -691,7 +691,7 @@ final class iWatchUITests: XCTestCase {
         revealAbout(app.buttons["Privacy Policy"])
         XCTAssertFalse(app.buttons["Acknowledgments"].exists)
         for label in ["The Movie Database (TMDB)", "Trakt"] {
-            let link = app.buttons[label]
+            let link = app.collectionViews.firstMatch.buttons[label]
             revealAbout(link)
             XCTAssertGreaterThanOrEqual(link.frame.width, 44)
             XCTAssertGreaterThanOrEqual(link.frame.height, 44)
