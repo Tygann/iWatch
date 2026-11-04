@@ -164,6 +164,12 @@ final class LibraryRepository {
         try await tmdb.supplementaryDetails(for: id, regionCode: regionCode)
     }
 
+    func cachedEpisodes(for showID: MediaID, seasonNumber: Int) throws -> [EpisodeDetails] {
+        let context = try persistence.makeMetadataContext()
+        return episodeRecords(forShowID: showID.tmdbID, seasonNumber: seasonNumber, context: context)
+            .map(mapEpisodeRecord(_:))
+    }
+
     func episodes(for showID: MediaID, seasonNumber: Int, forceRefresh: Bool = false) async throws -> [EpisodeDetails] {
         let context = try persistence.makeMetadataContext()
         let cached = episodeRecords(forShowID: showID.tmdbID, seasonNumber: seasonNumber, context: context)

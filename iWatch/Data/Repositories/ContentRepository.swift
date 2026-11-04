@@ -12,6 +12,10 @@ final class ContentRepository {
         try await library.mediaDetails(for: ref, forceRefresh: forceRefresh)
     }
 
+    func cachedEpisodes(for showID: MediaID, seasonNumber: Int) throws -> [EpisodeDetails] {
+        try library.cachedEpisodes(for: showID, seasonNumber: seasonNumber)
+    }
+
     func episodes(for showID: MediaID, seasonNumber: Int, forceRefresh: Bool = false) async throws -> [EpisodeDetails] {
         try await library.episodes(for: showID, seasonNumber: seasonNumber, forceRefresh: forceRefresh)
     }

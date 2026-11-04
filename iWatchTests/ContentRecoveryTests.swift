@@ -98,6 +98,31 @@ struct ContentRecoveryTests {
         #expect(!model.isLoading)
     }
 
+    @Test(arguments: [false, true])
+    func cachedSeasonAppearsBeforeRefreshCompletes(fails: Bool) async throws {
+        let container = AppContainer.preview()
+        let showID = MediaID(kind: .show, id: 202, traktID: 2002)
+        let cached = try container.contentRepository.cachedEpisodes(for: showID, seasonNumber: 1)
+        #expect(!cached.isEmpty)
+        let pending = TestValue<CheckedContinuation<[EpisodeDetails], Error>?>(nil)
+        let model = MediaDetailScreenModel(ref: showID, contentRepository: container.contentRepository,
+            libraryRepository: container.libraryRepository, session: container.session,
+            loadEpisodes: { _, _, _ in
+                try await withCheckedThrowingContinuation { pending.value = $0 }
+            })
+        model.loadState = .loaded(try await container.contentRepository.details(for: showID))
+        let refresh = Task { await model.loadSeason(1) }
+        while pending.value == nil { await Task.yield() }
+        #expect(model.loadingSeasons.contains(1))
+        #expect(model.episodesBySeason[1] == cached)
+        if fails { pending.value?.resume(throwing: URLError(.notConnectedToInternet)) }
+        else { pending.value?.resume(returning: Array(cached.prefix(1))) }
+        await refresh.value
+        #expect(model.episodesBySeason[1] == (fails ? cached : Array(cached.prefix(1))))
+        #expect((model.operationError != nil) == fails)
+        #expect(model.loadingSeasons.isEmpty)
+    }
+
     @Test
     func searchIgnoresLateResponsesForAnotherQuery() async throws {
         let container = AppContainer.preview()

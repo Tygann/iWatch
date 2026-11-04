@@ -23,6 +23,36 @@ final class iWatchUITests: XCTestCase {
     }
 
     @MainActor
+    func testCachedSeasonDuringRefreshStandard() throws { verifyCachedSeasonDuringRefresh(accessibility: false) }
+
+    @MainActor
+    func testCachedSeasonDuringRefreshAccessibility() throws { verifyCachedSeasonDuringRefresh(accessibility: true) }
+
+    @MainActor
+    private func verifyCachedSeasonDuringRefresh(accessibility: Bool) {
+        let app = XCUIApplication()
+        app.launchArguments += ["UITEST_MODE", "UITEST_START_ON_SHOWS", "UITEST_DELAY_SEASON_REFRESH"]
+        if accessibility { app.launchArguments.append("UITEST_ACCESSIBILITY_TEXT") }
+        app.launch()
+        let show = app.buttons["UI Test Show, Season 1 Episode 2, Continue Watching"]
+        XCTAssertTrue(show.waitForExistence(timeout: 10))
+        show.press(forDuration: 1)
+        let goToShow = app.buttons["Go to Show"]
+        XCTAssertTrue(goToShow.waitForExistence(timeout: 3))
+        goToShow.tap()
+        let episode = app.staticTexts["E1 • Pilot"]
+        XCTAssertTrue(episode.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["Loading episodes…"].exists)
+        for _ in 0..<8 {
+            if episode.isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(episode.isHittable)
+        capture(app, "Cached episodes while refreshing - \(accessibility)")
+        app.terminate()
+    }
+
+    @MainActor
     func testSavedShowsAppearBeforeRefreshStandard() throws {
         verifySavedShowsAppearBeforeRefresh(accessibility: false)
     }

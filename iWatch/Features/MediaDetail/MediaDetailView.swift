@@ -6,7 +6,7 @@ import SwiftData
 
 @MainActor
 @Observable
-private final class MediaDetailScreenModel {
+final class MediaDetailScreenModel {
     enum LoadState: Equatable {
         case idle
         case loading
@@ -19,6 +19,7 @@ private final class MediaDetailScreenModel {
     private let contentRepository: ContentRepository
     private let libraryRepository: LibraryRepository
     private let session: AppSession
+    private let loadEpisodes: @MainActor (MediaID, Int, Bool) async throws -> [EpisodeDetails]
 
     var loadState: LoadState = .idle
     var operationError: String?
@@ -59,11 +60,21 @@ private final class MediaDetailScreenModel {
     init(ref: MediaID,
          contentRepository: ContentRepository,
          libraryRepository: LibraryRepository,
-         session: AppSession) {
+         session: AppSession,
+         loadEpisodes: (@MainActor (MediaID, Int, Bool) async throws -> [EpisodeDetails])? = nil) {
         self.ref = ref
         self.contentRepository = contentRepository
         self.libraryRepository = libraryRepository
         self.session = session
+        self.loadEpisodes = loadEpisodes ?? { showID, seasonNumber, forceRefresh in
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("UITEST_MODE"),
+               ProcessInfo.processInfo.arguments.contains("UITEST_DELAY_SEASON_REFRESH") {
+                try await Task.sleep(for: .seconds(30))
+            }
+            #endif
+            return try await contentRepository.episodes(for: showID, seasonNumber: seasonNumber, forceRefresh: forceRefresh)
+        }
     }
 
     private func present(_ error: Error, context: UserFacingError.Context = .action) {
@@ -184,11 +195,10 @@ private final class MediaDetailScreenModel {
         defer { loadingSeasons.remove(seasonNumber) }
 
         do {
-            episodesBySeason[seasonNumber] = try await contentRepository.episodes(
-                for: MediaID(kind: .show, id: show.common.id, traktID: show.common.traktID),
-                seasonNumber: seasonNumber,
-                forceRefresh: forceRefresh
-            )
+            let showID = MediaID(kind: .show, id: show.common.id, traktID: show.common.traktID)
+            let cached = try contentRepository.cachedEpisodes(for: showID, seasonNumber: seasonNumber)
+            if !cached.isEmpty { episodesBySeason[seasonNumber] = cached }
+            episodesBySeason[seasonNumber] = try await loadEpisodes(showID, seasonNumber, forceRefresh)
             await refreshLibraryState()
         } catch {
             guard !error.isCancelled else { return }
