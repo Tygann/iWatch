@@ -1,9 +1,12 @@
 import SwiftUI
+import UIKit
 
 // MARK: - About Screen
 
 struct AboutView: View {
     @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .body) private var minimumDockedHeight = 680
+
     private var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
     }
@@ -13,6 +16,19 @@ struct AboutView: View {
     }
 
     var body: some View {
+        GeometryReader { geometry in
+            let dockCredits = !typeSize.isAccessibilitySize && geometry.size.height >= minimumDockedHeight
+
+            aboutList(dockCredits: dockCredits)
+                .frame(maxWidth: 600)
+                .frame(maxWidth: .infinity)
+        }
+        .background(Color(uiColor: .systemGroupedBackground))
+        .navigationTitle("About")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func aboutList(dockCredits: Bool) -> some View {
         List {
             Section {
                 appIdentity
@@ -42,7 +58,7 @@ struct AboutView: View {
                 .buttonStyle(.plain)
             }
 
-            if typeSize.isAccessibilitySize {
+            if !dockCredits {
                 Section {
                     creditsSection
                 }
@@ -51,15 +67,13 @@ struct AboutView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !typeSize.isAccessibilitySize {
+            if dockCredits {
                 creditsSection
                     .padding(.horizontal, 24)
                     .padding(.vertical, 16)
                     .background(Color(uiColor: .systemGroupedBackground))
             }
         }
-        .navigationTitle("About")
-        .navigationBarTitleDisplayMode(.inline)
     }
 
     private var creditsSection: some View {
@@ -82,9 +96,12 @@ struct AboutView: View {
                 }
             }
             .fixedSize(horizontal: true, vertical: false)
-            Text("iWatch is not endorsed or certified by TMDB or Trakt.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            VStack(spacing: 8) {
+                Text("This product uses the TMDB API but is not endorsed or certified by TMDB.")
+                Text("iWatch uses Trakt but is not endorsed or certified by Trakt.")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
         .multilineTextAlignment(.center)
         .frame(maxWidth: .infinity)
@@ -96,6 +113,7 @@ struct AboutView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 64, height: 28)
+                .frame(minHeight: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -109,6 +127,7 @@ struct AboutView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 28, height: 28)
+                .frame(width: 44, height: 44, alignment: typeSize.isAccessibilitySize ? .center : .trailing)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -132,6 +151,12 @@ struct AboutView: View {
         .multilineTextAlignment(.center)
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("about-app-identity")
+        .contextMenu {
+            Button("Copy Version", systemImage: "doc.on.doc") {
+                UIPasteboard.general.string = "iWatch \(version) (\(build))"
+            }
+        }
     }
 
 }

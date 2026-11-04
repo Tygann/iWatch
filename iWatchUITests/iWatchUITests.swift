@@ -633,7 +633,12 @@ final class iWatchUITests: XCTestCase {
     }
 
     @MainActor
-    private func verifyAbout(theme: String, accessibility: Bool) throws {
+    func testAboutLandscapeStandard() throws {
+        try verifyAbout(theme: "dark", accessibility: false, landscape: true)
+    }
+
+    @MainActor
+    private func verifyAbout(theme: String, accessibility: Bool, landscape: Bool = false) throws {
         let app = XCUIApplication()
         app.launchArguments += ["UITEST_MODE", "-appTheme", theme == "dark" ? "2" : "1"]
         if accessibility {
@@ -641,30 +646,55 @@ final class iWatchUITests: XCTestCase {
                 "-UIPreferredContentSizeCategoryName",
                 "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"]
         }
+        XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
         app.launch()
+        defer {
+            app.terminate()
+            XCUIDevice.shared.orientation = .portrait
+        }
         let settings = app.buttons["Settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
         settings.tap()
         let about = app.buttons["About"]
         for _ in 0..<6 {
             if about.isHittable { break }
-            app.swipeUp()
+            app.collectionViews.firstMatch.swipeUp()
         }
+        if landscape { capture(app, "Landscape settings") }
         XCTAssertTrue(about.isHittable)
         about.tap()
         XCTAssertTrue(app.navigationBars["About"].waitForExistence(timeout: 5))
+        if !accessibility && !landscape {
+            app.descendants(matching: .any)["about-app-identity"].firstMatch.press(forDuration: 1)
+            let copyVersion = app.buttons["Copy Version"]
+            XCTAssertTrue(copyVersion.waitForExistence(timeout: 3))
+            copyVersion.tap()
+        }
+
         let identity = XCTAttachment(screenshot: app.screenshot())
         identity.name = "About identity - \(theme) - \(accessibility ? "accessibility" : "standard")"
         identity.lifetime = .keepAlways
         add(identity)
 
-        reveal(app.buttons["about-support"], in: app)
+        func revealAbout(_ element: XCUIElement) {
+            for _ in 0..<15 {
+                if element.isHittable { return }
+                app.collectionViews.firstMatch.swipeUp()
+            }
+            XCTAssertTrue(element.isHittable, "Expected reachable About element: " + element.description)
+        }
+
+        revealAbout(app.buttons["about-support"])
+        XCTAssertLessThanOrEqual(app.buttons["about-support"].frame.width, 600)
         XCTAssertFalse(app.buttons["Share iWatch"].exists)
         XCTAssertFalse(app.buttons["Rate iWatch"].exists)
-        reveal(app.buttons["Privacy Policy"], in: app)
+        revealAbout(app.buttons["Privacy Policy"])
         XCTAssertFalse(app.buttons["Acknowledgments"].exists)
         for label in ["The Movie Database (TMDB)", "Trakt"] {
-            reveal(app.buttons[label], in: app)
+            let link = app.buttons[label]
+            revealAbout(link)
+            XCTAssertGreaterThanOrEqual(link.frame.width, 44)
+            XCTAssertGreaterThanOrEqual(link.frame.height, 44)
         }
         let links = XCTAttachment(screenshot: app.screenshot())
         links.name = "About links - \(theme) - \(accessibility ? "accessibility" : "standard")"
