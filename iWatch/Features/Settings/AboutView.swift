@@ -14,7 +14,11 @@ struct AboutView: View {
 
     var body: some View {
         List {
-            appIdentity
+            Section {
+                appIdentity
+            }
+            .listRowBackground(Color.clear)
+
             Section {
                 Text("Keep track of movies and shows, follow your watchlist, and pick up where you left off.")
                     .multilineTextAlignment(.center)
@@ -37,43 +41,53 @@ struct AboutView: View {
                 }
                 .buttonStyle(.plain)
             }
-            creditsSection
+
+            if typeSize.isAccessibilitySize {
+                Section {
+                    creditsSection
+                }
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !typeSize.isAccessibilitySize {
+                creditsSection
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 16)
+                    .background(Color(uiColor: .systemGroupedBackground))
+            }
         }
         .navigationTitle("About")
         .navigationBarTitleDisplayMode(.inline)
     }
 
     private var creditsSection: some View {
-        Section {
+        VStack {
             VStack {
-                VStack {
-                    Text("Data & Integrations")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if typeSize.isAccessibilitySize {
-                        VStack {
-                            tmdbLink
-                            traktLink
-                        }
-                    } else {
-                        HStack {
-                            tmdbLink
-                            Spacer(minLength: 0)
-                            traktLink
-                        }
-                    }
-                }
-                .fixedSize(horizontal: true, vertical: false)
-                Text("iWatch is not endorsed or certified by TMDB or Trakt.")
+                Text("Data & Integrations")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .padding(.top)
+                if typeSize.isAccessibilitySize {
+                    VStack {
+                        tmdbLink
+                        traktLink
+                    }
+                } else {
+                    HStack {
+                        tmdbLink
+                        Spacer(minLength: 0)
+                        traktLink
+                    }
+                }
             }
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity)
+            .fixedSize(horizontal: true, vertical: false)
+            Text("iWatch is not endorsed or certified by TMDB or Trakt.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
     }
 
     private var tmdbLink: some View {
@@ -103,24 +117,21 @@ struct AboutView: View {
     }
 
     private var appIdentity: some View {
-        Section {
-            VStack {
-                Image("iWatchLogo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 120, height: 120)
-                    .accessibilityHidden(true)
-                Text("iWatch")
-                    .font(.largeTitle.bold())
-                Text("Version \(version) (\(build))")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity)
-            .accessibilityElement(children: .combine)
+        VStack {
+            Image("iWatchLogo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 120, height: 120)
+                .accessibilityHidden(true)
+            Text("iWatch")
+                .font(.largeTitle.bold())
+            Text("Version \(version) (\(build))")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
-        .listRowBackground(Color.clear)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
     }
 
 }
