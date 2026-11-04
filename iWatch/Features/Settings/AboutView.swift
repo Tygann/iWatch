@@ -38,15 +38,6 @@ struct AboutView: View {
                 .buttonStyle(.plain)
             }
             creditsSection
-            Section {
-                Text("© 2026 Tyler Keegan. All rights reserved.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-            }
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
         }
         .navigationTitle("About")
         .navigationBarTitleDisplayMode(.inline)
@@ -55,26 +46,28 @@ struct AboutView: View {
     private var creditsSection: some View {
         Section {
             VStack {
-                Text("Data & Integrations")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                if typeSize.isAccessibilitySize {
-                    VStack {
-                        tmdbLink
-                        traktLink
-                    }
-                } else {
-                    HStack {
-                        tmdbLink
-                        traktLink
+                VStack {
+                    Text("Data & Integrations")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if typeSize.isAccessibilitySize {
+                        VStack {
+                            tmdbLink
+                            traktLink
+                        }
+                    } else {
+                        HStack {
+                            tmdbLink
+                            Spacer(minLength: 0)
+                            traktLink
+                        }
                     }
                 }
-                Text("This product uses the TMDB API but is not endorsed or certified by TMDB.")
+                .fixedSize(horizontal: true, vertical: false)
+                Text("iWatch is not endorsed or certified by TMDB or Trakt.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text("iWatch uses Trakt but is not endorsed or certified by Trakt.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .padding(.top)
             }
             .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity)
@@ -89,7 +82,6 @@ struct AboutView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 64, height: 28)
-                .frame(maxWidth: .infinity, minHeight: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -103,7 +95,6 @@ struct AboutView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 28, height: 28)
-                .frame(maxWidth: .infinity, minHeight: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
