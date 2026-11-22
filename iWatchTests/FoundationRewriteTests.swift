@@ -890,6 +890,41 @@ struct FoundationRewriteTests {
         #expect(events.contains { $0.traktHistoryID == nil && $0.dirty })
     }
 
+    @Test(arguments: [false, true])
+    func approvedHistoryRetryChecksAgainBeforeResending(playAppears: Bool) async throws {
+        let persistence = makePersistence()
+        let repository = makeLibraryRepository(persistence: persistence)
+        let watchedAt = Date(timeIntervalSince1970: 1700000000)
+        try await repository.addWatchEvent(for: MediaID(kind: .movie, id: 11, traktID: 111), watchedAt: watchedAt)
+        let context = persistence.makeContext()
+        let operation = try #require(context.fetch(FetchDescriptor<SyncOperationRecord>()).first)
+        var payload = try SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: operation.payload)
+        payload.historyRequestStartedAt = .now
+        payload.historyKnownIDs = []
+        operation.payload = try SyncPayloadCodec.encoder.encode(payload)
+        try context.save()
+
+        let play = makeMovieHistoryItem(historyID: 999, watchedAt: watchedAt)
+        let remote = FakeTraktSyncRemote(token: makeToken(),
+            lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now),
+            watchlist: [], history: [], historyAfterUpload: [play])
+        let engine = SyncEngine(persistence: persistence, trakt: remote,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { "default" })
+
+        #expect(await engine.run(reason: .userInitiated) == false)
+        #expect(await remote.snapshot().addHistoryCalls == 0)
+        let offer = try #require(await engine.historyRetryOffer(for: "default"))
+        #expect(offer.ids == [operation.id])
+
+        if playAppears { await remote.setHistory([play]) }
+        try await engine.prepareHistoryConfirmationChecks()
+        #expect(await engine.run(reason: .userInitiated, historyRetry: offer))
+        #expect(await remote.snapshot().addHistoryCalls == (playAppears ? 0 : 1))
+        let events = try fetchAll(WatchedEventRecord.self, from: persistence)
+        #expect(events.map(\.traktHistoryID) == [999])
+        #expect(events.map(\.watchedAt) == [watchedAt])
+    }
+
     @Test
     func uncertainHistoryWithoutRemoteEvidenceRemainsUnresolved() async throws {
         let persistence = makePersistence()
@@ -2191,6 +2226,10 @@ private actor FakeTraktSyncRemote: TraktSyncing {
     func getWatchlist() async throws -> [TraktWatchlistItemDTO] {
         getWatchlistCalls += 1
         return watchlist
+    }
+
+    func setHistory(_ items: [TraktHistoryItemDTO]) {
+        history = items
     }
 
     func getHistory(startAt: Date?) async throws -> [TraktHistoryItemDTO] {

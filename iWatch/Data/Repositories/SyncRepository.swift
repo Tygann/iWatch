@@ -41,6 +41,17 @@ actor SyncEngine {
     private var lastRunFailure: SyncFailure?
     private var lastRunAccountKey: String?
     private var isRunning = false
+    private var missingHistoryIDs = Set<UUID>()
+
+    struct HistoryRetry: Sendable {
+        let account: String
+        let ids: Set<UUID>
+    }
+
+    func historyRetryOffer(for account: String) -> HistoryRetry? {
+        guard !isRunning, lastRunAccountKey == account, accountKeyProvider() == account, !missingHistoryIDs.isEmpty else { return nil }
+        return HistoryRetry(account: account, ids: missingHistoryIDs)
+    }
 
     init(persistence: Persistence,
          trakt: any TraktSyncing,
@@ -80,13 +91,14 @@ actor SyncEngine {
     }
 
     @discardableResult
-    func run(reason: SyncReason,
+    func run(reason: SyncReason, historyRetry: HistoryRetry? = nil,
              progress: (@MainActor @Sendable (SyncProgress) async -> Void)? = nil) async -> Bool {
         guard !isRunning else { return false }
         isRunning = true
         defer { isRunning = false }
         guard await resetGate.allowsLibraryWork() else { return false }
         do {
+            missingHistoryIDs.removeAll()
             lastRunErrorDescription = nil
             lastRunFailure = nil
             lastRunAccountKey = accountKeyProvider()
@@ -116,7 +128,7 @@ actor SyncEngine {
                 .filter { $0.status == .pending || $0.status == .processing }
                 .count
             await progress?(.uploadingChanges(pendingCount))
-            try await pushPendingOperations()
+            try await pushPendingOperations(historyRetry: historyRetry)
             await progress?(.complete)
             return true
         } catch {
@@ -528,7 +540,7 @@ actor SyncEngine {
         return historyActivityAt > previousRelevantActivityAt
     }
 
-    private func pushPendingOperations() async throws {
+    private func pushPendingOperations(historyRetry: HistoryRetry?) async throws {
         guard let accountKey = accountKeyProvider() else { return }
         let deviceID = await deviceIdentityStore.currentDeviceID()
         let now = Date()
@@ -543,7 +555,8 @@ actor SyncEngine {
             }
 
             do {
-                try await process(operation: operation, context: processContext)
+                let mayRetryMissingPlay = historyRetry?.account == accountKey && historyRetry?.ids.contains(operationID) == true
+                try await process(operation: operation, context: processContext, mayRetryMissingPlay: mayRetryMissingPlay)
                 operation.status = .succeeded
                 operation.claimedByDeviceID = nil
                 operation.claimedAt = nil
@@ -628,7 +641,7 @@ actor SyncEngine {
         }
     }
 
-    private func process(operation: SyncOperationRecord, context: ModelContext) async throws {
+    private func process(operation: SyncOperationRecord, context: ModelContext, mayRetryMissingPlay: Bool) async throws {
         let payload = try SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: operation.payload)
         let sentAt = payload.mutationAt ?? operation.createdAt
         guard accountKeyProvider() == operation.accountKey else { throw CancellationError() }
@@ -659,7 +672,7 @@ actor SyncEngine {
                 }
             }
         case .addHistory:
-            try await processHistoryAddition(operation: operation, payload: payload, context: context)
+            try await processHistoryAddition(operation: operation, payload: payload, context: context, mayRetryMissingPlay: mayRetryMissingPlay)
         case .removeHistory:
             try await processHistoryRemoval(operation: operation, payload: payload)
 
@@ -683,12 +696,15 @@ actor SyncEngine {
         return history.filter { HistoryMatchPolicy.matches(payload, remote: $0) }
     }
 
-    private func processHistoryAddition(operation: SyncOperationRecord, payload original: SyncOperationPayload, context: ModelContext) async throws {
+    private func processHistoryAddition(operation: SyncOperationRecord, payload original: SyncOperationPayload, context: ModelContext, mayRetryMissingPlay: Bool) async throws {
         var payload = original
         guard let kind = payload.mediaKind, let id = payload.tmdbID else { throw HistoryReconciliationError.ambiguous }
-        let initial = eventRecord(kind: kind, tmdbID: id, watchedAt: payload.watchedAt, context: persistence.makeContext())
         let uncertain = payload.historyRequestStartedAt != nil || (operation.attemptCount > 0 && payload.historyRequestRejected != true)
-        if !uncertain {
+        let matchingHistory = uncertain ? try await matchingRemoteHistory(payload, operation: operation) : nil
+        let initial = eventRecord(kind: kind, tmdbID: id, watchedAt: payload.watchedAt, context: persistence.makeContext())
+        let canRetry = matchingHistory?.isEmpty == true && payload.historyUploadAccepted != true
+            && initial?.tombstoned == false && initial?.traktHistoryID == nil
+        if !uncertain || (mayRetryMissingPlay && canRetry) {
             // A removal queued before this request started cancels the add safely.
             guard let initial, !initial.tombstoned else {
                 payload.historyKnownIDs = []
@@ -698,18 +714,24 @@ actor SyncEngine {
                 return
             }
             // Establish which plays existed before this particular upload.
-            payload.historyRequestRejected = true
-            operation.payload = try SyncPayloadCodec.encoder.encode(payload)
-            try context.save()
-            payload.historyKnownIDs = try await matchingRemoteHistory(payload, operation: operation).map(\.id)
+            if uncertain {
+                payload.historyKnownIDs = payload.historyKnownIDs ?? []
+            } else {
+                payload.historyRequestRejected = true
+                operation.payload = try SyncPayloadCodec.encoder.encode(payload)
+                try context.save()
+                payload.historyKnownIDs = try await matchingRemoteHistory(payload, operation: operation).map(\.id)
+            }
+            try await validateHistoryContext(operation)
             payload.historyRequestStartedAt = Date()
             payload.historyRequestRejected = false
             operation.payload = try SyncPayloadCodec.encoder.encode(payload)
             try context.save() // Persist intent before sending a non-idempotent request.
-            do { try await trakt.addToHistory(payload) }
-            catch {
+            do {
+                try await trakt.addToHistory(payload)
+            } catch {
                 // An explicit rejection is safe to retry; timeouts/5xx/decoding failures are not.
-                if historyUploadWasRejected(error) {
+                if !uncertain, historyUploadWasRejected(error) {
                     payload.historyRequestStartedAt = nil
                     payload.historyRequestRejected = true
                     operation.payload = try SyncPayloadCodec.encoder.encode(payload)
@@ -717,9 +739,20 @@ actor SyncEngine {
                 }
                 throw error
             }
+            payload.historyUploadAccepted = true
+            operation.payload = try SyncPayloadCodec.encoder.encode(payload)
+            try context.save()
+        } else if canRetry {
+            missingHistoryIDs.insert(operation.id)
         }
         guard let knownIDs = payload.historyKnownIDs else { throw HistoryReconciliationError.ambiguous }
-        let matches = try await matchingRemoteHistory(payload, operation: operation).filter { !knownIDs.contains($0.id) }
+        let history: [TraktHistoryItemDTO]
+        if let matchingHistory, !(mayRetryMissingPlay && canRetry) {
+            history = matchingHistory
+        } else {
+            history = try await matchingRemoteHistory(payload, operation: operation)
+        }
+        let matches = history.filter { !knownIDs.contains($0.id) }
         guard matches.count == 1, let remote = matches.first else {
             throw matches.isEmpty ? HistoryReconciliationError.unconfirmed : .ambiguous
         }
@@ -1764,14 +1797,14 @@ nonisolated enum HistoryMatchPolicy {
     }
     static func matches(_ payload: SyncOperationPayload, remote: TraktHistoryItemDTO) -> Bool {
         let kind: MediaKind
-        let id: Int?
+        let ids: TraktIDs?
         switch remote.type {
-        case .movie: kind = .movie; id = remote.movie?.ids.tmdb
-        case .episode: kind = .episode; id = remote.episode?.ids.tmdb
+        case .movie: kind = .movie; ids = remote.movie?.ids
+        case .episode: kind = .episode; ids = remote.episode?.ids
         default: return false
         }
         guard let localDate = payload.watchedAt, let remoteDate = remote.watchedAt else { return false }
-        return payload.mediaKind == kind && payload.tmdbID == id
-            && remoteMinute(localDate) == remoteMinute(remoteDate)
+        guard let ids, payload.mediaKind == kind, remoteMinute(localDate) == remoteMinute(remoteDate) else { return false }
+        return payload.tmdbID == ids.tmdb || (payload.traktID != nil && payload.traktID == ids.trakt)
     }
 }

@@ -40,7 +40,7 @@ struct TraktPendingChangesView: View {
                             Label(stateTitle(changes[0]), systemImage: symbol(changes[0]))
                         } footer: {
                             if state == .confirming {
-                                Text("Unconfirmed watched plays are checked on Trakt without uploading them again.")
+                                Text("Try Again checks Trakt for these plays. If any appear missing, iWatch can ask you to retry their uploads.")
                             }
                             if changes.contains(where: { !$0.isOnThisDevice }) {
                                 Text("Open iWatch on the device where a change was made to upload it.")

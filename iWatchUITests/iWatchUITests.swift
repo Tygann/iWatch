@@ -295,7 +295,7 @@ final class iWatchUITests: XCTestCase {
         revealTraktSection(in: app)
         XCTAssertFalse(app.buttons["Advanced"].exists)
         reveal(app.staticTexts["Waiting for Confirmation"], in: app)
-        reveal(app.buttons["Check Again"], in: app)
+        reveal(app.buttons["Try Again"], in: app)
         capture(app, "Contextual Trakt issue - " + contentSize)
         let pending = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Pending Changes'")).firstMatch
         reveal(pending, in: app)

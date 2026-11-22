@@ -279,7 +279,7 @@ final class AppSession {
         await performSync(reason: reason)
     }
 
-    private func performSync(reason: SyncReason, allowMaintenance: Bool = false) async {
+    private func performSync(reason: SyncReason, allowMaintenance: Bool = false, historyRetry: SyncEngine.HistoryRetry? = nil) async {
         guard !isErasingAllData else { return }
         guard pendingTraktAccountKey == nil else { return }
         guard let expectedAccount = TraktLinkStore.activeAccountKey else { return }
@@ -295,7 +295,7 @@ final class AppSession {
             endBackgroundTaskIfNeeded()
         }
 
-        let succeeded = await syncEngine.run(reason: reason) { [weak self] progress in
+        let succeeded = await syncEngine.run(reason: reason, historyRetry: historyRetry) { [weak self] progress in
             guard TraktLinkStore.activeAccountKey == expectedAccount else { return }
             self?.syncProgress = progress
             if case .saving = progress {
@@ -592,17 +592,21 @@ final class AppSession {
         }
     }
 
-    func checkWatchedUploadConfirmations() async {
-        guard !isSyncing, !isMaintainingSync, !isErasingAllData else { return }
+    func checkWatchedUploadConfirmations(historyRetry: SyncEngine.HistoryRetry? = nil) async -> SyncEngine.HistoryRetry? {
+        guard !syncActionsUnavailable, let account = TraktLinkStore.activeAccountKey,
+              historyRetry == nil || historyRetry?.account == account else { return nil }
         isMaintainingSync = true
-        syncMaintenanceTitle = "Checking Confirmation…"
+        syncMaintenanceTitle = historyRetry == nil ? "Checking Trakt…" : "Retrying Upload…"
         defer { isMaintainingSync = false; syncMaintenanceTitle = nil }
         do {
             try await syncEngine.prepareHistoryConfirmationChecks()
-            await performSync(reason: .userInitiated, allowMaintenance: true)
+            await performSync(reason: .userInitiated, allowMaintenance: true, historyRetry: historyRetry)
+            guard historyRetry == nil, traktConnected else { return nil }
+            return await syncEngine.historyRetryOffer(for: account)
         } catch {
             traktLastError = error.localizedDescription
             await refreshSyncDiagnostics()
+            return nil
         }
     }
 

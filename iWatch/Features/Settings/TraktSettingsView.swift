@@ -201,11 +201,7 @@ struct TraktStatusRow: View {
     var body: some View {
         let health = session.traktSyncPresentation
         SettingsStatusRow(title: health.rowTitle, detail: detail, symbol: health.symbol, needsAttention: health.needsAttention) {
-            if health.isWorking {
-                ProgressView().accessibilityLabel(health.title)
-            } else if health.action != .setup {
-                TraktSyncActionButton()
-            }
+            TraktSyncActionButton()
         }
     }
 
@@ -221,28 +217,49 @@ struct TraktStatusRow: View {
 struct TraktSyncActionButton: View {
     @Environment(AppSession.self) private var session
 
+    @State private var retryOffer: SyncEngine.HistoryRetry?
+    @State private var showsRetryConfirmation = false
+
     var body: some View {
-        Button {
-            Task {
-                switch session.traktSyncPresentation.action {
-                case .check: await session.checkWatchedUploadConfirmations()
-                case .retry: await session.retryFailedSyncOperations()
-                case .sync: await session.runSync(reason: .userInitiated)
-                case .connect: session.startTraktOAuth()
-                case .setup: break
+        let health = session.traktSyncPresentation
+        Group {
+            if health.isWorking {
+                ProgressView().accessibilityLabel(health.title)
+            } else if health.action != .setup {
+                Button {
+                    Task {
+                        switch health.action {
+                        case .check:
+                            retryOffer = await session.checkWatchedUploadConfirmations()
+                            showsRetryConfirmation = retryOffer != nil
+                        case .retry: await session.retryFailedSyncOperations()
+                        case .sync: await session.runSync(reason: .userInitiated)
+                        case .connect: session.startTraktOAuth()
+                        case .setup: break
+                        }
+                    }
+                } label: {
+                    SettingsCapsule(title: title)
                 }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(title)
+                .disabled(session.syncActionsUnavailable || session.pendingTraktAccountKey != nil)
             }
-        } label: {
-            SettingsCapsule(title: title)
         }
-        .buttonStyle(.borderless)
-        .accessibilityLabel(title)
-        .disabled(session.syncActionsUnavailable || session.pendingTraktAccountKey != nil)
+        .alert("Retry Missing Plays?", isPresented: $showsRetryConfirmation, presenting: retryOffer) { offer in
+            Button("Retry Upload") {
+                Task { _ = await session.checkWatchedUploadConfirmations(historyRetry: offer) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { offer in
+            let count = offer.ids.count
+            Text("iWatch couldn’t find ^[\(count) watched play](inflect: true) in Trakt history. It will check again before retrying with the original watched times. A play could be duplicated if Trakt hasn’t made it visible yet.")
+        }
     }
 
     private var title: String {
         switch session.traktSyncPresentation.action {
-        case .check: "Check Again"
+        case .check: "Try Again"
         case .retry: "Retry Failed Changes"
         case .sync: "Sync Now"
         case .connect: "Connect Trakt"

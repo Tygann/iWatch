@@ -21,6 +21,7 @@ nonisolated struct SyncOperationPayload: Codable, Sendable {
     var mutationAt: Date? = nil
     var historyRequestStartedAt: Date? = nil
     var historyRequestRejected: Bool? = nil
+    var historyUploadAccepted: Bool? = nil
     var historyKnownIDs: [Int]? = nil
     var mediaKind: MediaKind?
     var tmdbID: Int?
