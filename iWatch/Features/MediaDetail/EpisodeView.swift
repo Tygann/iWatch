@@ -14,7 +14,7 @@ private final class EpisodeScreenModel {
         case failed(String)
     }
 
-    let ref: EpisodeRef
+    var ref: EpisodeRef
 
     private let contentRepository: ContentRepository
     private let libraryRepository: LibraryRepository
@@ -25,6 +25,8 @@ private final class EpisodeScreenModel {
     var showTitle = ""
     var watchEventID: UUID?
     var isWatched = false
+    var isUpdatingWatch = false
+    var nextEpisode: EpisodeRef?
     var watchConfirmation: EpisodeWatchConfirmation?
     var showFullOverview = false
 
@@ -95,9 +97,31 @@ private final class EpisodeScreenModel {
         } else {
             isWatched = await libraryRepository.isEpisodeWatched(ref)
         }
+        nextEpisode = nil
+        if isWatched {
+            do {
+                nextEpisode = try await libraryRepository.nextUnwatchedEpisode(after: ref)
+            } catch { present(error) }
+        }
+    }
+
+    func openNextEpisode() async {
+        guard let nextEpisode, !isUpdatingWatch else { return }
+        isUpdatingWatch = true
+        defer { isUpdatingWatch = false }
+        ref = nextEpisode
+        self.nextEpisode = nil
+        loadState = .idle
+        watchEventID = nil
+        isWatched = false
+        showFullOverview = false
+        await load()
     }
 
     func requestToggleWatched() async {
+        guard !isUpdatingWatch else { return }
+        isUpdatingWatch = true
+        defer { isUpdatingWatch = false }
         operationError = nil
         do {
             if let watchEventID {
@@ -128,6 +152,9 @@ private final class EpisodeScreenModel {
     }
 
     func confirmWatched(_ confirmation: EpisodeWatchConfirmation, includePrevious: Bool) async {
+        guard !isUpdatingWatch else { return }
+        isUpdatingWatch = true
+        defer { isUpdatingWatch = false }
         operationError = nil
         watchConfirmation = nil
 
@@ -214,6 +241,8 @@ private struct EpisodeViewBody: View {
     @Bindable var model: EpisodeScreenModel
     @Environment(AppSession.self) private var session
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     @State private var showsNavigationTitle = false
     @State private var observedLibraryRevision: Int?
 
@@ -250,6 +279,21 @@ private struct EpisodeViewBody: View {
                         VStack(alignment: .leading, spacing: 16) {
                             metadataSection(details)
                             actionsSection(details)
+                            if let next = model.nextEpisode {
+                                Button {
+                                    showsNavigationTitle = false
+                                    Task { await model.openNextEpisode() }
+                                } label: {
+                                    VStack(spacing: 4) {
+                                        Text("Next Episode").font(.headline)
+                                        Text("S\(next.season) E\(next.episode)").font(.subheadline)
+                                    }
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                                }
+                                .buttonStyle(.bordered)
+                                .accessibilityLabel("Next Episode · S\(next.season) E\(next.episode)")
+                                .disabled(model.isUpdatingWatch)
+                            }
                             overviewSection(details)
                             creditsSection(details)
                         }
@@ -330,8 +374,7 @@ private struct EpisodeViewBody: View {
             Text("S\(model.ref.season) E\(model.ref.episode)\(separator)\(episodeName)")
                 .font(.title2.bold())
                 .fontDesign(.rounded)
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
+                .fixedSize(horizontal: false, vertical: true)
                 .onGeometryChange(for: Bool.self) { geometry in
                     geometry.frame(in: .scrollView(axis: .vertical)).minY <= 0
                 } action: { _, hasReachedToolbar in
@@ -362,7 +405,10 @@ private struct EpisodeViewBody: View {
 
     // MARK: - Actions Section
     private func actionsSection(_ details: EpisodeDetails) -> some View {
-        HStack(spacing: 12) {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            : AnyLayout(HStackLayout(spacing: 12))
+        return layout {
             Button {
                 Haptics.notification(.success)
                 Task { await model.requestToggleWatched() }
@@ -371,22 +417,24 @@ private struct EpisodeViewBody: View {
                       systemImage: model.isWatched ? "checkmark.circle.fill" : "checkmark.circle")
                     .bold()
                     .imageScale(.large)
-                    .frame(width: 150, height: 30)
+                    .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil, minHeight: 44)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            .disabled(model.isUpdatingWatch)
             .buttonStyle(.borderedProminent)
             .tint(model.isWatched ? .accentColor : .secondary)
             .glassEffect(.regular, in: .capsule)
             .clipShape(.capsule)
 
-            Spacer()
+            if !dynamicTypeSize.isAccessibilitySize { Spacer() }
 
             ShareLink(item: model.shareText, subject: Text(details.name.isEmpty ? "Episode" : details.name)) {
                 Label("Share", systemImage: "square.and.arrow.up.fill")
                     .fontWeight(.semibold)
                     .labelStyle(.iconOnly)
                     .foregroundStyle(.white)
-                    .imageScale(.large)
-                    .frame(width: 30, height: 30)
+                    .font(.system(size: 22))
+                    .frame(minWidth: 44, minHeight: 44)
             }
             .buttonStyle(.bordered)
             .glassEffect(.regular, in: .circle)

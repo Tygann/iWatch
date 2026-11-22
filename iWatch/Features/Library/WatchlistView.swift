@@ -15,6 +15,8 @@ private final class WatchlistScreenModel {
     var showItems: [LibraryShowItem] = []
     var isLoading = false
     var errorText: String?
+    private(set) var markingShowIDs: Set<Int> = []
+    private var continueWatchingOrder: [Int] = []
     private var loadedRevision: Int?
 
     init(
@@ -28,6 +30,7 @@ private final class WatchlistScreenModel {
         self.repository = repository
         self.session = session
         self.showItems = initialShowItems
+        self.continueWatchingOrder = initialShowItems.map(\.id)
         self.loadedRevision = initialRevision
     }
 
@@ -41,7 +44,14 @@ private final class WatchlistScreenModel {
                 movieItems = try await repository.movieLibraryItems(revision: revision)
                     .filter(\.isInWatchlist)
             } else {
-                showItems = try await repository.showLibrarySnapshot(revision: revision).continueWatching
+                let items = try await repository.showLibrarySnapshot(revision: revision).continueWatching
+                for item in items where !continueWatchingOrder.contains(item.id) {
+                    continueWatchingOrder.append(item.id)
+                }
+                showItems = items.sorted {
+                    (continueWatchingOrder.firstIndex(of: $0.id) ?? .max) <
+                    (continueWatchingOrder.firstIndex(of: $1.id) ?? .max)
+                }
             }
             loadedRevision = revision
             errorText = nil
@@ -54,21 +64,30 @@ private final class WatchlistScreenModel {
     var title: String { kind == .movie ? "Watchlist" : "Continue Watching" }
 
     func markNextEpisodeWatched(for item: LibraryShowItem, showsFeedback: Bool = false) async {
-        guard let next = item.progress.nextEpisode else { return }
+        guard let next = item.progress.nextEpisode,
+              markingShowIDs.insert(item.id).inserted else { return }
+        defer { markingShowIDs.remove(item.id) }
         do {
-            try await repository.addWatchEvent(for: MediaID(kind: .episode, id: next.tmdbID, traktID: next.traktID), watchedAt: Date(), allowRewatch: false)
-            if showsFeedback {
-                session.showEpisodeWatchSuccess(
-                    showTitle: item.title,
-                    season: next.season,
-                    episode: next.episode
-                )
+            let eventID = try await repository.addWatchEvent(
+                for: MediaID(kind: .episode, id: next.tmdbID, traktID: next.traktID),
+                watchedAt: Date(), allowRewatch: false
+            )
+            if showsFeedback, let eventID {
+                session.showEpisodeWatchSuccess(showTitle: item.title, season: next.season,
+                    episode: next.episode, undo: { [self] in
+                        do {
+                            try await repository.removeWatchEvent(eventID: eventID)
+                            session.markLibraryUpdated(syncIfConnected: true)
+                            await load(revision: session.libraryRevision)
+                        } catch {
+                            errorText = UserFacingError.message(for: error, context: .action)
+                        }
+                    })
             }
             session.markLibraryUpdated(syncIfConnected: true)
-            loadedRevision = nil
             await load(revision: session.libraryRevision)
         } catch {
-            errorText = error.localizedDescription
+            errorText = UserFacingError.message(for: error, context: .action)
         }
     }
 
@@ -216,6 +235,16 @@ private struct WatchlistBody: View {
                                 }
                             }
                             .frame(width: 110)
+                            .overlay(alignment: .topTrailing) {
+                                if let next = item.progress.nextEpisode {
+                                    QuickEpisodeWatchButton(showTitle: item.title, season: next.season,
+                                        episode: next.episode, isWorking: model.markingShowIDs.contains(item.id)) {
+                                            Task { await model.markNextEpisodeWatched(for: item, showsFeedback: true) }
+                                        }
+                                        .padding(.trailing, 4)
+                                        .padding(.top, 110 / PosterImage.aspectRatio - 48)
+                                }
+                            }
                         }
                     }
                 }
@@ -276,8 +305,7 @@ private struct WatchlistBody: View {
             }
             Divider()
             Button {
-                Haptics.notification(.success)
-                Task { await model.markNextEpisodeWatched(for: item) }
+                Task { await model.markNextEpisodeWatched(for: item, showsFeedback: true) }
             } label: {
                 Label("Mark as Watched", systemImage: "checkmark.circle")
             }

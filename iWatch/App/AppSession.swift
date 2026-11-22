@@ -12,6 +12,7 @@ final class AppSession {
         let id = UUID()
         let message: String
         let accessibilityMessage: String
+        var offersUndo = false
     }
 
     enum CloudSyncStatus: Equatable {
@@ -178,28 +179,48 @@ final class AppSession {
         showWatchSuccess(message, accessibilityMessage: accessibilityMessage)
     }
 
-    func showEpisodeWatchSuccess(showTitle: String, season: Int, episode: Int) {
+    @ObservationIgnored private var feedbackUndo: (@MainActor () async -> Void)?
+
+    func undoWatchFeedback() async {
+        let action = feedbackUndo
+        feedbackUndo = nil
+        transientFeedbackTask?.cancel()
+        transientFeedback = nil
+        await action?()
+    }
+
+    func showEpisodeWatchSuccess(showTitle: String, season: Int, episode: Int,
+                                 undo: (@MainActor () async -> Void)? = nil) {
         showWatchSuccess(
-            "\(showTitle) • S\(season) E\(episode)",
-            accessibilityMessage: "\(showTitle), season \(season) episode \(episode), marked watched"
+            "S\(season) E\(episode) marked watched",
+            accessibilityMessage: "\(showTitle), season \(season) episode \(episode), marked watched",
+            undo: undo
         )
     }
 
-    private func showWatchSuccess(_ message: String, accessibilityMessage: String) {
+    private func showWatchSuccess(_ message: String, accessibilityMessage: String,
+                                  undo: (@MainActor () async -> Void)? = nil) {
+        let accountKey = TraktLinkStore.activeAccountKey
+        feedbackUndo = {
+            guard TraktLinkStore.activeAccountKey == accountKey else { return }
+            await undo?()
+        }
         transientFeedbackTask?.cancel()
 
         let feedback = TransientFeedback(
             message: message,
-            accessibilityMessage: accessibilityMessage
+            accessibilityMessage: accessibilityMessage,
+            offersUndo: undo != nil
         )
         transientFeedback = feedback
         Haptics.notification(.success)
         UIAccessibility.post(notification: .announcement, argument: accessibilityMessage)
 
         transientFeedbackTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(3))
+            try? await Task.sleep(for: .seconds(undo == nil ? 3 : 6))
             guard !Task.isCancelled, self?.transientFeedback?.id == feedback.id else { return }
             self?.transientFeedback = nil
+            self?.feedbackUndo = nil
         }
     }
 

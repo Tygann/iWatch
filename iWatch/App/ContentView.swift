@@ -36,7 +36,9 @@ struct ContentView: View {
             if let feedback = session.transientFeedback {
                 TransientFeedbackHUD(
                     message: feedback.message,
-                    accessibilityMessage: feedback.accessibilityMessage
+                    accessibilityMessage: feedback.accessibilityMessage,
+                    offersUndo: feedback.offersUndo,
+                    undo: { Task { await session.undoWatchFeedback() } }
                 )
                     .padding(.horizontal)
                     .padding(.bottom, 58)
@@ -118,6 +120,8 @@ private struct TransientFeedbackHUD: View {
 
     let message: String
     let accessibilityMessage: String
+    let offersUndo: Bool
+    let undo: () -> Void
 
     @ViewBuilder
     var body: some View {
@@ -131,24 +135,52 @@ private struct TransientFeedbackHUD: View {
     }
 
     private var content: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-                .imageScale(.large)
-                .accessibilityHidden(true)
-
-            Text(message)
-                .font(.headline)
-                .multilineTextAlignment(.leading)
-                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.8)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    feedbackLabel
+                    undoButton
+                }
+            } else {
+                HStack(spacing: 10) {
+                    feedbackLabel
+                    undoButton
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: offersUndo ? .contain : .combine)
         .accessibilityLabel(accessibilityMessage)
         .accessibilityIdentifier("TransientFeedbackHUD")
+    }
+
+    @ViewBuilder private var undoButton: some View {
+        if offersUndo {
+            Button("Undo", action: undo)
+                .buttonStyle(.bordered)
+                .frame(minHeight: 44)
+                .accessibilityLabel("Undo marking episode watched")
+        }
+    }
+
+    private var feedbackLabel: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .font(.system(size: 24))
+                .accessibilityHidden(true)
+
+            Text(message)
+                .font(.subheadline.weight(.semibold))
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityMessage)
         .allowsHitTesting(false)
     }
 }

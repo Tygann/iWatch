@@ -87,3 +87,27 @@ struct ContinueWatchingEpisodeTile<ExtraMenu: View>: View {
         )
     }
 }
+
+/// A sibling of the card's navigation link, so marking never opens the episode.
+struct QuickEpisodeWatchButton: View {
+    let showTitle: String
+    let season: Int
+    let episode: Int
+    let isWorking: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Group {
+                if isWorking { ProgressView() }
+                else { Image(systemName: "checkmark.circle").font(.system(size: 24)) }
+            }
+            .frame(width: 44, height: 44)
+            .background(.regularMaterial, in: .circle)
+        }
+        .buttonStyle(.plain)
+        .disabled(isWorking)
+        .accessibilityLabel("Mark \(showTitle), Season \(season) Episode \(episode) watched")
+        .accessibilityHint("Updates this card to the next unwatched episode")
+    }
+}

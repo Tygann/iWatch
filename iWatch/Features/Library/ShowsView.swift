@@ -17,6 +17,8 @@ final class ShowsScreenModel {
     var isEnriching = false
     var errorText: String?
     private var loadToken: UUID?
+    private(set) var markingShowIDs: Set<Int> = []
+    private var continueWatchingOrder: [Int] = []
     private var loadedRevision: Int?
     private var enrichedRevision: Int?
 
@@ -25,6 +27,7 @@ final class ShowsScreenModel {
         self.repository = repository
         if let saved = repository.savedShowLibrarySnapshot() {
             self.snapshot = saved
+            self.continueWatchingOrder = saved.continueWatching.map(\.id)
             self.isShowingSavedSnapshot = true
         }
         self.session = session
@@ -47,6 +50,9 @@ final class ShowsScreenModel {
             let loaded = try await loadSnapshot(revision, forceRefresh)
             try Task.checkCancellation()
             guard loadToken == token else { return }
+            for item in snapshot.continueWatching + loaded.continueWatching where !continueWatchingOrder.contains(item.id) {
+                continueWatchingOrder.append(item.id)
+            }
             snapshot = loaded
             isShowingSavedSnapshot = false
             loadedRevision = revision
@@ -110,6 +116,13 @@ final class ShowsScreenModel {
         if hadEnrichmentFailure { enrichedRevision = nil }
     }
 
+    var continueWatchingItems: [LibraryShowItem] {
+        snapshot.continueWatching.sorted {
+            (continueWatchingOrder.firstIndex(of: $0.id) ?? .max) <
+            (continueWatchingOrder.firstIndex(of: $1.id) ?? .max)
+        }
+    }
+
     func nextEpisodeLabel(for item: LibraryShowItem) -> String? {
         guard let next = item.progress.nextEpisode else { return nil }
         return "S\(next.season) E\(next.episode)"
@@ -128,19 +141,25 @@ final class ShowsScreenModel {
     }
 
     func markNextEpisodeWatched(for item: LibraryShowItem, showsFeedback: Bool = false) async {
-        guard let next = item.progress.nextEpisode else { return }
+        guard let next = item.progress.nextEpisode,
+              markingShowIDs.insert(item.id).inserted else { return }
+        defer { markingShowIDs.remove(item.id) }
         do {
-            try await repository.addWatchEvent(
+            let eventID = try await repository.addWatchEvent(
                 for: MediaID(kind: .episode, id: next.tmdbID, traktID: next.traktID),
-                watchedAt: Date(),
-                allowRewatch: false
+                watchedAt: Date(), allowRewatch: false
             )
-            if showsFeedback {
-                session.showEpisodeWatchSuccess(
-                    showTitle: item.title,
-                    season: next.season,
-                    episode: next.episode
-                )
+            if showsFeedback, let eventID {
+                session.showEpisodeWatchSuccess(showTitle: item.title, season: next.season,
+                    episode: next.episode, undo: { [self] in
+                        do {
+                            try await repository.removeWatchEvent(eventID: eventID)
+                            session.markLibraryUpdated(syncIfConnected: true)
+                            await load(revision: session.libraryRevision)
+                        } catch {
+                            errorText = UserFacingError.message(for: error, context: .action)
+                        }
+                    })
             }
             session.markLibraryUpdated(syncIfConnected: true)
             await load(revision: session.libraryRevision)
@@ -256,11 +275,11 @@ private struct ShowsViewBody: View {
             MediaCollectionRow(title: "Continue Watching") {
                 WatchlistView(
                     kind: .show,
-                    initialShowItems: model.snapshot.continueWatching,
+                    initialShowItems: model.continueWatchingItems,
                     initialRevision: model.isShowingSavedSnapshot ? nil : session.libraryRevision
                 )
             } content: {
-                ForEach(model.snapshot.continueWatching) { item in
+                ForEach(model.continueWatchingItems) { item in
                     continueWatchingTile(item)
                     .accessibilityLabel(
                         item.progress.nextEpisode.map { "\(item.title), Season \($0.season) Episode \($0.episode), Continue Watching" }
@@ -284,6 +303,16 @@ private struct ShowsViewBody: View {
                         }
                     }
                     .frame(width: 110)
+                    .overlay(alignment: .topTrailing) {
+                        if let next = item.progress.nextEpisode {
+                            QuickEpisodeWatchButton(showTitle: item.title, season: next.season,
+                                episode: next.episode, isWorking: model.markingShowIDs.contains(item.id)) {
+                                    Task { await model.markNextEpisodeWatched(for: item, showsFeedback: true) }
+                                }
+                                .padding(.trailing, 4)
+                                .padding(.top, 110 / PosterImage.aspectRatio - 48)
+                        }
+                    }
                 }
             }
         }
@@ -422,8 +451,7 @@ private struct ShowsViewBody: View {
             }
             Divider()
             Button {
-                Haptics.notification(.success)
-                Task { await model.markNextEpisodeWatched(for: item) }
+                Task { await model.markNextEpisodeWatched(for: item, showsFeedback: true) }
             } label: {
                 Label("Mark as Watched", systemImage: "checkmark.circle")
             }

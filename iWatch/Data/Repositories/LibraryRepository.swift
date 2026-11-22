@@ -337,11 +337,13 @@ final class LibraryRepository {
         try context.save()
     }
 
-    func addWatchEvent(for id: MediaID, watchedAt: Date, allowRewatch: Bool = true) async throws {
-        try await addWatchEvents(for: [id], watchedAt: watchedAt, allowRewatch: allowRewatch)
+    @discardableResult
+    func addWatchEvent(for id: MediaID, watchedAt: Date, allowRewatch: Bool = true) async throws -> UUID? {
+        try await addWatchEvents(for: [id], watchedAt: watchedAt, allowRewatch: allowRewatch).first
     }
 
-    func addWatchEvents(for ids: [MediaID], watchedAt: Date, allowRewatch: Bool = true) async throws {
+    @discardableResult
+    func addWatchEvents(for ids: [MediaID], watchedAt: Date, allowRewatch: Bool = true) async throws -> [UUID] {
         let deviceID = await deviceIdentityStore.currentDeviceID()
         guard await resetGate.allowsLibraryWork() else {
             throw AppError.unknown("Wait for the library reset to finish before making changes.")
@@ -350,6 +352,7 @@ final class LibraryRepository {
         let now = Date()
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
 
+        var insertedEventIDs: [UUID] = []
         for id in ids {
             let episodeMetadata = id.kind == .episode ? episodeRecord(forTMDbID: id.tmdbID, context: context) : nil
             if !allowRewatch {
@@ -396,6 +399,7 @@ final class LibraryRepository {
                 generationID: generationID
             )
             context.insert(event)
+            insertedEventIDs.append(event.recordID)
 
             let payload = SyncOperationPayload(
                 mediaKind: id.kind,
@@ -458,6 +462,7 @@ final class LibraryRepository {
         }
 
         try context.save()
+        return insertedEventIDs
     }
 
     func setShowDisposition(_ disposition: ShowDisposition, for showID: MediaID) async throws {
@@ -726,6 +731,28 @@ final class LibraryRepository {
             episodeRows: episodeRows,
             events: events
         )
+    }
+
+    /// Released, unwatched successor in episode order, including season boundaries.
+    func nextUnwatchedEpisode(after ref: EpisodeRef) async throws -> EpisodeRef? {
+        let context = try persistence.makeMetadataContext()
+        let showID = MediaID(kind: .show, id: ref.showId, traktID: ref.showTraktID)
+        let rows = allEpisodeRecords(forShowID: ref.showId, context: context)
+        let events = watchedEventRecords(forShowID: ref.showId, context: context).filter { !$0.tombstoned }
+        let progress = makeShowProgress(for: showID, media: mediaRecord(for: showID, context: context),
+            episodeRows: rows, events: events)
+        return rows.filter {
+            $0.seasonNumber > 0 &&
+            ($0.seasonNumber, $0.episodeNumber) > (ref.season, ref.episode) &&
+            EpisodeAvailability.isReleased(airDate: $0.airDate, airedAt: $0.airedAt) &&
+            !progress.watchedEpisodeKeys.contains("ep:\(ref.showId):S\($0.seasonNumber):E\($0.episodeNumber)")
+        }
+        .sorted { ($0.seasonNumber, $0.episodeNumber) < ($1.seasonNumber, $1.episodeNumber) }
+        .first.map {
+            EpisodeRef(showId: ref.showId, showTraktID: ref.showTraktID,
+                season: $0.seasonNumber, episode: $0.episodeNumber,
+                tmdbID: $0.tmdbID, traktID: $0.traktID)
+        }
     }
 
     private func makeShowProgress(for showID: MediaID,

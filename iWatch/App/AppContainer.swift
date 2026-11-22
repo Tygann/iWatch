@@ -231,8 +231,16 @@ final class AppContainer {
         let previewStore: LibraryPreviewStore? = ProcessInfo.processInfo.arguments.contains("UITEST_LIBRARY_PREVIEW")
             ? LibraryPreviewStore(directory: URL.cachesDirectory.appendingPathComponent("UITestLibraryPreviews")) : nil
         if ProcessInfo.processInfo.arguments.contains("UITEST_CLEAR_LIBRARY_PREVIEW") { previewStore?.clear() }
+        let metadataFreshness = MetadataFreshnessStore()
+        if ProcessInfo.processInfo.arguments.contains("UITEST_QUICK_WATCH") {
+            metadataFreshness.markFetched(MediaID(kind: .show, id: 202).stableKey)
+            metadataFreshness.markFetched("season:202:1")
+            for episode in 1...3 {
+                metadataFreshness.markFetched("episode:202:1:\(episode)")
+            }
+        }
         let libraryRepository = LibraryRepository(persistence: persistence, tmdb: tmdb, resetGate: resetGate,
-            deviceIdentityStore: deviceIdentityStore, previewStore: previewStore)
+            deviceIdentityStore: deviceIdentityStore, metadataFreshness: metadataFreshness, previewStore: previewStore)
         let contentRepository = ContentRepository(library: libraryRepository)
         let peopleRepository = PeopleRepository(tmdb: tmdb)
         let syncEngine = SyncEngine(persistence: persistence, trakt: trakt, deviceIdentityStore: deviceIdentityStore, resetGate: resetGate)
@@ -433,7 +441,7 @@ private func seedPreviewCatalog(into persistence: Persistence) {
         seasonsData: seasonsData
     )
 
-    let episodes = [
+    var episodes = [
         EpisodeRecord(
             showTMDbID: 202,
             showTraktID: 2002,
@@ -459,6 +467,22 @@ private func seedPreviewCatalog(into persistence: Persistence) {
             overview: "The second episode for UI testing."
         )
     ]
+
+    if ProcessInfo.processInfo.arguments.contains("UITEST_QUICK_WATCH") {
+        episodes.append(EpisodeRecord(showTMDbID: 202, showTraktID: 2002,
+            tmdbID: 303, traktID: 3003, seasonNumber: 1, episodeNumber: 3,
+            name: "Third Time", airDate: Date().addingTimeInterval(-3600),
+            overview: "The next episode for quick watch testing."))
+        for episode in episodes {
+            let extras = EpisodeDetails.Extras(seasonNumber: 1, runtime: 45,
+                voteAverage: nil, voteCount: nil, productionCode: nil,
+                cast: [], directors: [], writers: [], guestStars: [], crew: [],
+                images: [], videos: [], externalIDs: .init(imdb: "tt-ui-test", tvdb: nil,
+                    facebook: nil, instagram: nil, twitter: nil))
+            episode.extrasData = try? JSONEncoder().encode(extras)
+        }
+        show.totalEpisodes = 3
+    }
 
     let watchlist = [
         WatchlistRecord(mediaID: MediaID(kind: .movie, id: 101, traktID: 1001), isInWatchlist: true),

@@ -10,6 +10,73 @@ struct LibraryPreviewTests {
     }
 
     @Test
+    func continueWatchingKeepsPositionsAcrossProgressRefreshes() async throws {
+        let container = AppContainer.preview()
+        let item = try #require(try await container.libraryRepository.showLibrarySnapshot(revision: 0).continueWatching.first)
+        let other = LibraryShowItem(mediaID: MediaID(kind: .show, id: 98765), title: "Other Show",
+            posterPath: nil, status: item.status, progress: item.progress,
+            isInWatchlist: item.isInWatchlist, disposition: item.disposition,
+            listedAt: item.listedAt, lastWatchedAt: .distantFuture, needsProgressEnrichment: false)
+        var loaded = ShowLibrarySnapshot(items: [item, other])
+        let model = ShowsScreenModel(repository: container.libraryRepository, session: container.session,
+            loadSnapshot: { _, _ in loaded })
+        await model.load(revision: 0)
+        #expect(model.continueWatchingItems.map(\.id) == [other.id, item.id])
+        // A progress update moves this show to the front of the repository's sort.
+        let updated = LibraryShowItem(mediaID: item.mediaID, title: item.title, posterPath: nil,
+            status: item.status, progress: item.progress, isInWatchlist: item.isInWatchlist,
+            disposition: item.disposition, listedAt: item.listedAt,
+            lastWatchedAt: Date.distantFuture.addingTimeInterval(1), needsProgressEnrichment: false)
+        loaded = ShowLibrarySnapshot(items: [updated, other])
+        #expect(loaded.continueWatching.first?.id == item.id)
+        await model.load(revision: 1)
+        #expect(model.continueWatchingItems.map(\.id) == [other.id, item.id])
+    }
+
+    @Test
+    func quickWatchReturnsOnlyItsOwnEventForUndo() async throws {
+        let container = AppContainer.preview()
+        let repository = container.libraryRepository
+        let snapshot = try await repository.showLibrarySnapshot(revision: 0)
+        let item = try #require(snapshot.continueWatching.first)
+        let next = try #require(item.progress.nextEpisode)
+        let id = MediaID(kind: .episode, id: next.tmdbID, traktID: next.traktID)
+        let created = try #require(try await repository.addWatchEvent(for: id, watchedAt: .now, allowRewatch: false))
+        let duplicate = try await repository.addWatchEvent(for: id, watchedAt: .now, allowRewatch: false)
+        #expect(duplicate == nil)
+        let rewatch = try #require(try await repository.addWatchEvent(for: id, watchedAt: Date().addingTimeInterval(60)))
+        try await repository.removeWatchEvent(eventID: created)
+        #expect(await repository.latestWatchEventID(for: id) == rewatch)
+    }
+
+    @Test
+    func nextEpisodeSkipsWatchedAndUnreleasedAndCrossesSeasons() async throws {
+        let container = AppContainer.preview()
+        let context = container.persistence.makeContext()
+        let show = 90001
+        let rows = [
+            EpisodeRecord(showTMDbID: show, tmdbID: 90011, seasonNumber: 1, episodeNumber: 1,
+                name: "Earlier gap", airDate: .distantPast),
+            EpisodeRecord(showTMDbID: show, tmdbID: 90012, seasonNumber: 1, episodeNumber: 2,
+                name: "Current", airDate: .distantPast),
+            EpisodeRecord(showTMDbID: show, tmdbID: 90013, seasonNumber: 1, episodeNumber: 3,
+                name: "Already watched", airDate: .distantPast),
+            EpisodeRecord(showTMDbID: show, tmdbID: 90021, seasonNumber: 2, episodeNumber: 1,
+                name: "Next season", airDate: .distantPast),
+            EpisodeRecord(showTMDbID: show, tmdbID: 90022, seasonNumber: 2, episodeNumber: 2,
+                name: "Future", airDate: .distantFuture)
+        ]
+        rows.forEach(context.insert(_:))
+        try context.save()
+        try await container.libraryRepository.addWatchEvent(for: MediaID(kind: .episode, id: 90013), watchedAt: .now)
+        let next = try await container.libraryRepository.nextUnwatchedEpisode(after:
+            EpisodeRef(showId: show, season: 1, episode: 2))
+        #expect(next?.season == 2 && next?.episode == 1)
+        #expect(try await container.libraryRepository.nextUnwatchedEpisode(after:
+            EpisodeRef(showId: show, season: 2, episode: 1)) == nil)
+    }
+
+    @Test
     func relaunchRestoresBothScreensAndRefreshReplacesPreview() async throws {
         let directory = directory()
         defer { try? FileManager.default.removeItem(at: directory) }

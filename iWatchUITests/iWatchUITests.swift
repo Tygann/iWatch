@@ -23,6 +23,68 @@ final class iWatchUITests: XCTestCase {
     }
 
     @MainActor
+    func testQuickWatchStandard() throws { verifyQuickWatch(accessibility: false) }
+
+    @MainActor
+    func testQuickWatchAccessibility() throws { verifyQuickWatch(accessibility: true) }
+
+    @MainActor
+    private func verifyQuickWatch(accessibility: Bool) {
+        let app = XCUIApplication()
+        app.launchArguments += ["UITEST_MODE", "UITEST_START_ON_SHOWS", "UITEST_QUICK_WATCH"]
+        if accessibility { app.launchArguments.append("UITEST_ACCESSIBILITY_TEXT") }
+        app.launch()
+        let markSecond = app.buttons["Mark UI Test Show, Season 1 Episode 2 watched"]
+        XCTAssertTrue(markSecond.waitForExistence(timeout: 10))
+        capture(app, "Quick watch cards - \(accessibility)")
+        markSecond.tap()
+        let markThird = app.buttons["Mark UI Test Show, Season 1 Episode 3 watched"]
+        XCTAssertTrue(markThird.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Mark Watched"].exists)
+        capture(app, "Quick watch confirmation - \(accessibility)")
+        app.buttons["Undo marking episode watched"].tap()
+        XCTAssertTrue(markSecond.waitForExistence(timeout: 5))
+
+        // Detail navigation stays on the marked episode until explicitly advanced.
+        app.buttons["UI Test Show, Season 1 Episode 2, Continue Watching"].tap()
+        let mark = app.buttons["Mark Watched"]
+        XCTAssertTrue(mark.waitForExistence(timeout: 5))
+        mark.tap()
+        let next = app.buttons["Next Episode · S1 E3"]
+        for _ in 0..<5 {
+            if next.isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(next.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Watched"].exists)
+        capture(app, "Explicit next episode - \(accessibility)")
+        next.tap()
+        XCTAssertTrue(app.staticTexts["S1 E3 • Third Time"].waitForExistence(timeout: 5))
+        XCTAssertTrue(mark.waitForExistence(timeout: 5))
+        mark.tap()
+        XCTAssertTrue(app.buttons["Watched"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Next Episode'")).firstMatch.exists)
+        app.navigationBars.buttons["Shows"].tap()
+        XCTAssertFalse(markThird.exists)
+        app.terminate()
+    }
+
+    @MainActor
+    func testContinueWatchingGridQuickWatchAndUndo() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["UITEST_MODE", "UITEST_START_ON_SHOWS", "UITEST_QUICK_WATCH"]
+        app.launch()
+        app.buttons["Continue Watching"].tap()
+        let second = app.buttons["Mark UI Test Show, Season 1 Episode 2 watched"]
+        XCTAssertTrue(second.waitForExistence(timeout: 5))
+        second.tap()
+        XCTAssertTrue(app.buttons["Mark UI Test Show, Season 1 Episode 3 watched"].waitForExistence(timeout: 5))
+        app.buttons["Undo marking episode watched"].tap()
+        XCTAssertTrue(second.waitForExistence(timeout: 5))
+        app.terminate()
+    }
+
+    @MainActor
     func testCachedSeasonDuringRefreshStandard() throws { verifyCachedSeasonDuringRefresh(accessibility: false) }
 
     @MainActor
