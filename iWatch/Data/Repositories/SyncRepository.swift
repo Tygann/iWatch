@@ -532,6 +532,7 @@ actor SyncEngine {
         guard let accountKey = accountKeyProvider() else { return }
         let deviceID = await deviceIdentityStore.currentDeviceID()
         let now = Date()
+        var firstHistoryFailure: (any Error)?
         while let operationID = try await claimNextOperation(deviceID: deviceID, accountKey: accountKey) {
             guard accountKeyProvider() == accountKey else { throw CancellationError() }
             let processContext = persistence.makeContext()
@@ -569,6 +570,10 @@ actor SyncEngine {
                     operation.nextAttemptAt = nil
                 }
                 try processContext.save()
+                if error is TraktHistoryUploadError || error is HistoryReconciliationError {
+                    firstHistoryFailure = firstHistoryFailure ?? error
+                    continue
+                }
                 throw error
             }
         }
@@ -576,6 +581,8 @@ actor SyncEngine {
         let cleanupContext = persistence.makeContext()
         _ = pruneCompletedOperations(context: cleanupContext, now: now)
         try cleanupContext.save()
+
+        if let firstHistoryFailure { throw firstHistoryFailure }
 
         let stateContext = persistence.makeContext()
         let state = syncState(context: stateContext)
@@ -593,6 +600,7 @@ actor SyncEngine {
     }
 
     private func isRetryable(_ error: Error) -> Bool {
+        if error is TraktHistoryUploadError { return false }
         if let urlError = error as? URLError {
             return urlError.code != .cancelled && urlError.code != .unsupportedURL
         }
@@ -698,15 +706,10 @@ actor SyncEngine {
             payload.historyRequestRejected = false
             operation.payload = try SyncPayloadCodec.encoder.encode(payload)
             try context.save() // Persist intent before sending a non-idempotent request.
-            do { try await trakt.addToHistory([payload]) }
+            do { try await trakt.addToHistory(payload) }
             catch {
                 // An explicit rejection is safe to retry; timeouts/5xx/decoding failures are not.
-                if case let .httpStatus(code, _) = error as? AppError, (400..<500).contains(code), code != 408 {
-                    payload.historyRequestStartedAt = nil
-                    payload.historyRequestRejected = true
-                    operation.payload = try SyncPayloadCodec.encoder.encode(payload)
-                    try context.save()
-                } else if case .rateLimited = error as? AppError {
+                if historyUploadWasRejected(error) {
                     payload.historyRequestStartedAt = nil
                     payload.historyRequestRejected = true
                     operation.payload = try SyncPayloadCodec.encoder.encode(payload)
@@ -736,6 +739,15 @@ actor SyncEngine {
                 event.dirty = false
             }
             try acknowledgement.save()
+        }
+    }
+
+    private func historyUploadWasRejected(_ error: Error) -> Bool {
+        if error is TraktHistoryUploadError { return true }
+        switch error as? AppError {
+        case let .httpStatus(code, _): return (400..<500).contains(code) && code != 408
+        case .rateLimited: return true
+        default: return false
         }
     }
 

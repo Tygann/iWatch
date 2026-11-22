@@ -816,6 +816,35 @@ struct FoundationRewriteTests {
         #expect(event.watchedAt == watched)
     }
 
+    @Test(arguments: [false, true])
+    func historyUploadFailureDoesNotBlockUnrelatedChanges(rejected: Bool) async throws {
+        let persistence = makePersistence()
+        let repository = makeLibraryRepository(persistence: persistence)
+        try await repository.addWatchEvent(for: MediaID(kind: .episode, id: 33, traktID: 333), watchedAt: .now)
+        try await repository.setWatchlist(true, for: MediaID(kind: .movie, id: 42, traktID: 420))
+        let remote = FakeTraktSyncRemote(token: makeToken(),
+            lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now),
+            watchlist: [], history: [], onAddHistory: {
+                if rejected { throw TraktHistoryUploadError.itemNotFound }
+            })
+        let engine = SyncEngine(persistence: persistence, trakt: remote,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { "default" })
+
+        #expect(await engine.run(reason: .localMutation) == false)
+        let requests = await remote.snapshot()
+        #expect(requests.addHistoryCalls == 1)
+        #expect(requests.addWatchlistCalls == 1)
+        let diagnostics = await engine.diagnostics()
+        #expect(diagnostics.changes.map(\.state) == [rejected ? .failed : .confirming])
+        if rejected {
+            #expect(diagnostics.lastErrorDescription == TraktHistoryUploadError.itemNotFound.errorDescription)
+        }
+
+        try await engine.prepareHistoryConfirmationChecks()
+        #expect(await engine.run(reason: .localMutation) == rejected)
+        #expect(await remote.snapshot().addHistoryCalls == 1)
+    }
+
     @Test
     func acceptedHistoryUploadWithLostResponseIsNotPostedTwice() async throws {
         let persistence = makePersistence()
@@ -2189,12 +2218,12 @@ private actor FakeTraktSyncRemote: TraktSyncing {
         #expect(items.isEmpty == false)
     }
 
-    func addToHistory(_ payloads: [SyncOperationPayload]) async throws {
+    func addToHistory(_ payload: SyncOperationPayload) async throws {
         addHistoryCalls += 1
         if let historyAfterUpload { history = historyAfterUpload }
         try await onAddHistory?()
         if loseHistoryResponse { loseHistoryResponse = false; throw URLError(.timedOut) }
-        #expect(payloads.isEmpty == false)
+        #expect(payload.mediaKind == .movie || payload.mediaKind == .episode)
     }
 
     func removeFromHistory(historyIDs: [Int]) async throws {

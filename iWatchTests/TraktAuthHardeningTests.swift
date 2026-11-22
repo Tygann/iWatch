@@ -8,6 +8,30 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct TraktAuthHardeningTests {
+    @Test(arguments: [false, true])
+    func historyUploadReadsItemResult(rejected: Bool) async throws {
+        let authStore = InMemoryTraktAuthStore()
+        await authStore.save(token: validToken())
+        MockTraktURLProtocol.handler = { request in
+            let url = try #require(request.url)
+            #expect(url.path == "/sync/history")
+            #expect(request.httpMethod == "POST")
+            let response = try #require(HTTPURLResponse(url: url, statusCode: 201, httpVersion: nil, headerFields: nil))
+            let body = rejected
+                ? #"{"added":{"movies":0,"episodes":0},"not_found":{"episodes":[{"ids":{"tmdb":33}}]}}"#
+                : #"{"added":{"movies":0,"episodes":1},"not_found":{"episodes":[]}}"#
+            return (response, Data(body.utf8))
+        }
+        defer { MockTraktURLProtocol.handler = nil }
+        let service = makeTraktService(authStore: authStore)
+        let play = SyncOperationPayload(mediaKind: .episode, tmdbID: 33, watchedAt: .now)
+        if rejected {
+            await #expect(throws: TraktHistoryUploadError.itemNotFound) { try await service.addToHistory(play) }
+        } else {
+            try await service.addToHistory(play)
+        }
+    }
+
     @Test
     func disconnectCannotBeUndoneByAnInFlightRefresh() async throws {
         let auth = InMemoryTraktAuthStore()

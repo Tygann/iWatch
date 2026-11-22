@@ -23,7 +23,7 @@ nonisolated protocol TraktSyncing: Sendable {
     func getHistory(startAt: Date?, progress: (@Sendable (Int) async -> Void)?) async throws -> [TraktHistoryItemDTO]
     func addToWatchlist(_ items: [MediaID]) async throws
     func removeFromWatchlist(_ items: [MediaID]) async throws
-    func addToHistory(_ payloads: [SyncOperationPayload]) async throws
+    func addToHistory(_ payload: SyncOperationPayload) async throws
     func removeFromHistory(historyIDs: [Int]) async throws
 }
 

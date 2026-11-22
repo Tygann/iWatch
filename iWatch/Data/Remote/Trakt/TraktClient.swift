@@ -287,28 +287,28 @@ final class TraktService: TraktSyncing, EpisodeAirtimeProviding {
         _ = try await sendAuthorized(req, decode: TraktEmptyResponse.self)
     }
 
-    func addToHistory(_ payloads: [SyncOperationPayload]) async throws {
+    func addToHistory(_ payload: SyncOperationPayload) async throws {
+        guard let kind = payload.mediaKind, let tmdbID = payload.tmdbID, let watchedAt = payload.watchedAt,
+              kind == .movie || kind == .episode else {
+            throw TraktHistoryUploadError.invalidPlay
+        }
         try await refreshTokenIfNeeded()
 
-        let movies = payloads
-            .filter { $0.mediaKind == .movie }
-            .compactMap { payload -> TraktMoviePayload? in
-                guard let tmdbID = payload.tmdbID, let watchedAt = payload.watchedAt else { return nil }
-                return TraktMoviePayload(ids: TraktIDs(trakt: payload.traktID, slug: nil, tmdb: tmdbID, imdb: nil), watchedAt: watchedAt)
-            }
-
-        let episodes = payloads
-            .filter { $0.mediaKind == .episode }
-            .compactMap { payload -> TraktEpisodePayload? in
-                guard let tmdbID = payload.tmdbID, let watchedAt = payload.watchedAt else { return nil }
-                return TraktEpisodePayload(ids: TraktIDs(trakt: payload.traktID, slug: nil, tmdb: tmdbID, imdb: nil), watchedAt: watchedAt)
-            }
-
-        let body = TraktSyncEnvelope(movies: movies.isEmpty ? nil : movies,
-                                     shows: nil,
-                                     episodes: episodes.isEmpty ? nil : episodes)
-        let req = try await request(path: "sync/history", method: "POST", body: try encoder.encode(body))
-        _ = try await sendAuthorized(req, decode: TraktEmptyResponse.self)
+        let ids = TraktIDs(trakt: payload.traktID, slug: nil, tmdb: tmdbID, imdb: nil)
+        let body = TraktSyncEnvelope(
+            movies: kind == .movie ? [TraktMoviePayload(ids: ids, watchedAt: watchedAt)] : nil,
+            shows: nil,
+            episodes: kind == .episode ? [TraktEpisodePayload(ids: ids, watchedAt: watchedAt)] : nil
+        )
+        let request = try await request(path: "sync/history", method: "POST", body: try encoder.encode(body))
+        let result = try await sendAuthorized(request, decode: TraktHistoryUploadResponse.self)
+        let rejected = kind == .movie ? result.notFound.movies : result.notFound.episodes
+        // A single-item request makes the item-level rejection attributable to this play.
+        if result.added.movies == 0, result.added.episodes == 0, rejected?.count == 1,
+           let rejectedIDs = rejected?.first?.ids,
+           rejectedIDs.tmdb == tmdbID || (ids.trakt != nil && rejectedIDs.trakt == ids.trakt) {
+            throw TraktHistoryUploadError.itemNotFound
+        }
     }
 
     func removeFromHistory(historyIDs: [Int]) async throws {

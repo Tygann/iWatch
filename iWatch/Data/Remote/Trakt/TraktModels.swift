@@ -327,6 +327,42 @@ enum TraktOAuthError: LocalizedError {
     }
 }
 
+nonisolated struct TraktHistoryUploadResponse: Decodable {
+    struct Added: Decodable {
+        let movies: Int
+        let episodes: Int
+    }
+
+    struct NotFound: Decodable {
+        struct Item: Decodable {
+            let ids: TraktIDs
+        }
+
+        let movies: [Item]?
+        let episodes: [Item]?
+    }
+
+    let added: Added
+    let notFound: NotFound
+
+    enum CodingKeys: String, CodingKey {
+        case added
+        case notFound = "not_found"
+    }
+}
+
+nonisolated enum TraktHistoryUploadError: LocalizedError {
+    case invalidPlay
+    case itemNotFound
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidPlay: "iWatch is missing information required to upload this watched play."
+        case .itemNotFound: "Trakt couldn’t identify the movie or episode for this watched play."
+        }
+    }
+}
+
 struct TraktEmptyResponse: Codable {}
 
 enum TraktAuthError: LocalizedError, Equatable {
