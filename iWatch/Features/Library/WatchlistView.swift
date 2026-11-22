@@ -241,8 +241,7 @@ private struct WatchlistBody: View {
                                         episode: next.episode, isWorking: model.markingShowIDs.contains(item.id)) {
                                             Task { await model.markNextEpisodeWatched(for: item, showsFeedback: true) }
                                         }
-                                        .padding(.trailing, 4)
-                                        .padding(.top, 110 / PosterImage.aspectRatio - 48)
+                                        .padding(.top, 110 / PosterImage.aspectRatio - 44)
                                 }
                             }
                         }

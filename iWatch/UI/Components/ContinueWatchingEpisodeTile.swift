@@ -99,11 +99,22 @@ struct QuickEpisodeWatchButton: View {
     var body: some View {
         Button(action: action) {
             Group {
-                if isWorking { ProgressView() }
-                else { Image(systemName: "checkmark.circle").font(.system(size: 24)) }
+                if isWorking {
+                    ProgressView()
+                        .tint(.white)
+                } else {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white)
+                }
+            }
+            .frame(width: 28, height: 28)
+            .background(.black.opacity(0.35), in: .circle)
+            .overlay {
+                Circle().strokeBorder(.white.opacity(0.85), lineWidth: 1)
             }
             .frame(width: 44, height: 44)
-            .background(.regularMaterial, in: .circle)
+            .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .disabled(isWorking)
