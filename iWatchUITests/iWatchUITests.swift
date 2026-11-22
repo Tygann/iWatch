@@ -49,6 +49,11 @@ final class iWatchUITests: XCTestCase {
         app.buttons["UI Test Show, Season 1 Episode 2, Continue Watching"].tap()
         let mark = app.buttons["Mark Watched"]
         XCTAssertTrue(mark.waitForExistence(timeout: 5))
+        let share = app.buttons["Share"]
+        XCTAssertTrue(share.exists)
+        XCTAssertEqual(mark.frame.height, share.frame.height, accuracy: 1)
+        XCTAssertEqual(share.frame.width, share.frame.height, accuracy: 1)
+        capture(app, "Matched episode action sizes - \(accessibility)")
         mark.tap()
         let next = app.buttons["Next Episode · S1 E3"]
         for _ in 0..<5 {

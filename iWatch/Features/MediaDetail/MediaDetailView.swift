@@ -1063,26 +1063,11 @@ private struct MediaDetailBody: View {
                 if let airDate = episode.airDate, airDate > Date() {
                     releaseCountdown(for: airDate)
                 } else {
-                    Button {
+                    EpisodeWatchButton(isWatched: model.isEpisodeWatched(episode)) {
                         Haptics.notification(.success)
                         Task { await model.requestToggleEpisodeWatched(episode) }
-                    } label: {
-                        Image(systemName: "checkmark")
-                            .bold()
-                            .foregroundStyle(model.isEpisodeWatched(episode) ? Color.white : Color.clear)
-                            .imageScale(.small)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .glassEffect(.regular.interactive(), in: .circle)
-                    .clipShape(.circle)
-                    .tint(model.isEpisodeWatched(episode) ? Color.accentColor : Color.clear)
-                    .overlay {
-                        Circle()
-                            .strokeBorder(
-                                model.isEpisodeWatched(episode) ? Color.accentColor : Color.secondary,
-                                lineWidth: 2
-                            )
-                    }
+                    .accessibilityLabel("\(model.isEpisodeWatched(episode) ? "Mark unwatched" : "Mark watched"), Season \(episode.seasonNumber) Episode \(episode.episodeNumber)")
                 }
             }
 

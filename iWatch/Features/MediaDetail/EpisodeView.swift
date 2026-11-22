@@ -243,6 +243,7 @@ private struct EpisodeViewBody: View {
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
+    @State private var primaryActionHeight: CGFloat = 39
     @State private var showsNavigationTitle = false
     @State private var observedLibraryRevision: Int?
 
@@ -415,16 +416,19 @@ private struct EpisodeViewBody: View {
             } label: {
                 Label(model.isWatched ? "Watched" : "Mark Watched",
                       systemImage: model.isWatched ? "checkmark.circle.fill" : "checkmark.circle")
-                    .bold()
-                    .imageScale(.large)
-                    .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil, minHeight: 44)
+                    .font(.body.weight(.semibold))
+                    .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
+                    .frame(minWidth: 116, minHeight: 25)
+                    .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil)
+                    .padding(.horizontal, 6)
             }
             .disabled(model.isUpdatingWatch)
             .buttonStyle(.borderedProminent)
             .tint(model.isWatched ? .accentColor : .secondary)
             .glassEffect(.regular, in: .capsule)
             .clipShape(.capsule)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { primaryActionHeight = $0 }
 
             if !dynamicTypeSize.isAccessibilitySize { Spacer() }
 
@@ -434,12 +438,12 @@ private struct EpisodeViewBody: View {
                     .labelStyle(.iconOnly)
                     .foregroundStyle(.white)
                     .font(.system(size: 22))
-                    .frame(minWidth: 44, minHeight: 44)
+                    .frame(width: primaryActionHeight, height: primaryActionHeight)
+                    .glassEffect(.regular.interactive(), in: .circle)
+                    .contentShape(.circle)
             }
-            .buttonStyle(.bordered)
-            .glassEffect(.regular, in: .circle)
-            .clipShape(.circle)
-            .tint(.secondary)
+            .buttonStyle(.plain)
+            .accessibilityLabel("Share")
         }
     }
 

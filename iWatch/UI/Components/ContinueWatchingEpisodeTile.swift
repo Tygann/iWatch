@@ -97,28 +97,40 @@ struct QuickEpisodeWatchButton: View {
     let action: () -> Void
 
     var body: some View {
+        EpisodeWatchButton(isWatched: false, isWorking: isWorking, action: action)
+        .disabled(isWorking)
+        .accessibilityLabel("Mark \(showTitle), Season \(season) Episode \(episode) watched")
+        .accessibilityHint("Updates this card to the next unwatched episode")
+    }
+}
+
+/// Shared by episode rows and Continue Watching cards.
+struct EpisodeWatchButton: View {
+    let isWatched: Bool
+    var isWorking = false
+    let action: () -> Void
+
+    var body: some View {
         Button(action: action) {
-            Group {
+            ZStack {
                 if isWorking {
-                    ProgressView()
-                        .tint(.white)
+                    ProgressView().tint(.primary)
                 } else {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.white)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(isWatched ? Color.white : Color.clear)
                 }
             }
             .frame(width: 28, height: 28)
-            .background(.black.opacity(0.35), in: .circle)
+            .background(isWatched ? Color.accentColor : Color.clear, in: .circle)
+            .glassEffect(.regular.interactive(), in: .circle)
             .overlay {
-                Circle().strokeBorder(.white.opacity(0.85), lineWidth: 1)
+                Circle().strokeBorder(isWatched ? Color.accentColor : Color.secondary, lineWidth: 2)
             }
             .frame(width: 44, height: 44)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .disabled(isWorking)
-        .accessibilityLabel("Mark \(showTitle), Season \(season) Episode \(episode) watched")
-        .accessibilityHint("Updates this card to the next unwatched episode")
     }
 }
