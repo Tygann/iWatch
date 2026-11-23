@@ -239,6 +239,9 @@ struct EpisodeView: View {
                     } label: {
                         Label("Go to Show", systemImage: "info.circle")
                     }
+                    if let model, let details = model.details {
+                        ShareLink(item: model.shareText, subject: Text(details.name.isEmpty ? "Episode" : details.name))
+                    }
                 } label: {
                     Image(systemName: "ellipsis")
                 }
@@ -260,7 +263,6 @@ private struct EpisodeViewBody: View {
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    @State private var primaryActionHeight: CGFloat = 39
     @State private var showsNavigationTitle = false
     @State private var observedLibraryRevision: Int?
 
@@ -296,7 +298,7 @@ private struct EpisodeViewBody: View {
                         }
                         VStack(alignment: .leading, spacing: 16) {
                             metadataSection(details)
-                            actionsSection(details)
+                            actionsSection
                             overviewSection(details)
                             creditsSection(details)
                         }
@@ -407,67 +409,92 @@ private struct EpisodeViewBody: View {
     }
 
     // MARK: - Actions Section
-    private func actionsSection(_ details: EpisodeDetails) -> some View {
-        let layout = dynamicTypeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
-            : AnyLayout(HStackLayout(spacing: 12))
-        return layout {
-            Button {
-                Haptics.notification(.success)
-                Task { await model.requestToggleWatched() }
-            } label: {
-                Label(model.isWatched ? "Watched" : "Mark Watched",
-                      systemImage: model.isWatched ? "checkmark.circle.fill" : "checkmark.circle")
-                    .font(.body.weight(.semibold))
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(minWidth: 116, minHeight: 25)
-                    .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil)
-                    .padding(.horizontal, 6)
-            }
-            .disabled(model.isUpdatingWatch)
-            .buttonStyle(.borderedProminent)
-            .tint(model.isWatched ? .accentColor : .secondary)
-            .glassEffect(.regular, in: .capsule)
-            .clipShape(.capsule)
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { primaryActionHeight = $0 }
-
-            if !dynamicTypeSize.isAccessibilitySize { Spacer() }
-
-            HStack(spacing: 8) {
-                episodeNavigationButton("Previous Episode", symbol: "chevron.left", destination: model.previousEpisode)
-                episodeNavigationButton("Next Episode", symbol: "chevron.right", destination: model.nextEpisode)
-                ShareLink(item: model.shareText, subject: Text(details.name.isEmpty ? "Episode" : details.name)) {
-                    Label("Share", systemImage: "square.and.arrow.up.fill")
-                        .labelStyle(.iconOnly)
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: actionCircleSize, height: actionCircleSize)
-                        .glassEffect(.regular.interactive(), in: .circle)
-                        .contentShape(.circle)
+    private var actionsSection: some View {
+        ViewThatFits(in: .horizontal) {
+            if !dynamicTypeSize.isAccessibilitySize {
+                HStack(spacing: 12) {
+                    watchAction.fixedSize(horizontal: true, vertical: false)
+                    Spacer(minLength: 0)
+                    episodeNavigationActions.fixedSize(horizontal: true, vertical: false)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Share")
+            }
+            VStack(alignment: .leading, spacing: 12) {
+                watchAction
+                ViewThatFits(in: .horizontal) {
+                    episodeNavigationActions.fixedSize(horizontal: true, vertical: false)
+                    VStack(alignment: .leading, spacing: 8) {
+                        previousEpisodeAction
+                        nextEpisodeAction
+                    }
+                }
             }
         }
     }
 
-    private var actionCircleSize: CGFloat {
-        dynamicTypeSize.isAccessibilitySize ? 44 : max(44, primaryActionHeight)
+    private var watchAction: some View {
+        Button {
+            Haptics.notification(.success)
+            Task { await model.requestToggleWatched() }
+        } label: {
+            Label(model.isWatched ? "Watched" : "Mark Watched",
+                  systemImage: model.isWatched ? "checkmark.circle.fill" : "checkmark.circle")
+                .font(.body.weight(.semibold))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(minWidth: 116, minHeight: 25)
+                .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil)
+                .padding(.horizontal, 6)
+        }
+        .disabled(model.isUpdatingWatch)
+        .buttonStyle(.borderedProminent)
+        .tint(model.isWatched ? .accentColor : .secondary)
+        .glassEffect(.regular, in: .capsule)
+        .clipShape(.capsule)
     }
 
-    private func episodeNavigationButton(_ title: LocalizedStringKey, symbol: String, destination: EpisodeDetails?) -> some View {
-        Button {
+    private var episodeNavigationActions: some View {
+        HStack(spacing: 8) {
+            previousEpisodeAction
+            nextEpisodeAction
+        }
+    }
+
+    private var previousEpisodeAction: some View {
+        episodeNavigationButton("Previous Episode", isPrevious: true, destination: model.previousEpisode)
+    }
+
+    private var nextEpisodeAction: some View {
+        episodeNavigationButton("Next Episode", isPrevious: false, destination: model.nextEpisode)
+    }
+
+    private func episodeNavigationButton(
+        _ title: LocalizedStringKey,
+        isPrevious: Bool,
+        destination: EpisodeDetails?
+    ) -> some View {
+        let number = destination.map {
+            $0.seasonNumber == model.ref.season
+                ? "E\($0.episodeNumber)"
+                : "S\($0.seasonNumber) E\($0.episodeNumber)"
+        } ?? "—"
+
+        return Button {
             guard let destination else { return }
             showsNavigationTitle = false
             Task { await model.openEpisode(destination) }
         } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(destination == nil ? .secondary : .primary)
-                .frame(width: actionCircleSize, height: actionCircleSize)
-                .glassEffect(.regular.interactive(), in: .circle)
-                .contentShape(.circle)
+            HStack(spacing: 5) {
+                if isPrevious { Image(systemName: "chevron.backward") }
+                Text(number)
+                if !isPrevious { Image(systemName: "chevron.forward") }
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(destination == nil ? .secondary : .primary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .frame(minWidth: 44, minHeight: 44)
+            .glassEffect(.regular.interactive(), in: .capsule)
+            .contentShape(.capsule)
         }
         .buttonStyle(.plain)
         .disabled(destination == nil || model.isUpdatingWatch)
