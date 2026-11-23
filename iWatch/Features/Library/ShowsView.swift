@@ -233,6 +233,7 @@ private struct ShowsViewBody: View {
                                 Task { await model.load(revision: session.libraryRevision, forceRefresh: true) }
                             }
                         }
+                        continueWatchingEpisodeSection
                         continueWatchingSection
                         comingUpSection
                         librarySection(title: "Not Started", items: model.snapshot.watchlist)
@@ -270,6 +271,41 @@ private struct ShowsViewBody: View {
     @ViewBuilder
     // MARK: Library Sections
 
+    private var continueWatchingEpisodeSection: some View {
+        if !model.snapshot.continueWatching.isEmpty {
+            MediaCollectionRow(title: "Continue Watching · Episodes") {
+                WatchlistView(
+                    kind: .show,
+                    initialShowItems: model.continueWatchingItems,
+                    initialRevision: model.isShowingSavedSnapshot ? nil : session.libraryRevision
+                )
+            } content: {
+                ForEach(model.continueWatchingItems) { item in
+                    if let next = item.progress.nextEpisode {
+                        ContinueWatchingEpisodeTile(
+                            showTitle: item.title,
+                            episodeRef: EpisodeRef(
+                                showId: item.mediaID.tmdbID,
+                                showTraktID: item.mediaID.traktID,
+                                season: next.season,
+                                episode: next.episode,
+                                tmdbID: next.tmdbID,
+                                traktID: next.traktID
+                            ),
+                            stillPath: next.stillPath,
+                            fallbackPosterPath: item.posterPath,
+                            remainingEpisodes: item.progress.remainingReleased,
+                            extraMenu: { continueWatchingMenu(for: item) }
+                        )
+                        .accessibilityLabel("\(item.title), Season \(next.season) Episode \(next.episode), Episode Preview")
+                        .accessibilityIdentifier("continue-watching-episode-\(item.id)")
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
     private var continueWatchingSection: some View {
         if !model.snapshot.continueWatching.isEmpty {
             MediaCollectionRow(title: "Continue Watching") {
