@@ -253,7 +253,9 @@ struct EpisodeWatchButton: View {
                     Circle().strokeBorder(isWatched ? Color.accentColor : Color.secondary, lineWidth: 2)
                 }
             }
-            .frame(width: 44, height: 44)
+            .padding(.top, progress == nil ? 0 : 3)
+            .padding(.trailing, progress == nil ? 0 : 3)
+            .frame(width: 44, height: 44, alignment: progress == nil ? .center : .topTrailing)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
