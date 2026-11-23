@@ -298,7 +298,13 @@ private struct ShowsViewBody: View {
                             fallbackPosterPath: item.posterPath,
                             remainingEpisodes: item.progress.remainingReleased,
                             usesFrostedFooter: usesFrostedFooter,
-                            extraMenu: { continueWatchingMenu(for: item) }
+                            extraMenu: {
+                                if !usesFrostedFooter {
+                                    Text("\(item.progress.remainingReleased) episodes remaining")
+                                    Divider()
+                                }
+                                continueWatchingMenu(for: item)
+                            }
                         )
                         .accessibilityLabel("\(item.title), Season \(next.season) Episode \(next.episode), Episode Preview")
                         .accessibilityIdentifier("continue-watching-episode-\(item.id)")

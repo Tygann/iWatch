@@ -146,12 +146,42 @@ struct QuickEpisodeWatchButton: View {
     var releasedProgress: (watched: Int, remaining: Int)? = nil
     let action: () -> Void
 
+    @State private var previousWatchedCount: Int?
+    @State private var showsConfirmation = false
+    @State private var didTapWatch = false
+
     var body: some View {
-        EpisodeWatchButton(isWatched: false, isWorking: isWorking, progress: progressFraction, action: action)
+        EpisodeWatchButton(
+            isWatched: false,
+            isWorking: isWorking,
+            progress: progressFraction,
+            showsConfirmation: showsConfirmation
+        ) {
+            didTapWatch = releasedProgress != nil
+            action()
+        }
         .disabled(isWorking)
         .accessibilityLabel("Mark \(showTitle), Season \(season) Episode \(episode) watched")
         .accessibilityHint("Updates this card to the next unwatched episode")
         .accessibilityValue(progressDescription)
+        .task(id: releasedProgress?.watched) {
+            let watchedCount = releasedProgress?.watched
+            let previousCount = previousWatchedCount
+            previousWatchedCount = watchedCount
+            showsConfirmation = false
+            guard didTapWatch, let watchedCount, let previousCount, watchedCount > previousCount else { return }
+            didTapWatch = false
+            showsConfirmation = true
+            try? await Task.sleep(for: .milliseconds(650))
+            if !Task.isCancelled {
+                showsConfirmation = false
+            }
+        }
+        .onChange(of: isWorking) { _, working in
+            if !working, previousWatchedCount == releasedProgress?.watched {
+                didTapWatch = false
+            }
+        }
     }
 
     private var progressFraction: Double? {
@@ -173,17 +203,20 @@ struct EpisodeWatchButton: View {
     let isWatched: Bool
     var isWorking = false
     var progress: Double? = nil
+    var showsConfirmation = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private let ringWidth: CGFloat = 2.5
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             ZStack {
-                if isWorking {
+                if isWorking && !showsConfirmation {
                     ProgressView().tint(.primary)
                 } else {
                     Image(systemName: "checkmark")
                         .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(isWatched ? Color.white : Color.clear)
+                        .foregroundStyle(isWatched || showsConfirmation ? Color.white : Color.clear)
                 }
             }
             .frame(width: 28, height: 28)
@@ -191,14 +224,14 @@ struct EpisodeWatchButton: View {
             .glassEffect(.regular.interactive(), in: .circle)
             .overlay {
                 if let progress {
-                    Circle().strokeBorder(.white.opacity(0.35), lineWidth: 2)
+                    Circle().strokeBorder(.white.opacity(0.35), lineWidth: ringWidth)
                     if progress > 0 {
                         Circle()
-                            .inset(by: 1.5)
+                            .inset(by: ringWidth / 2)
                             .trim(from: 0, to: progress)
-                            .stroke(.white, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                            .stroke(Color.accentColor, style: StrokeStyle(lineWidth: ringWidth, lineCap: .round))
                             .rotationEffect(.degrees(-90))
-                            .shadow(color: .black.opacity(0.65), radius: 1)
+                            .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: progress)
                     }
                 } else {
                     Circle().strokeBorder(isWatched ? Color.accentColor : Color.secondary, lineWidth: 2)
