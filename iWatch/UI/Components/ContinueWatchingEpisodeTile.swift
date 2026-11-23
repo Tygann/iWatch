@@ -58,15 +58,16 @@ struct ContinueWatchingEpisodeTile<ExtraMenu: View>: View {
             )
 
             Rectangle()
-                .fill(.thinMaterial)
-                .mask(bottomFadeMask)
+                .fill(.regularMaterial)
+                .mask(footerFadeMask)
+                .allowsHitTesting(false)
 
             LinearGradient(
-                colors: [.clear, .black.opacity(0.55)],
+                colors: [.clear, .black.opacity(0.32)],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 30)
+            .mask(footerFadeMask)
             .allowsHitTesting(false)
 
             Text(episodeMetadata)
@@ -89,11 +90,12 @@ struct ContinueWatchingEpisodeTile<ExtraMenu: View>: View {
         return "\(episode) • \(remainingEpisodes) Remaining"
     }
 
-    private var bottomFadeMask: some View {
+    private var footerFadeMask: some View {
         LinearGradient(
             stops: [
-                .init(color: .clear, location: 0.72),
-                .init(color: .black.opacity(0.75), location: 0.88),
+                .init(color: .clear, location: 0.54),
+                .init(color: .black.opacity(0.28), location: 0.66),
+                .init(color: .black.opacity(0.85), location: 0.84),
                 .init(color: .black, location: 1)
             ],
             startPoint: .top,
