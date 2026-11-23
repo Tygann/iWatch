@@ -217,12 +217,24 @@ struct EpisodeWatchButton: View {
             ZStack {
                 if isWorking && !showsConfirmation {
                     ProgressView().tint(.primary)
+                } else if showsConfirmation {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                        .symbolEffectsRemoved(reduceMotion)
+                        .transition(
+                            AsymmetricTransition(
+                                insertion: .symbolEffect(.drawOn),
+                                removal: .identity
+                            )
+                        )
                 } else {
                     Image(systemName: "checkmark")
                         .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(isWatched || showsConfirmation ? Color.white : Color.clear)
+                        .foregroundStyle(isWatched ? Color.white : Color.clear)
                 }
             }
+            .animation(reduceMotion ? nil : .default, value: showsConfirmation)
             .frame(width: 28, height: 28)
             .background(isWatched ? Color.accentColor : Color.clear, in: .circle)
             .glassEffect(.regular.interactive(), in: .circle)
