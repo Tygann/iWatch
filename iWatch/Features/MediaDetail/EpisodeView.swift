@@ -422,10 +422,17 @@ private struct EpisodeViewBody: View {
                 watchAction
                 ViewThatFits(in: .horizontal) {
                     episodeNavigationActions.fixedSize(horizontal: true, vertical: false)
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(spacing: 0) {
                         previousEpisodeAction
+                        Rectangle()
+                            .fill(.primary.opacity(0.15))
+                            .frame(height: 1)
+                            .padding(.horizontal, 8)
+                            .accessibilityHidden(true)
                         nextEpisodeAction
                     }
+                    .fixedSize(horizontal: true, vertical: false)
+                    .glassEffect(.regular, in: .capsule)
                 }
             }
         }
@@ -453,10 +460,15 @@ private struct EpisodeViewBody: View {
     }
 
     private var episodeNavigationActions: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 0) {
             previousEpisodeAction
+            Rectangle()
+                .fill(.primary.opacity(0.15))
+                .frame(width: 1, height: 18)
+                .accessibilityHidden(true)
             nextEpisodeAction
         }
+        .glassEffect(.regular, in: .capsule)
     }
 
     private var previousEpisodeAction: some View {
@@ -493,8 +505,7 @@ private struct EpisodeViewBody: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .frame(minWidth: 44, minHeight: 44)
-            .glassEffect(.regular.interactive(), in: .capsule)
-            .contentShape(.capsule)
+            .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .disabled(destination == nil || model.isUpdatingWatch)
