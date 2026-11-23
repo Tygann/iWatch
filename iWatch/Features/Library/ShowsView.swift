@@ -273,7 +273,7 @@ private struct ShowsViewBody: View {
 
     private var continueWatchingEpisodeSection: some View {
         if !model.snapshot.continueWatching.isEmpty {
-            MediaCollectionRow(title: "Continue Watching · Episodes") {
+            MediaCollectionRow(title: "Continue Watching · Episodes", alignment: .top) {
                 WatchlistView(
                     kind: .show,
                     initialShowItems: model.continueWatchingItems,

@@ -2,15 +2,18 @@ import SwiftUI
 
 struct MediaCollectionRow<Destination: View, Content: View>: View {
     let title: String
+    let alignment: VerticalAlignment
     let destination: () -> Destination
     let content: () -> Content
 
     init(
         title: String,
+        alignment: VerticalAlignment = .center,
         @ViewBuilder destination: @escaping () -> Destination,
         @ViewBuilder content: @escaping () -> Content
     ) {
         self.title = title
+        self.alignment = alignment
         self.destination = destination
         self.content = content
     }
@@ -30,7 +33,7 @@ struct MediaCollectionRow<Destination: View, Content: View>: View {
             .buttonStyle(.plain)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 12) {
+                LazyHStack(alignment: alignment, spacing: 12) {
                     content()
                 }
                 .padding(.horizontal)
