@@ -150,7 +150,7 @@ private struct TransientFeedbackHUD: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 8 : 4)
         .accessibilityElement(children: offersUndo ? .contain : .combine)
         .accessibilityLabel(accessibilityMessage)
         .accessibilityIdentifier("TransientFeedbackHUD")
@@ -158,10 +158,14 @@ private struct TransientFeedbackHUD: View {
 
     @ViewBuilder private var undoButton: some View {
         if offersUndo {
-            Button("Undo", action: undo)
-                .buttonStyle(.bordered)
-                .frame(minHeight: 44)
-                .accessibilityLabel("Undo marking episode watched")
+            Button(action: undo) {
+                Text("Undo")
+                    .foregroundStyle(Color.accentColor)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Undo marking episode watched")
         }
     }
 

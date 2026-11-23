@@ -71,7 +71,7 @@ struct LibraryPreviewTests {
         try await container.libraryRepository.addWatchEvent(for: MediaID(kind: .episode, id: 90013), watchedAt: .now)
         let next = try await container.libraryRepository.nextUnwatchedEpisode(after:
             EpisodeRef(showId: show, season: 1, episode: 2))
-        #expect(next?.season == 2 && next?.episode == 1)
+        #expect(next?.seasonNumber == 2 && next?.episodeNumber == 1)
         #expect(try await container.libraryRepository.nextUnwatchedEpisode(after:
             EpisodeRef(showId: show, season: 2, episode: 1)) == nil)
     }

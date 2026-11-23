@@ -26,7 +26,7 @@ private final class EpisodeScreenModel {
     var watchEventID: UUID?
     var isWatched = false
     var isUpdatingWatch = false
-    var nextEpisode: EpisodeRef?
+    var nextEpisode: EpisodeDetails?
     var watchConfirmation: EpisodeWatchConfirmation?
     var showFullOverview = false
 
@@ -109,7 +109,14 @@ private final class EpisodeScreenModel {
         guard let nextEpisode, !isUpdatingWatch else { return }
         isUpdatingWatch = true
         defer { isUpdatingWatch = false }
-        ref = nextEpisode
+        ref = EpisodeRef(
+            showId: ref.showId,
+            showTraktID: ref.showTraktID ?? nextEpisode.showTraktID,
+            season: nextEpisode.seasonNumber,
+            episode: nextEpisode.episodeNumber,
+            tmdbID: nextEpisode.id,
+            traktID: nextEpisode.traktID
+        )
         self.nextEpisode = nil
         loadState = .idle
         watchEventID = nil
@@ -281,19 +288,7 @@ private struct EpisodeViewBody: View {
                             metadataSection(details)
                             actionsSection(details)
                             if let next = model.nextEpisode {
-                                Button {
-                                    showsNavigationTitle = false
-                                    Task { await model.openNextEpisode() }
-                                } label: {
-                                    VStack(spacing: 4) {
-                                        Text("Next Episode").font(.headline)
-                                        Text("S\(next.season) E\(next.episode)").font(.subheadline)
-                                    }
-                                    .frame(maxWidth: .infinity, minHeight: 44)
-                                }
-                                .buttonStyle(.bordered)
-                                .accessibilityLabel("Next Episode · S\(next.season) E\(next.episode)")
-                                .disabled(model.isUpdatingWatch)
+                                nextEpisodeRow(next)
                             }
                             overviewSection(details)
                             creditsSection(details)
@@ -340,6 +335,38 @@ private struct EpisodeViewBody: View {
     }
 
     // MARK: - Banner Section
+    private func nextEpisodeRow(_ next: EpisodeDetails) -> some View {
+        let number = "S\(next.seasonNumber) E\(next.episodeNumber)"
+        let name = next.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Button {
+            showsNavigationTitle = false
+            Task { await model.openNextEpisode() }
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Next Episode")
+                        .font(.subheadline.weight(.semibold))
+                    Text(name.isEmpty ? number : "\(number) • \(name)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .multilineTextAlignment(.leading)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+            .padding(.vertical, 4)
+            .frame(minHeight: 44)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Next Episode · \(number)")
+        .accessibilityValue(name)
+        .disabled(model.isUpdatingWatch)
+    }
+
     @ViewBuilder
     private func bannerSection(_ details: EpisodeDetails) -> some View {
         if let stillPath = details.stillPath {

@@ -734,7 +734,7 @@ final class LibraryRepository {
     }
 
     /// Released, unwatched successor in episode order, including season boundaries.
-    func nextUnwatchedEpisode(after ref: EpisodeRef) async throws -> EpisodeRef? {
+    func nextUnwatchedEpisode(after ref: EpisodeRef) async throws -> EpisodeDetails? {
         let context = try persistence.makeMetadataContext()
         let showID = MediaID(kind: .show, id: ref.showId, traktID: ref.showTraktID)
         let rows = allEpisodeRecords(forShowID: ref.showId, context: context)
@@ -748,11 +748,7 @@ final class LibraryRepository {
             !progress.watchedEpisodeKeys.contains("ep:\(ref.showId):S\($0.seasonNumber):E\($0.episodeNumber)")
         }
         .sorted { ($0.seasonNumber, $0.episodeNumber) < ($1.seasonNumber, $1.episodeNumber) }
-        .first.map {
-            EpisodeRef(showId: ref.showId, showTraktID: ref.showTraktID,
-                season: $0.seasonNumber, episode: $0.episodeNumber,
-                tmdbID: $0.tmdbID, traktID: $0.traktID)
-        }
+        .first.map(mapEpisodeRecord(_:))
     }
 
     private func makeShowProgress(for showID: MediaID,
