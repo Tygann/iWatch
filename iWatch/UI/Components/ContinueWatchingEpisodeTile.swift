@@ -61,21 +61,22 @@ struct ContinueWatchingEpisodeTile<ExtraMenu: View>: View {
                 .fill(.thinMaterial)
                 .mask(bottomFadeMask)
 
-            Rectangle()
-                .fill(.clear)
-                .glassEffect(.regular, in: .rect(cornerRadius: 0))
-                .mask(bottomFadeMask)
-                .allowsHitTesting(false)
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.55)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 30)
+            .allowsHitTesting(false)
 
             Text(episodeMetadata)
                 .font(.footnote.weight(.medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.white)
                 .padding(7)
                 .allowsHitTesting(false)
         }
         .frame(width: width, height: height)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
     }
 
     private var transitionID: MediaTileTransitionID {
@@ -91,8 +92,8 @@ struct ContinueWatchingEpisodeTile<ExtraMenu: View>: View {
     private var bottomFadeMask: some View {
         LinearGradient(
             stops: [
-                .init(color: .clear, location: 0.58),
-                .init(color: .black.opacity(0.75), location: 0.8),
+                .init(color: .clear, location: 0.72),
+                .init(color: .black.opacity(0.75), location: 0.88),
                 .init(color: .black, location: 1)
             ],
             startPoint: .top,
