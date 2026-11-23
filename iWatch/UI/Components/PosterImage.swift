@@ -4,9 +4,11 @@ import SwiftUI
 struct PosterImage: View {
     static let aspectRatio: CGFloat = 2.0 / 3.0
 
+    static let defaultCornerRadius: CGFloat = 12
+
     let path: String?
     var width: CGFloat = 110
-    var cornerRadius: CGFloat = 12
+    var cornerRadius: CGFloat = Self.defaultCornerRadius
 
     private var height: CGFloat {
         width / Self.aspectRatio
@@ -25,7 +27,7 @@ struct PosterImage: View {
         .frame(width: width, height: height)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .clipped()
-        .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+        .artworkGlassBorder(cornerRadius: cornerRadius)
         .accessibilityHidden(true)
     }
 
@@ -37,5 +39,11 @@ struct PosterImage: View {
                 .font(.title3)
                 .foregroundStyle(.gray.opacity(0.5))
         }
+    }
+}
+
+extension View {
+    func artworkGlassBorder(cornerRadius: CGFloat) -> some View {
+        glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
     }
 }

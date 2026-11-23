@@ -14,7 +14,9 @@ struct ContinueWatchingEpisodeTile<ExtraMenu: View>: View {
 
     private let width: CGFloat = 176
     private let height: CGFloat = 99
-    private let cornerRadius: CGFloat = 18
+    private var cornerRadius: CGFloat {
+        usesFrostedFooter ? 18 : PosterImage.defaultCornerRadius
+    }
 
     var body: some View {
         NavigationLink {
@@ -54,6 +56,7 @@ struct ContinueWatchingEpisodeTile<ExtraMenu: View>: View {
             frostedArtwork
         } else {
             episodeStill
+                .artworkGlassBorder(cornerRadius: cornerRadius)
                 .overlay(alignment: .topLeading) {
                     Text("S\(episodeRef.season) E\(episodeRef.episode)")
                         .font(.caption2.bold())
@@ -187,13 +190,18 @@ struct EpisodeWatchButton: View {
             .background(isWatched ? Color.accentColor : Color.clear, in: .circle)
             .glassEffect(.regular.interactive(), in: .circle)
             .overlay {
-                Circle().strokeBorder(isWatched ? Color.accentColor : Color.secondary, lineWidth: 2)
-                if let progress, progress > 0 {
-                    Circle()
-                        .inset(by: 1)
-                        .trim(from: 0, to: progress)
-                        .stroke(.white, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
+                if let progress {
+                    Circle().strokeBorder(.white.opacity(0.35), lineWidth: 2)
+                    if progress > 0 {
+                        Circle()
+                            .inset(by: 1.5)
+                            .trim(from: 0, to: progress)
+                            .stroke(.white, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                            .shadow(color: .black.opacity(0.65), radius: 1)
+                    }
+                } else {
+                    Circle().strokeBorder(isWatched ? Color.accentColor : Color.secondary, lineWidth: 2)
                 }
             }
             .frame(width: 44, height: 44)
