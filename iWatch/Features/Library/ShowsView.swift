@@ -272,6 +272,7 @@ private struct ShowsViewBody: View {
     // MARK: Library Sections
 
     private var continueWatchingEpisodeSection: some View {
+        let usesFrostedFooter = false
         if !model.snapshot.continueWatching.isEmpty {
             MediaCollectionRow(title: "Continue Watching · Episodes", alignment: .top) {
                 WatchlistView(
@@ -296,6 +297,7 @@ private struct ShowsViewBody: View {
                             stillPath: next.stillPath,
                             fallbackPosterPath: item.posterPath,
                             remainingEpisodes: item.progress.remainingReleased,
+                            usesFrostedFooter: usesFrostedFooter,
                             extraMenu: { continueWatchingMenu(for: item) }
                         )
                         .accessibilityLabel("\(item.title), Season \(next.season) Episode \(next.episode), Episode Preview")
@@ -304,7 +306,10 @@ private struct ShowsViewBody: View {
                             QuickEpisodeWatchButton(
                                 showTitle: item.title, season: next.season,
                                 episode: next.episode,
-                                isWorking: model.markingShowIDs.contains(item.id)
+                                isWorking: model.markingShowIDs.contains(item.id),
+                                releasedProgress: usesFrostedFooter ? nil : item.progress.watchedReleasedCount.map {
+                                    (watched: $0, remaining: item.progress.remainingReleased)
+                                }
                             ) {
                                 Task { await model.markNextEpisodeWatched(for: item, showsFeedback: true) }
                             }

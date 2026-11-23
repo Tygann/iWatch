@@ -305,11 +305,13 @@ actor LibrarySnapshotReader {
             "ep:\(showID.tmdbID):S\($0.seasonNumber):E\($0.episodeNumber)"
         })
         let watchedTrackableKeys = watchedKeys.intersection(trackableKeys)
-        let remaining = trackableEpisodes
+        let released = trackableEpisodes.filter {
+            EpisodeAvailability.isReleased(airDate: $0.airDate, airedAt: $0.airedAt)
+        }
+        let remaining = released
             .filter { episode in
                 let key = "ep:\(showID.tmdbID):S\(episode.seasonNumber):E\(episode.episodeNumber)"
-                return EpisodeAvailability.isReleased(airDate: episode.airDate, airedAt: episode.airedAt)
-                    && !watchedTrackableKeys.contains(key)
+                return !watchedTrackableKeys.contains(key)
             }
             .sorted { ($0.airDate ?? .distantFuture) < ($1.airDate ?? .distantFuture) }
         let next = remaining.first.map {
@@ -358,7 +360,8 @@ actor LibrarySnapshotReader {
             remainingReleased: remaining.count,
             nextEpisode: next,
             nextUpcomingEpisode: nextUpcoming,
-            mostRecentWatchedSeason: mostRecentWatchedSeason
+            mostRecentWatchedSeason: mostRecentWatchedSeason,
+            watchedReleasedCount: released.count - remaining.count
         )
     }
 

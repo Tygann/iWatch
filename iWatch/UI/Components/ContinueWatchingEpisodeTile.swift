@@ -7,6 +7,7 @@ struct ContinueWatchingEpisodeTile<ExtraMenu: View>: View {
     let stillPath: String?
     let fallbackPosterPath: String?
     let remainingEpisodes: Int
+    var usesFrostedFooter = true
     @ViewBuilder var extraMenu: () -> ExtraMenu
 
     @Namespace private var navigation
@@ -47,16 +48,38 @@ struct ContinueWatchingEpisodeTile<ExtraMenu: View>: View {
         }
     }
 
+    @ViewBuilder
     private var artwork: some View {
+        if usesFrostedFooter {
+            frostedArtwork
+        } else {
+            episodeStill
+                .overlay(alignment: .topLeading) {
+                    Text("S\(episodeRef.season) E\(episodeRef.episode)")
+                        .font(.caption2.bold())
+                        .padding(3)
+                        .glassEffect()
+                        .padding(3)
+                        .accessibilityHidden(true)
+                        .allowsHitTesting(false)
+                }
+        }
+    }
+
+    private var episodeStill: some View {
+        EpisodeStillImage(
+            path: stillPath,
+            fallbackPosterPath: fallbackPosterPath,
+            width: width,
+            height: height,
+            cornerRadius: cornerRadius,
+            blursFooter: usesFrostedFooter
+        )
+    }
+
+    private var frostedArtwork: some View {
         ZStack(alignment: .bottomLeading) {
-            EpisodeStillImage(
-                path: stillPath,
-                fallbackPosterPath: fallbackPosterPath,
-                width: width,
-                height: height,
-                cornerRadius: cornerRadius,
-                blursFooter: true
-            )
+            episodeStill
 
             Rectangle()
                 .fill(.ultraThinMaterial)
@@ -117,13 +140,28 @@ struct QuickEpisodeWatchButton: View {
     let season: Int
     let episode: Int
     let isWorking: Bool
+    var releasedProgress: (watched: Int, remaining: Int)? = nil
     let action: () -> Void
 
     var body: some View {
-        EpisodeWatchButton(isWatched: false, isWorking: isWorking, action: action)
+        EpisodeWatchButton(isWatched: false, isWorking: isWorking, progress: progressFraction, action: action)
         .disabled(isWorking)
         .accessibilityLabel("Mark \(showTitle), Season \(season) Episode \(episode) watched")
         .accessibilityHint("Updates this card to the next unwatched episode")
+        .accessibilityValue(progressDescription)
+    }
+
+    private var progressFraction: Double? {
+        guard let releasedProgress else { return nil }
+        let total = releasedProgress.watched + releasedProgress.remaining
+        guard total > 0 else { return nil }
+        return Double(releasedProgress.watched) / Double(total)
+    }
+
+    private var progressDescription: Text {
+        guard let releasedProgress else { return Text("") }
+        let total = releasedProgress.watched + releasedProgress.remaining
+        return Text("\(releasedProgress.watched) of \(total) released episodes watched, \(releasedProgress.remaining) remaining")
     }
 }
 
@@ -131,6 +169,7 @@ struct QuickEpisodeWatchButton: View {
 struct EpisodeWatchButton: View {
     let isWatched: Bool
     var isWorking = false
+    var progress: Double? = nil
     let action: () -> Void
 
     var body: some View {
@@ -149,6 +188,13 @@ struct EpisodeWatchButton: View {
             .glassEffect(.regular.interactive(), in: .circle)
             .overlay {
                 Circle().strokeBorder(isWatched ? Color.accentColor : Color.secondary, lineWidth: 2)
+                if let progress, progress > 0 {
+                    Circle()
+                        .inset(by: 1)
+                        .trim(from: 0, to: progress)
+                        .stroke(.white, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                }
             }
             .frame(width: 44, height: 44)
             .contentShape(.rect)

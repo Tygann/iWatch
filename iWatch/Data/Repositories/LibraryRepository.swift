@@ -835,7 +835,8 @@ final class LibraryRepository {
             remainingReleased: remaining.count,
             nextEpisode: next,
             nextUpcomingEpisode: nextUpcoming,
-            mostRecentWatchedSeason: mostRecentWatchedSeason
+            mostRecentWatchedSeason: mostRecentWatchedSeason,
+            watchedReleasedCount: released.count - remaining.count
         )
     }
 

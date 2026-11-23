@@ -260,6 +260,8 @@ struct ShowProgress: Codable, Equatable, Sendable {
     let nextUpcomingEpisode: NextEpisode?
     let mostRecentWatchedSeason: Int?
 
+    var watchedReleasedCount: Int? = nil
+
     var isComplete: Bool {
         remainingReleased == 0 && (totalEpisodes.map { watchedCount >= $0 } ?? false)
     }
