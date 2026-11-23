@@ -352,9 +352,36 @@ final class AppContainer {
             async let shows = libraryRepository.trending(kind: .show)
             let items = try await (movies, shows)
 
-            let context = persistence.makeContext()
+            let sandboxShows = Array(items.1.prefix(6))
             let now = Date()
-            for item in Array(items.0.prefix(6)) + Array(items.1.prefix(6)) {
+            var watchedEpisodes: [EpisodeDetails] = []
+            for show in sandboxShows {
+                guard watchedEpisodes.count < 3 else { break }
+                try Task.checkCancellation()
+                guard let episodes = try? await libraryRepository.episodes(for: show.mediaID, seasonNumber: 1) else {
+                    continue
+                }
+                let released = episodes.filter {
+                    EpisodeAvailability.isReleased(airDate: $0.airDate, airedAt: $0.airedAt, relativeTo: now)
+                }
+                guard released.count >= 2,
+                      let first = released.min(by: { $0.episodeNumber < $1.episodeNumber }) else { continue }
+                watchedEpisodes.append(first)
+            }
+
+            try Task.checkCancellation()
+            let context = persistence.makeContext()
+            for episode in watchedEpisodes {
+                context.insert(WatchedEventRecord(
+                    kind: .episode,
+                    tmdbID: episode.id,
+                    showTMDbID: episode.showId,
+                    seasonNumber: episode.seasonNumber,
+                    episodeNumber: episode.episodeNumber,
+                    watchedAt: now
+                ))
+            }
+            for item in Array(items.0.prefix(6)) + sandboxShows {
                 let record = WatchlistRecord(
                     mediaID: item.mediaID,
                     isInWatchlist: true,
