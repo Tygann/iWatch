@@ -425,7 +425,7 @@ private struct EpisodeViewBody: View {
                     VStack(spacing: 0) {
                         previousEpisodeAction
                         Rectangle()
-                            .fill(.primary.opacity(0.15))
+                            .fill(.primary.opacity(0.28))
                             .frame(height: 1)
                             .padding(.horizontal, 8)
                             .accessibilityHidden(true)
@@ -463,8 +463,8 @@ private struct EpisodeViewBody: View {
         HStack(spacing: 0) {
             previousEpisodeAction
             Rectangle()
-                .fill(.primary.opacity(0.15))
-                .frame(width: 1, height: 18)
+                .fill(.primary.opacity(0.28))
+                .frame(width: 1, height: 24)
                 .accessibilityHidden(true)
             nextEpisodeAction
         }
@@ -496,9 +496,15 @@ private struct EpisodeViewBody: View {
             Task { await model.openEpisode(destination) }
         } label: {
             HStack(spacing: 5) {
-                if isPrevious { Image(systemName: "chevron.backward") }
+                if isPrevious {
+                    Image(systemName: "chevron.backward")
+                        .foregroundStyle(.secondary)
+                }
                 Text(number)
-                if !isPrevious { Image(systemName: "chevron.forward") }
+                if !isPrevious {
+                    Image(systemName: "chevron.forward")
+                        .foregroundStyle(.secondary)
+                }
             }
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(destination == nil ? .secondary : .primary)
