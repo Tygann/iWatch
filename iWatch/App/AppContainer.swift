@@ -354,31 +354,41 @@ final class AppContainer {
 
             let sandboxShows = Array(items.1.prefix(6))
             let now = Date()
-            var watchedEpisodes: [EpisodeDetails] = []
-            for show in sandboxShows {
-                guard watchedEpisodes.count < 3 else { break }
+            // Keep the title lengths useful for Canvas comparisons across trending refreshes.
+            let historySamples: [(showID: Int, nextEpisode: Int)] = [
+                (84773, 2),  // The Lord of the Rings: The Rings of Power
+                (136315, 2), // The Bear
+                (73107, 4)   // Barry
+            ]
+            var watchHistory: [(episode: EpisodeDetails, watchedAt: Date)] = []
+            for (index, sample) in historySamples.enumerated() {
                 try Task.checkCancellation()
-                guard let episodes = try? await libraryRepository.episodes(for: show.mediaID, seasonNumber: 1) else {
+                let showID = MediaID(kind: .show, id: sample.showID)
+                guard let episodes = try? await libraryRepository.episodes(for: showID, seasonNumber: 1) else {
                     continue
                 }
                 let released = episodes.filter {
                     EpisodeAvailability.isReleased(airDate: $0.airDate, airedAt: $0.airedAt, relativeTo: now)
                 }
-                guard released.count >= 2,
-                      let first = released.min(by: { $0.episodeNumber < $1.episodeNumber }) else { continue }
-                watchedEpisodes.append(first)
+                let watched = released.filter { $0.episodeNumber < sample.nextEpisode }
+                guard !watched.isEmpty,
+                      released.contains(where: { $0.episodeNumber == sample.nextEpisode }),
+                      (try? await libraryRepository.mediaDetails(for: showID)) != nil else { continue }
+
+                let watchedAt = now.addingTimeInterval(-Double(index) * 3600)
+                watchHistory += watched.map { (episode: $0, watchedAt: watchedAt) }
             }
 
             try Task.checkCancellation()
             let context = persistence.makeContext()
-            for episode in watchedEpisodes {
+            for (episode, watchedAt) in watchHistory {
                 context.insert(WatchedEventRecord(
                     kind: .episode,
                     tmdbID: episode.id,
                     showTMDbID: episode.showId,
                     seasonNumber: episode.seasonNumber,
                     episodeNumber: episode.episodeNumber,
-                    watchedAt: now
+                    watchedAt: watchedAt
                 ))
             }
             for item in Array(items.0.prefix(6)) + sandboxShows {
