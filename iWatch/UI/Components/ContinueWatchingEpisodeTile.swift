@@ -24,12 +24,12 @@ struct ContinueWatchingEpisodeTile<ExtraMenu: View>: View {
                 artwork
                     .matchedTransitionSource(id: transitionID, in: navigation)
                 Text(showTitle)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(2)
+                    .font(.caption)
+                    .lineLimit(1)
                     .foregroundStyle(.primary)
                 Text(episodeName ?? "")
                     .font(.caption)
-                    .lineLimit(2)
+                    .lineLimit(1)
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(episodeName?.isEmpty != false)
             }
