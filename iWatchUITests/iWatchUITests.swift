@@ -34,11 +34,14 @@ final class iWatchUITests: XCTestCase {
         app.launchArguments += ["UITEST_MODE", "UITEST_START_ON_SHOWS", "UITEST_QUICK_WATCH"]
         if accessibility { app.launchArguments.append("UITEST_ACCESSIBILITY_TEXT") }
         app.launch()
-        let markSecond = app.buttons["Mark UI Test Show, Season 1 Episode 2 watched"]
+        let markSecond = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "episode-preview-watch-")).firstMatch
         XCTAssertTrue(markSecond.waitForExistence(timeout: 10))
         capture(app, "Quick watch cards - \(accessibility)")
+        XCTAssertEqual(markSecond.label, "Mark UI Test Show, Season 1 Episode 2 watched")
+        XCTAssertTrue(app.staticTexts["Second Look"].exists)
         markSecond.tap()
-        let markThird = app.buttons["Mark UI Test Show, Season 1 Episode 3 watched"]
+        let markThird = app.buttons.matching(NSPredicate(format: "label == %@ AND identifier BEGINSWITH %@",
+            "Mark UI Test Show, Season 1 Episode 3 watched", "episode-preview-watch-")).firstMatch
         XCTAssertTrue(markThird.waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["Mark Watched"].exists)
         capture(app, "Quick watch confirmation - \(accessibility)")

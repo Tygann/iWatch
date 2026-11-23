@@ -284,6 +284,7 @@ private struct ShowsViewBody: View {
                     if let next = item.progress.nextEpisode {
                         ContinueWatchingEpisodeTile(
                             showTitle: item.title,
+                            episodeName: next.name,
                             episodeRef: EpisodeRef(
                                 showId: item.mediaID.tmdbID,
                                 showTraktID: item.mediaID.traktID,
@@ -299,6 +300,16 @@ private struct ShowsViewBody: View {
                         )
                         .accessibilityLabel("\(item.title), Season \(next.season) Episode \(next.episode), Episode Preview")
                         .accessibilityIdentifier("continue-watching-episode-\(item.id)")
+                        .overlay(alignment: .topTrailing) {
+                            QuickEpisodeWatchButton(
+                                showTitle: item.title, season: next.season,
+                                episode: next.episode,
+                                isWorking: model.markingShowIDs.contains(item.id)
+                            ) {
+                                Task { await model.markNextEpisodeWatched(for: item, showsFeedback: true) }
+                            }
+                            .accessibilityIdentifier("episode-preview-watch-\(item.id)")
+                        }
                     }
                 }
             }

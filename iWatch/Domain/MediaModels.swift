@@ -229,6 +229,7 @@ struct ShowProgress: Codable, Equatable, Sendable {
         let airDate: Date?
         let airedAt: Date?
         let stillPath: String?
+        let name: String?
 
         nonisolated init(
             tmdbID: Int,
@@ -237,7 +238,8 @@ struct ShowProgress: Codable, Equatable, Sendable {
             episode: Int,
             airDate: Date?,
             airedAt: Date?,
-            stillPath: String? = nil
+            stillPath: String? = nil,
+            name: String? = nil
         ) {
             self.tmdbID = tmdbID
             self.traktID = traktID
@@ -246,6 +248,7 @@ struct ShowProgress: Codable, Equatable, Sendable {
             self.airDate = airDate
             self.airedAt = airedAt
             self.stillPath = stillPath
+            self.name = name
         }
     }
 

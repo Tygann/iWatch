@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContinueWatchingEpisodeTile<ExtraMenu: View>: View {
     let showTitle: String
+    var episodeName: String? = nil
     let episodeRef: EpisodeRef
     let stillPath: String?
     let fallbackPosterPath: String?
@@ -19,8 +20,19 @@ struct ContinueWatchingEpisodeTile<ExtraMenu: View>: View {
             EpisodeView(ref: episodeRef)
                 .navigationTransition(.zoom(sourceID: transitionID, in: navigation))
         } label: {
-            artwork
-                .matchedTransitionSource(id: transitionID, in: navigation)
+            VStack(alignment: .leading, spacing: 4) {
+                artwork
+                    .matchedTransitionSource(id: transitionID, in: navigation)
+                Text(showTitle)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                if let episodeName, !episodeName.isEmpty {
+                    Text(episodeName)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: width, alignment: .leading)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(showTitle), Season \(episodeRef.season) Episode \(episodeRef.episode), Continue Watching")
