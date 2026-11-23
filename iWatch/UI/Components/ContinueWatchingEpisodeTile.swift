@@ -58,6 +58,18 @@ struct ContinueWatchingEpisodeTile<ExtraMenu: View>: View {
                 blursFooter: true
             )
 
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .opacity(0.65)
+                .mask {
+                    LinearGradient(
+                        colors: [.clear, .black],
+                        startPoint: UnitPoint(x: 0.5, y: 0.62),
+                        endPoint: UnitPoint(x: 0.5, y: 0.94)
+                    )
+                }
+                .allowsHitTesting(false)
+
             LinearGradient(
                 colors: [.clear, .black.opacity(0.32)],
                 startPoint: UnitPoint(x: 0.5, y: 0.64),
@@ -74,6 +86,18 @@ struct ContinueWatchingEpisodeTile<ExtraMenu: View>: View {
         }
         .frame(width: width, height: height)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [.clear, .white.opacity(0.2)],
+                        startPoint: UnitPoint(x: 0.5, y: 0.72),
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 0.5
+                )
+                .allowsHitTesting(false)
+        }
     }
 
     private var transitionID: MediaTileTransitionID {
