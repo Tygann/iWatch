@@ -41,6 +41,10 @@ struct ContinueWatchingEpisodeTile<ExtraMenu: View>: View {
         .buttonStyle(.plain)
         .accessibilityLabel("\(showTitle), Season \(episodeRef.season) Episode \(episodeRef.episode), Continue Watching")
         .contextMenu {
+            if !usesFrostedFooter {
+                Text(remainingEpisodes == 1 ? "1 Episode Remaining" : "\(remainingEpisodes) Episodes Remaining")
+                Divider()
+            }
             NavigationLink {
                 EpisodeView(ref: episodeRef)
             } label: {
@@ -229,7 +233,7 @@ struct EpisodeWatchButton: View {
                         Circle()
                             .inset(by: ringWidth / 2)
                             .trim(from: 0, to: progress)
-                            .stroke(Color.accentColor, style: StrokeStyle(lineWidth: ringWidth, lineCap: .round))
+                            .stroke(.white, style: StrokeStyle(lineWidth: ringWidth, lineCap: .round))
                             .rotationEffect(.degrees(-90))
                             .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: progress)
                     }
