@@ -192,7 +192,7 @@ final class AppSession {
     func showEpisodeWatchSuccess(showTitle: String, season: Int, episode: Int,
                                  undo: (@MainActor () async -> Void)? = nil) {
         showWatchSuccess(
-            "S\(season) E\(episode) marked watched",
+            "S\(season) E\(episode) Watched",
             accessibilityMessage: "\(showTitle), season \(season) episode \(episode), marked watched",
             undo: undo
         )

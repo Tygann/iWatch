@@ -50,7 +50,7 @@ struct LibraryPreviewTests {
     }
 
     @Test
-    func nextEpisodeSkipsWatchedAndUnreleasedAndCrossesSeasons() async throws {
+    func adjacentReleasedEpisodesIncludeWatchedAndCrossSeasons() async throws {
         let container = AppContainer.preview()
         let context = container.persistence.makeContext()
         let show = 90001
@@ -69,11 +69,14 @@ struct LibraryPreviewTests {
         rows.forEach(context.insert(_:))
         try context.save()
         try await container.libraryRepository.addWatchEvent(for: MediaID(kind: .episode, id: 90013), watchedAt: .now)
-        let next = try await container.libraryRepository.nextUnwatchedEpisode(after:
+        let adjacent = try container.libraryRepository.adjacentReleasedEpisodes(to:
             EpisodeRef(showId: show, season: 1, episode: 2))
-        #expect(next?.seasonNumber == 2 && next?.episodeNumber == 1)
-        #expect(try await container.libraryRepository.nextUnwatchedEpisode(after:
-            EpisodeRef(showId: show, season: 2, episode: 1)) == nil)
+        #expect(adjacent.previous?.id == 90011)
+        #expect(adjacent.next?.id == 90013)
+        let boundary = try container.libraryRepository.adjacentReleasedEpisodes(to:
+            EpisodeRef(showId: show, season: 2, episode: 1))
+        #expect(boundary.previous?.id == 90013)
+        #expect(boundary.next == nil)
     }
 
     @Test

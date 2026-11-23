@@ -733,22 +733,40 @@ final class LibraryRepository {
         )
     }
 
-    /// Released, unwatched successor in episode order, including season boundaries.
-    func nextUnwatchedEpisode(after ref: EpisodeRef) async throws -> EpisodeDetails? {
-        let context = try persistence.makeMetadataContext()
+    /// Fill in the current season and its nearest neighbors when opened from a cold cache.
+    func prepareAdjacentEpisodeCatalog(for ref: EpisodeRef) async {
         let showID = MediaID(kind: .show, id: ref.showId, traktID: ref.showTraktID)
-        let rows = allEpisodeRecords(forShowID: ref.showId, context: context)
-        let events = watchedEventRecords(forShowID: ref.showId, context: context).filter { !$0.tombstoned }
-        let progress = makeShowProgress(for: showID, media: mediaRecord(for: showID, context: context),
-            episodeRows: rows, events: events)
-        return rows.filter {
-            $0.seasonNumber > 0 &&
-            ($0.seasonNumber, $0.episodeNumber) > (ref.season, ref.episode) &&
-            EpisodeAvailability.isReleased(airDate: $0.airDate, airedAt: $0.airedAt) &&
-            !progress.watchedEpisodeKeys.contains("ep:\(ref.showId):S\($0.seasonNumber):E\($0.episodeNumber)")
+        guard let context = try? persistence.makeMetadataContext(),
+              let show = mediaRecord(for: showID, context: context),
+              let seasons = decodeSeasons(show.seasonsData) else { return }
+
+        let regularSeasons = seasons.filter { $0.seasonNumber > 0 }
+        let nearbySeasons = [
+            regularSeasons.filter { $0.seasonNumber < ref.season }.max { $0.seasonNumber < $1.seasonNumber },
+            seasons.first { $0.seasonNumber == ref.season },
+            regularSeasons.filter { $0.seasonNumber > ref.season }.min { $0.seasonNumber < $1.seasonNumber }
+        ].compactMap { $0 }
+        for season in nearbySeasons {
+            guard !Task.isCancelled else { return }
+            let cached = (try? cachedEpisodes(for: showID, seasonNumber: season.seasonNumber)) ?? []
+            if cached.isEmpty || season.episodeCount.map({ cached.count < $0 }) == true {
+                _ = try? await episodes(for: showID, seasonNumber: season.seasonNumber)
+            }
         }
-        .sorted { ($0.seasonNumber, $0.episodeNumber) < ($1.seasonNumber, $1.episodeNumber) }
-        .first.map(mapEpisodeRecord(_:))
+    }
+
+    /// Neighboring released episodes in season and episode order.
+    func adjacentReleasedEpisodes(to ref: EpisodeRef) throws -> (previous: EpisodeDetails?, next: EpisodeDetails?) {
+        let context = try persistence.makeMetadataContext()
+        let released = allEpisodeRecords(forShowID: ref.showId, context: context).filter {
+            $0.seasonNumber > 0 && EpisodeAvailability.isReleased(airDate: $0.airDate, airedAt: $0.airedAt)
+        }
+        let position = (ref.season, ref.episode)
+        let previous = released.filter { ($0.seasonNumber, $0.episodeNumber) < position }
+            .max { ($0.seasonNumber, $0.episodeNumber) < ($1.seasonNumber, $1.episodeNumber) }
+        let next = released.filter { ($0.seasonNumber, $0.episodeNumber) > position }
+            .min { ($0.seasonNumber, $0.episodeNumber) < ($1.seasonNumber, $1.episodeNumber) }
+        return (previous.map(mapEpisodeRecord(_:)), next.map(mapEpisodeRecord(_:)))
     }
 
     private func makeShowProgress(for showID: MediaID,

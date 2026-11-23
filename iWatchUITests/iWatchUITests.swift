@@ -54,24 +54,27 @@ final class iWatchUITests: XCTestCase {
         XCTAssertTrue(mark.waitForExistence(timeout: 5))
         let share = app.buttons["Share"]
         XCTAssertTrue(share.exists)
-        XCTAssertEqual(mark.frame.height, share.frame.height, accuracy: 1)
+        XCTAssertGreaterThanOrEqual(share.frame.height, 44)
         XCTAssertEqual(share.frame.width, share.frame.height, accuracy: 1)
         capture(app, "Matched episode action sizes - \(accessibility)")
-        mark.tap()
-        let next = app.buttons["Next Episode · S1 E3"]
+        let next = app.buttons["Next Episode"]
         for _ in 0..<5 {
             if next.isHittable { break }
             app.swipeUp()
         }
-        XCTAssertTrue(next.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["Watched"].exists)
+        XCTAssertTrue(next.isEnabled)
+        XCTAssertTrue(app.buttons["Previous Episode"].isEnabled)
+        mark.tap()
+        XCTAssertTrue(app.buttons["Watched"].waitForExistence(timeout: 5))
         capture(app, "Explicit next episode - \(accessibility)")
         next.tap()
         XCTAssertTrue(app.staticTexts["S1 E3 • Third Time"].waitForExistence(timeout: 5))
         XCTAssertTrue(mark.waitForExistence(timeout: 5))
         mark.tap()
         XCTAssertTrue(app.buttons["Watched"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Next Episode'")).firstMatch.exists)
+        XCTAssertFalse(next.isEnabled)
+        app.buttons["Previous Episode"].tap()
+        XCTAssertTrue(app.staticTexts["S1 E2 • Second Look"].waitForExistence(timeout: 5))
         app.navigationBars.buttons["Shows"].tap()
         XCTAssertFalse(markThird.exists)
         app.terminate()

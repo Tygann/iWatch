@@ -26,6 +26,7 @@ private final class EpisodeScreenModel {
     var watchEventID: UUID?
     var isWatched = false
     var isUpdatingWatch = false
+    var previousEpisode: EpisodeDetails?
     var nextEpisode: EpisodeDetails?
     var watchConfirmation: EpisodeWatchConfirmation?
     var showFullOverview = false
@@ -84,6 +85,11 @@ private final class EpisodeScreenModel {
             }
 
             await refreshLibraryState()
+            let loadedRef = ref
+            await libraryRepository.prepareAdjacentEpisodeCatalog(for: loadedRef)
+            if !Task.isCancelled, ref == loadedRef {
+                refreshEpisodeNavigation()
+            }
         } catch {
             guard !error.isCancelled else { loadState = previous; return }
             present(error, context: .details)
@@ -97,27 +103,31 @@ private final class EpisodeScreenModel {
         } else {
             isWatched = await libraryRepository.isEpisodeWatched(ref)
         }
-        nextEpisode = nil
-        if isWatched {
-            do {
-                nextEpisode = try await libraryRepository.nextUnwatchedEpisode(after: ref)
-            } catch { present(error) }
-        }
+        refreshEpisodeNavigation()
     }
 
-    func openNextEpisode() async {
-        guard let nextEpisode, !isUpdatingWatch else { return }
+    private func refreshEpisodeNavigation() {
+        do {
+            let adjacent = try libraryRepository.adjacentReleasedEpisodes(to: ref)
+            previousEpisode = adjacent.previous
+            nextEpisode = adjacent.next
+        } catch { present(error) }
+    }
+
+    func openEpisode(_ destination: EpisodeDetails) async {
+        guard !isUpdatingWatch else { return }
         isUpdatingWatch = true
         defer { isUpdatingWatch = false }
         ref = EpisodeRef(
             showId: ref.showId,
-            showTraktID: ref.showTraktID ?? nextEpisode.showTraktID,
-            season: nextEpisode.seasonNumber,
-            episode: nextEpisode.episodeNumber,
-            tmdbID: nextEpisode.id,
-            traktID: nextEpisode.traktID
+            showTraktID: ref.showTraktID ?? destination.showTraktID,
+            season: destination.seasonNumber,
+            episode: destination.episodeNumber,
+            tmdbID: destination.id,
+            traktID: destination.traktID
         )
-        self.nextEpisode = nil
+        previousEpisode = nil
+        nextEpisode = nil
         loadState = .idle
         watchEventID = nil
         isWatched = false
@@ -287,9 +297,6 @@ private struct EpisodeViewBody: View {
                         VStack(alignment: .leading, spacing: 16) {
                             metadataSection(details)
                             actionsSection(details)
-                            if let next = model.nextEpisode {
-                                nextEpisodeRow(next)
-                            }
                             overviewSection(details)
                             creditsSection(details)
                         }
@@ -335,38 +342,6 @@ private struct EpisodeViewBody: View {
     }
 
     // MARK: - Banner Section
-    private func nextEpisodeRow(_ next: EpisodeDetails) -> some View {
-        let number = "S\(next.seasonNumber) E\(next.episodeNumber)"
-        let name = next.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return Button {
-            showsNavigationTitle = false
-            Task { await model.openNextEpisode() }
-        } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Next Episode")
-                        .font(.subheadline.weight(.semibold))
-                    Text(name.isEmpty ? number : "\(number) • \(name)")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                .multilineTextAlignment(.leading)
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-            }
-            .padding(.vertical, 4)
-            .frame(minHeight: 44)
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Next Episode · \(number)")
-        .accessibilityValue(name)
-        .disabled(model.isUpdatingWatch)
-    }
-
     @ViewBuilder
     private func bannerSection(_ details: EpisodeDetails) -> some View {
         if let stillPath = details.stillPath {
@@ -459,19 +434,45 @@ private struct EpisodeViewBody: View {
 
             if !dynamicTypeSize.isAccessibilitySize { Spacer() }
 
-            ShareLink(item: model.shareText, subject: Text(details.name.isEmpty ? "Episode" : details.name)) {
-                Label("Share", systemImage: "square.and.arrow.up.fill")
-                    .fontWeight(.semibold)
-                    .labelStyle(.iconOnly)
-                    .foregroundStyle(.white)
-                    .font(.system(size: 22))
-                    .frame(width: primaryActionHeight, height: primaryActionHeight)
-                    .glassEffect(.regular.interactive(), in: .circle)
-                    .contentShape(.circle)
+            HStack(spacing: 8) {
+                episodeNavigationButton("Previous Episode", symbol: "chevron.left", destination: model.previousEpisode)
+                episodeNavigationButton("Next Episode", symbol: "chevron.right", destination: model.nextEpisode)
+                ShareLink(item: model.shareText, subject: Text(details.name.isEmpty ? "Episode" : details.name)) {
+                    Label("Share", systemImage: "square.and.arrow.up.fill")
+                        .labelStyle(.iconOnly)
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: actionCircleSize, height: actionCircleSize)
+                        .glassEffect(.regular.interactive(), in: .circle)
+                        .contentShape(.circle)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Share")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Share")
         }
+    }
+
+    private var actionCircleSize: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 44 : max(44, primaryActionHeight)
+    }
+
+    private func episodeNavigationButton(_ title: LocalizedStringKey, symbol: String, destination: EpisodeDetails?) -> some View {
+        Button {
+            guard let destination else { return }
+            showsNavigationTitle = false
+            Task { await model.openEpisode(destination) }
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(destination == nil ? .secondary : .primary)
+                .frame(width: actionCircleSize, height: actionCircleSize)
+                .glassEffect(.regular.interactive(), in: .circle)
+                .contentShape(.circle)
+        }
+        .buttonStyle(.plain)
+        .disabled(destination == nil || model.isUpdatingWatch)
+        .accessibilityLabel(Text(title))
+        .accessibilityValue(destination.map { "S\($0.seasonNumber) E\($0.episodeNumber) \($0.name)" } ?? "")
     }
 
     // MARK: - Overview Section
