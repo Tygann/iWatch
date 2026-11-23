@@ -54,26 +54,22 @@ struct ContinueWatchingEpisodeTile<ExtraMenu: View>: View {
                 fallbackPosterPath: fallbackPosterPath,
                 width: width,
                 height: height,
-                cornerRadius: cornerRadius
+                cornerRadius: cornerRadius,
+                blursFooter: true
             )
-
-            Rectangle()
-                .fill(.regularMaterial)
-                .mask(footerFadeMask)
-                .allowsHitTesting(false)
 
             LinearGradient(
                 colors: [.clear, .black.opacity(0.32)],
-                startPoint: .top,
+                startPoint: UnitPoint(x: 0.5, y: 0.64),
                 endPoint: .bottom
             )
-            .mask(footerFadeMask)
             .allowsHitTesting(false)
 
             Text(episodeMetadata)
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(.white)
-                .padding(7)
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.85))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
                 .allowsHitTesting(false)
         }
         .frame(width: width, height: height)
@@ -88,19 +84,6 @@ struct ContinueWatchingEpisodeTile<ExtraMenu: View>: View {
         let episode = "S\(episodeRef.season) E\(episodeRef.episode)"
         guard remainingEpisodes > 1 else { return episode }
         return "\(episode) • \(remainingEpisodes) Remaining"
-    }
-
-    private var footerFadeMask: some View {
-        LinearGradient(
-            stops: [
-                .init(color: .clear, location: 0.54),
-                .init(color: .black.opacity(0.28), location: 0.66),
-                .init(color: .black.opacity(0.85), location: 0.84),
-                .init(color: .black, location: 1)
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
     }
 }
 
