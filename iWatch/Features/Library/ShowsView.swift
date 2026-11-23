@@ -234,7 +234,6 @@ private struct ShowsViewBody: View {
                             }
                         }
                         continueWatchingEpisodeSection
-                        continueWatchingSection
                         comingUpSection
                         librarySection(title: "Not Started", items: model.snapshot.watchlist)
                         librarySection(title: "Caught Up", items: model.snapshot.caughtUp)
@@ -274,7 +273,7 @@ private struct ShowsViewBody: View {
     private var continueWatchingEpisodeSection: some View {
         let usesFrostedFooter = false
         if !model.snapshot.continueWatching.isEmpty {
-            MediaCollectionRow(title: "Continue Watching · Episodes", alignment: .top) {
+            MediaCollectionRow(title: "Continue Watching", alignment: .top) {
                 WatchlistView(
                     kind: .show,
                     initialShowItems: model.continueWatchingItems,
@@ -300,7 +299,6 @@ private struct ShowsViewBody: View {
                             usesFrostedFooter: usesFrostedFooter,
                             extraMenu: { continueWatchingMenu(for: item) }
                         )
-                        .accessibilityLabel("\(item.title), Season \(next.season) Episode \(next.episode), Episode Preview")
                         .accessibilityIdentifier("continue-watching-episode-\(item.id)")
                         .overlay(alignment: .topTrailing) {
                             QuickEpisodeWatchButton(
@@ -321,6 +319,7 @@ private struct ShowsViewBody: View {
         }
     }
 
+    // Retained for future use as an alternate poster row.
     @ViewBuilder
     private var continueWatchingSection: some View {
         if !model.snapshot.continueWatching.isEmpty {

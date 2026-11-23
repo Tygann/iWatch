@@ -174,7 +174,7 @@ final class iWatchUITests: XCTestCase {
             app.launch()
             XCTAssertTrue(app.buttons["UI Test Show, Season 1 Episode 2, Continue Watching"]
                 .waitForExistence(timeout: 10), "Shows must load after cold launch \(attempt)")
-            XCTAssertTrue(app.buttons["Continue Watching · Episodes"].exists)
+            XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label == %@", "Continue Watching")).count, 1)
             XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@",
                 "continue-watching-episode-")).count, 1)
             capture(app, "Cold launch Shows - \(accessibility) - \(attempt)")
