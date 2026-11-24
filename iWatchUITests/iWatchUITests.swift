@@ -526,6 +526,26 @@ final class iWatchUITests: XCTestCase {
     }
 
     @MainActor
+    func testGuestAccountAtStandardAndAccessibilityTextSizes() {
+        for contentSize in ["UICTContentSizeCategoryL", "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"] {
+            let app = launchSyncSettings(contentSize: contentSize, state: "normal")
+            let account = app.buttons["settings-account"]
+            XCTAssertTrue(account.waitForExistence(timeout: 5))
+            XCTAssertTrue(account.isHittable)
+            account.tap()
+
+            let accountBar = app.navigationBars["Account"]
+            XCTAssertTrue(accountBar.waitForExistence(timeout: 5))
+            XCTAssertTrue(app.staticTexts["Guest"].isHittable)
+            XCTAssertTrue(app.staticTexts["You can use iWatch without an account."].isHittable)
+
+            accountBar.buttons.firstMatch.tap()
+            XCTAssertTrue(account.isHittable)
+            app.terminate()
+        }
+    }
+
+    @MainActor
     func testSettingsNavigation() throws {
         let app = XCUIApplication()
         app.launchArguments.append("UITEST_MODE")

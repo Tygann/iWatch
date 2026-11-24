@@ -24,6 +24,14 @@ struct SettingsView: View {
     // MARK: - Body
     var body: some View {
         Form {
+            Section {
+                NavigationLink {
+                    AccountView()
+                } label: {
+                    SettingsNavigationLabel(title: "Account", systemImage: "person.crop.circle", detail: "Guest")
+                }
+                .accessibilityIdentifier("settings-account")
+            }
             librarySection
             preferencesSection
             appSection
