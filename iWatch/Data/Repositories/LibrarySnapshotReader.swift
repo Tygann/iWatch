@@ -10,6 +10,13 @@ actor LibrarySnapshotReader {
         self.persistence = persistence
     }
 
+    func readMetadata<Value: Sendable>(
+        _ read: @Sendable (ModelContext) throws -> Value
+    ) throws -> Value {
+        try Task.checkCancellation()
+        return try read(persistence.makeMetadataContext())
+    }
+
     func episodeCounts(for showID: Int, seasons: [Int]) throws -> [Int: Int] {
         let context = try persistence.makeMetadataContext()
         var counts: [Int: Int] = [:]

@@ -69,11 +69,11 @@ struct LibraryPreviewTests {
         rows.forEach(context.insert(_:))
         try context.save()
         try await container.libraryRepository.addWatchEvent(for: MediaID(kind: .episode, id: 90013), watchedAt: .now)
-        let adjacent = try container.libraryRepository.adjacentReleasedEpisodes(to:
+        let adjacent = try await container.libraryRepository.adjacentReleasedEpisodes(to:
             EpisodeRef(showId: show, season: 1, episode: 2))
         #expect(adjacent.previous?.id == 90011)
         #expect(adjacent.next?.id == 90013)
-        let boundary = try container.libraryRepository.adjacentReleasedEpisodes(to:
+        let boundary = try await container.libraryRepository.adjacentReleasedEpisodes(to:
             EpisodeRef(showId: show, season: 2, episode: 1))
         #expect(boundary.previous?.id == 90013)
         #expect(boundary.next == nil)

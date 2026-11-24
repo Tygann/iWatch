@@ -26,6 +26,7 @@ private final class EpisodeScreenModel {
     var watchEventID: UUID?
     var isWatched = false
     var isUpdatingWatch = false
+    private(set) var isWatchStateReady = false
     var previousEpisode: EpisodeDetails?
     var nextEpisode: EpisodeDetails?
     var watchConfirmation: EpisodeWatchConfirmation?
@@ -69,49 +70,72 @@ private final class EpisodeScreenModel {
     }
 
     func load(forceRefresh: Bool = false) async {
+        let requestedRef = ref
         let previous = loadState
         operationError = nil
         if details == nil { loadState = .loading }
 
         do {
-            let details = try await contentRepository.episodeDetails(for: ref, forceRefresh: forceRefresh)
+            let details = try await contentRepository.episodeDetails(for: requestedRef, forceRefresh: forceRefresh) {
+                guard ref == requestedRef else { return }
+                loadState = .loaded($0)
+            }
+            try Task.checkCancellation()
+            guard ref == requestedRef else { return }
             loadState = .loaded(details)
-
-            if showTitle.isEmpty,
-               case let .show(show) = try await contentRepository.details(
-                for: MediaID(kind: .show, id: ref.showId, traktID: ref.showTraktID)
-               ) {
-                showTitle = show.common.title
-            }
-
-            await refreshLibraryState()
-            let loadedRef = ref
-            await libraryRepository.prepareAdjacentEpisodeCatalog(for: loadedRef)
-            if !Task.isCancelled, ref == loadedRef {
-                refreshEpisodeNavigation()
-            }
         } catch {
+            guard ref == requestedRef else { return }
             guard !error.isCancelled else { loadState = previous; return }
             present(error, context: .details)
+            guard details != nil else { return }
+        }
+
+        await refreshLibraryState()
+        guard !Task.isCancelled, ref == requestedRef else { return }
+
+        if showTitle.isEmpty {
+            let title = try? await libraryRepository.cachedShowTitle(for: showRef)
+            if let title, !title.isEmpty {
+                showTitle = title
+            } else if case let .show(show)? = try? await contentRepository.details(for: showRef) {
+                showTitle = show.common.title
+            }
+        }
+
+        guard !Task.isCancelled, ref == requestedRef else { return }
+        await libraryRepository.prepareAdjacentEpisodeCatalog(for: requestedRef)
+        if !Task.isCancelled, ref == requestedRef {
+            await refreshEpisodeNavigation()
         }
     }
 
     func refreshLibraryState() async {
+        let requestedRef = ref
         if let details {
-            watchEventID = await libraryRepository.latestWatchEventID(for: details.mediaID)
-            isWatched = watchEventID != nil
+            let eventID = await libraryRepository.latestWatchEventID(for: details.mediaID)
+            guard !Task.isCancelled, ref == requestedRef else { return }
+            watchEventID = eventID
+            isWatched = eventID != nil
+            isWatchStateReady = true
         } else {
-            isWatched = await libraryRepository.isEpisodeWatched(ref)
+            let watched = await libraryRepository.isEpisodeWatched(requestedRef)
+            guard !Task.isCancelled, ref == requestedRef else { return }
+            isWatched = watched
         }
-        refreshEpisodeNavigation()
+        await refreshEpisodeNavigation()
     }
 
-    private func refreshEpisodeNavigation() {
+    private func refreshEpisodeNavigation() async {
+        let requestedRef = ref
         do {
-            let adjacent = try libraryRepository.adjacentReleasedEpisodes(to: ref)
+            let adjacent = try await libraryRepository.adjacentReleasedEpisodes(to: requestedRef)
+            guard !Task.isCancelled, ref == requestedRef else { return }
             previousEpisode = adjacent.previous
             nextEpisode = adjacent.next
-        } catch { present(error) }
+        } catch {
+            guard ref == requestedRef else { return }
+            present(error)
+        }
     }
 
     func openEpisode(_ destination: EpisodeDetails) async {
@@ -131,12 +155,13 @@ private final class EpisodeScreenModel {
         loadState = .idle
         watchEventID = nil
         isWatched = false
+        isWatchStateReady = false
         showFullOverview = false
         await load()
     }
 
     func requestToggleWatched() async {
-        guard !isUpdatingWatch else { return }
+        guard isWatchStateReady, !isUpdatingWatch else { return }
         isUpdatingWatch = true
         defer { isUpdatingWatch = false }
         operationError = nil
@@ -227,8 +252,6 @@ struct EpisodeView: View {
                 session: session
             )
             model = newModel
-            // Let SwiftUI commit the loading state before starting local persistence work.
-            await Task.yield()
             await newModel.load()
         }
         .toolbar {
@@ -452,7 +475,7 @@ private struct EpisodeViewBody: View {
                 .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil)
                 .padding(.horizontal, 6)
         }
-        .disabled(model.isUpdatingWatch)
+        .disabled(model.isUpdatingWatch || !model.isWatchStateReady)
         .buttonStyle(.borderedProminent)
         .tint(model.isWatched ? .accentColor : .secondary)
         .glassEffect(.regular, in: .capsule)

@@ -15,6 +15,7 @@ final class LibraryRepository {
     private var snapshotEpoch = UUID()
     private var lastPreviewScope: LibraryPreviewStore.Scope?
     private let snapshotReader: LibrarySnapshotReader
+    private let detailReader: LibrarySnapshotReader
     private var cachedMovieSnapshot: (revision: Int, scope: LibraryPreviewStore.Scope?, cachedAt: Date, items: [LibraryMovieItem])?
     private var cachedShowSnapshot: (revision: Int, scope: LibraryPreviewStore.Scope?, cachedAt: Date, snapshot: ShowLibrarySnapshot)?
     private var showSnapshotTask: (revision: Int, scope: LibraryPreviewStore.Scope?, token: UUID, task: Task<ShowLibrarySnapshot, Error>)?
@@ -41,6 +42,7 @@ final class LibraryRepository {
         self.accountKeyProvider = accountKeyProvider
         self.metadataFreshness = metadataFreshness ?? MetadataFreshnessStore()
         self.snapshotReader = LibrarySnapshotReader(persistence: persistence)
+        self.detailReader = LibrarySnapshotReader(persistence: persistence)
         self.lastPreviewScope = previewScope()
     }
 
@@ -115,16 +117,18 @@ final class LibraryRepository {
     // MARK: Details
 
     func mediaDetails(for id: MediaID, forceRefresh: Bool = false) async throws -> MediaDetails {
-        let context = try persistence.makeMetadataContext()
-        if !forceRefresh, let record = mediaRecord(for: id, context: context), isMediaRecordComplete(record) {
-            let cached = try mapMediaRecord(record)
+        if !forceRefresh, let cached = try await detailReader.readMetadata({ context -> (details: MediaDetails, refreshInterval: TimeInterval)? in
+            guard let record = self.mediaRecord(for: id, context: context),
+                  self.isMediaRecordComplete(record) else { return nil }
             let upcoming = record.releaseDate.map { $0 > Date() } ?? false
             let ended = ["ended", "canceled", "cancelled"].contains(record.statusRaw?.lowercased() ?? "")
             let interval: TimeInterval = upcoming ? 6 * 3600 : (id.kind == .show && !ended ? 12 * 3600 : 7 * 86400)
-            if metadataFreshness.needsRefresh(id.stableKey, after: interval) {
+            return (try self.mapMediaRecord(record), interval)
+        }) {
+            if metadataFreshness.needsRefresh(id.stableKey, after: cached.refreshInterval) {
                 Task { [weak self] in _ = try? await self?.refreshMediaDetails(for: id) }
             }
-            return cached
+            return cached.details
         }
         return try await refreshMediaDetails(for: id)
     }
@@ -160,24 +164,34 @@ final class LibraryRepository {
         }
     }
 
+    func cachedShowTitle(for id: MediaID) async throws -> String? {
+        try await detailReader.readMetadata { context in
+            self.mediaRecord(for: id, context: context)?.title
+        }
+    }
+
     func supplementaryDetails(for id: MediaID, regionCode: String) async throws -> MediaSupplementaryDetails {
         try await tmdb.supplementaryDetails(for: id, regionCode: regionCode)
     }
 
-    func cachedEpisodes(for showID: MediaID, seasonNumber: Int) throws -> [EpisodeDetails] {
-        let context = try persistence.makeMetadataContext()
-        return episodeRecords(forShowID: showID.tmdbID, seasonNumber: seasonNumber, context: context)
-            .map(mapEpisodeRecord(_:))
+    func cachedEpisodes(for showID: MediaID, seasonNumber: Int) async throws -> [EpisodeDetails] {
+        try await detailReader.readMetadata { context in
+            self.episodeRecords(forShowID: showID.tmdbID, seasonNumber: seasonNumber, context: context)
+                .map(self.mapEpisodeRecord(_:))
+        }
     }
 
     func episodes(for showID: MediaID, seasonNumber: Int, forceRefresh: Bool = false) async throws -> [EpisodeDetails] {
-        let context = try persistence.makeMetadataContext()
-        let cached = episodeRecords(forShowID: showID.tmdbID, seasonNumber: seasonNumber, context: context)
-        let expectedEpisodeCount = mediaRecord(for: showID, context: context)
-            .flatMap { decodeSeasons($0.seasonsData) }
-            .flatMap { seasons in
-                seasons.first { $0.seasonNumber == seasonNumber }?.episodeCount
-            }
+        let (cached, expectedEpisodeCount) = try await detailReader.readMetadata { context in
+            let episodes = self.episodeRecords(forShowID: showID.tmdbID, seasonNumber: seasonNumber, context: context)
+                .map(self.mapEpisodeRecord(_:))
+            let expected = self.mediaRecord(for: showID, context: context)
+                .flatMap { self.decodeSeasons($0.seasonsData) }
+                .flatMap { seasons in
+                    seasons.first { $0.seasonNumber == seasonNumber }?.episodeCount
+                }
+            return (episodes, expected)
+        }
         let seasonKey = "\(showID.tmdbID):\(seasonNumber)"
         let shouldRefresh = EpisodeSeasonCachePolicy.shouldRefresh(
             cachedCount: cached.count,
@@ -187,13 +201,13 @@ final class LibraryRepository {
         )
 
         if !forceRefresh, !shouldRefresh, !metadataFreshness.needsRefresh("season:\(seasonKey)", after: 12 * 3600) {
-            return cached.map(mapEpisodeRecord(_:))
+            return cached
         }
 
         let fresh: [EpisodeDetails]
         do { fresh = try await tmdb.seasonEpisodes(showId: showID.tmdbID, seasonNumber: seasonNumber) }
         catch {
-            if !forceRefresh, !cached.isEmpty { return cached.map(mapEpisodeRecord(_:)) }
+            if !forceRefresh, !cached.isEmpty { return cached }
             throw error
         }
         let enriched = await enrichingEpisodesWithAirtimes(fresh, showID: showID, seasonNumber: seasonNumber)
@@ -201,16 +215,15 @@ final class LibraryRepository {
         refreshedSeasonArtworkKeys.insert(seasonKey)
         metadataFreshness.markFetched("season:\(seasonKey)")
 
-        let refreshedContext = try persistence.makeMetadataContext()
-        return episodeRecords(forShowID: showID.tmdbID, seasonNumber: seasonNumber, context: refreshedContext)
-            .map(mapEpisodeRecord(_:))
+        return try await cachedEpisodes(for: showID, seasonNumber: seasonNumber)
     }
 
-    func episodeDetails(for ref: EpisodeRef, forceRefresh: Bool = false) async throws -> EpisodeDetails {
-        let context = try persistence.makeMetadataContext()
-        if !forceRefresh,
-           let record = episodeRecord(for: ref, context: context) {
-            let cached = mapEpisodeRecord(record)
+    func episodeDetails(
+        for ref: EpisodeRef, forceRefresh: Bool = false, onCached: (EpisodeDetails) -> Void = { _ in }
+    ) async throws -> EpisodeDetails {
+        if !forceRefresh, let cached = try await cachedEpisodeDetails(for: ref) {
+            try Task.checkCancellation()
+            onCached(cached)
             if hasRichEpisodeDetails(cached) {
                 let resource = "episode:\(ref.showId):\(ref.season):\(ref.episode)"
                 if metadataFreshness.needsRefresh(resource, after: 12 * 3600) {
@@ -239,11 +252,16 @@ final class LibraryRepository {
         metadataFreshness.markFetched("episode:\(ref.showId):\(ref.season):\(ref.episode)")
         onMetadataChanged?()
 
-        let refreshedContext = try persistence.makeMetadataContext()
-        guard let record = episodeRecord(for: ref, context: refreshedContext) else {
+        guard let cached = try await cachedEpisodeDetails(for: ref) else {
             throw AppError.unknown("Unable to cache episode details.")
         }
-        return mapEpisodeRecord(record)
+        return cached
+    }
+
+    private func cachedEpisodeDetails(for ref: EpisodeRef) async throws -> EpisodeDetails? {
+        try await detailReader.readMetadata { context in
+            self.episodeRecord(for: ref, context: context).map(self.mapEpisodeRecord(_:))
+        }
     }
 
     private func hasRichEpisodeDetails(_ episode: EpisodeDetails) -> Bool {
@@ -727,23 +745,24 @@ final class LibraryRepository {
     }
 
     func showProgress(for showID: MediaID) async throws -> ShowProgress {
-        let context = try persistence.makeMetadataContext()
-        let episodeRows = allEpisodeRecords(forShowID: showID.tmdbID, context: context)
-        let events = watchedEventRecords(forShowID: showID.tmdbID, context: context).filter { !$0.tombstoned }
-        return makeShowProgress(
-            for: showID,
-            media: mediaRecord(for: showID, context: context),
-            episodeRows: episodeRows,
-            events: events
-        )
+        try await detailReader.readMetadata { context in
+            let episodes = self.allEpisodeRecords(forShowID: showID.tmdbID, context: context)
+            let events = self.watchedEventRecords(forShowID: showID.tmdbID, context: context).filter { !$0.tombstoned }
+            return self.makeShowProgress(
+                for: showID,
+                media: self.mediaRecord(for: showID, context: context),
+                episodeRows: episodes,
+                events: events
+            )
+        }
     }
 
     /// Fill in the current season and its nearest neighbors when opened from a cold cache.
     func prepareAdjacentEpisodeCatalog(for ref: EpisodeRef) async {
         let showID = MediaID(kind: .show, id: ref.showId, traktID: ref.showTraktID)
-        guard let context = try? persistence.makeMetadataContext(),
-              let show = mediaRecord(for: showID, context: context),
-              let seasons = decodeSeasons(show.seasonsData) else { return }
+        guard let seasons = try? await detailReader.readMetadata({ context in
+            self.mediaRecord(for: showID, context: context).flatMap { self.decodeSeasons($0.seasonsData) }
+        }) else { return }
 
         let regularSeasons = seasons.filter { $0.seasonNumber > 0 }
         let nearbySeasons = [
@@ -751,30 +770,34 @@ final class LibraryRepository {
             seasons.first { $0.seasonNumber == ref.season },
             regularSeasons.filter { $0.seasonNumber > ref.season }.min { $0.seasonNumber < $1.seasonNumber }
         ].compactMap { $0 }
+        guard let counts = try? await detailReader.episodeCounts(
+            for: showID.tmdbID, seasons: nearbySeasons.map(\.seasonNumber)
+        ) else { return }
         for season in nearbySeasons {
             guard !Task.isCancelled else { return }
-            let cached = (try? cachedEpisodes(for: showID, seasonNumber: season.seasonNumber)) ?? []
-            if cached.isEmpty || season.episodeCount.map({ cached.count < $0 }) == true {
+            let cachedCount = counts[season.seasonNumber, default: 0]
+            if cachedCount == 0 || season.episodeCount.map({ cachedCount < $0 }) == true {
                 _ = try? await episodes(for: showID, seasonNumber: season.seasonNumber)
             }
         }
     }
 
     /// Neighboring released episodes in season and episode order.
-    func adjacentReleasedEpisodes(to ref: EpisodeRef) throws -> (previous: EpisodeDetails?, next: EpisodeDetails?) {
-        let context = try persistence.makeMetadataContext()
-        let released = allEpisodeRecords(forShowID: ref.showId, context: context).filter {
-            $0.seasonNumber > 0 && EpisodeAvailability.isReleased(airDate: $0.airDate, airedAt: $0.airedAt)
+    func adjacentReleasedEpisodes(to ref: EpisodeRef) async throws -> (previous: EpisodeDetails?, next: EpisodeDetails?) {
+        try await detailReader.readMetadata { context in
+            let released = self.allEpisodeRecords(forShowID: ref.showId, context: context).filter {
+                $0.seasonNumber > 0 && EpisodeAvailability.isReleased(airDate: $0.airDate, airedAt: $0.airedAt)
+            }
+            let position = (ref.season, ref.episode)
+            let previous = released.filter { ($0.seasonNumber, $0.episodeNumber) < position }
+                .max { ($0.seasonNumber, $0.episodeNumber) < ($1.seasonNumber, $1.episodeNumber) }
+            let next = released.filter { ($0.seasonNumber, $0.episodeNumber) > position }
+                .min { ($0.seasonNumber, $0.episodeNumber) < ($1.seasonNumber, $1.episodeNumber) }
+            return (previous.map(self.mapEpisodeRecord(_:)), next.map(self.mapEpisodeRecord(_:)))
         }
-        let position = (ref.season, ref.episode)
-        let previous = released.filter { ($0.seasonNumber, $0.episodeNumber) < position }
-            .max { ($0.seasonNumber, $0.episodeNumber) < ($1.seasonNumber, $1.episodeNumber) }
-        let next = released.filter { ($0.seasonNumber, $0.episodeNumber) > position }
-            .min { ($0.seasonNumber, $0.episodeNumber) < ($1.seasonNumber, $1.episodeNumber) }
-        return (previous.map(mapEpisodeRecord(_:)), next.map(mapEpisodeRecord(_:)))
     }
 
-    private func makeShowProgress(for showID: MediaID,
+    private nonisolated func makeShowProgress(for showID: MediaID,
                                   media: MediaRecord?,
                                   episodeRows: [EpisodeRecord],
                                   events: [WatchedEventRecord]) -> ShowProgress {
@@ -1198,7 +1221,7 @@ final class LibraryRepository {
         )
     }
 
-    private func isMediaRecordComplete(_ record: MediaRecord) -> Bool {
+    private nonisolated func isMediaRecordComplete(_ record: MediaRecord) -> Bool {
         guard !record.title.isEmpty, record.posterPath != nil else { return false }
 
         switch record.kind {
@@ -1215,7 +1238,7 @@ final class LibraryRepository {
         }
     }
 
-    private func mapMediaRecord(_ record: MediaRecord) throws -> MediaDetails {
+    private nonisolated func mapMediaRecord(_ record: MediaRecord) throws -> MediaDetails {
         let common = MediaCommon(
             id: record.tmdbID,
             traktID: record.traktID,
@@ -1258,7 +1281,7 @@ final class LibraryRepository {
         }
     }
 
-    private func mapEpisodeRecord(_ record: EpisodeRecord) -> EpisodeDetails {
+    private nonisolated func mapEpisodeRecord(_ record: EpisodeRecord) -> EpisodeDetails {
         let decoder = JSONDecoder()
         let extras = record.extrasData.flatMap { try? decoder.decode(EpisodeDetails.Extras.self, from: $0) }
         return EpisodeDetails(
@@ -1295,14 +1318,14 @@ final class LibraryRepository {
         return ShowStatusSnapshot(bucket: bucket, nextAirDate: nextAirDate)
     }
 
-    private func decodeSeasons(_ data: Data?) -> [StoredShowSeason]? {
+    private nonisolated func decodeSeasons(_ data: Data?) -> [StoredShowSeason]? {
         guard let data else { return nil }
         return try? JSONDecoder().decode([StoredShowSeason].self, from: data)
     }
 
     // MARK: Record Queries
 
-    private func mediaRecord(for id: MediaID, context: ModelContext) -> MediaRecord? {
+    private nonisolated func mediaRecord(for id: MediaID, context: ModelContext) -> MediaRecord? {
         let mediaKey = id.stableKey
         var descriptor = FetchDescriptor<MediaRecord>(
             predicate: #Predicate { $0.mediaKey == mediaKey }
@@ -1311,7 +1334,7 @@ final class LibraryRepository {
         return try? context.fetch(descriptor).first
     }
 
-    private func episodeRecord(for ref: EpisodeRef, context: ModelContext) -> EpisodeRecord? {
+    private nonisolated func episodeRecord(for ref: EpisodeRef, context: ModelContext) -> EpisodeRecord? {
         let showID = ref.showId
         let seasonNumber = ref.season
         let episodeNumber = ref.episode
@@ -1326,7 +1349,7 @@ final class LibraryRepository {
         return try? context.fetch(descriptor).first
     }
 
-    private func episodeRecord(forTMDbID tmdbID: Int, context: ModelContext) -> EpisodeRecord? {
+    private nonisolated func episodeRecord(forTMDbID tmdbID: Int, context: ModelContext) -> EpisodeRecord? {
         var descriptor = FetchDescriptor<EpisodeRecord>(
             predicate: #Predicate { $0.tmdbID == tmdbID }
         )
@@ -1394,11 +1417,11 @@ final class LibraryRepository {
         (try? context.fetch(FetchDescriptor<MediaRecord>())) ?? []
     }
 
-    private func allEpisodeRecords(context: ModelContext) -> [EpisodeRecord] {
+    private nonisolated func allEpisodeRecords(context: ModelContext) -> [EpisodeRecord] {
         (try? context.fetch(FetchDescriptor<EpisodeRecord>())) ?? []
     }
 
-    private func allEpisodeRecords(forShowID showID: Int, context: ModelContext) -> [EpisodeRecord] {
+    private nonisolated func allEpisodeRecords(forShowID showID: Int, context: ModelContext) -> [EpisodeRecord] {
         (try? context.fetch(FetchDescriptor<EpisodeRecord>(
             predicate: #Predicate { $0.showTMDbID == showID },
             sortBy: [
@@ -1408,7 +1431,7 @@ final class LibraryRepository {
         ))) ?? []
     }
 
-    private func episodeRecords(forShowID showID: Int, seasonNumber: Int, context: ModelContext) -> [EpisodeRecord] {
+    private nonisolated func episodeRecords(forShowID showID: Int, seasonNumber: Int, context: ModelContext) -> [EpisodeRecord] {
         (try? context.fetch(FetchDescriptor<EpisodeRecord>(
             predicate: #Predicate {
                 $0.showTMDbID == showID && $0.seasonNumber == seasonNumber
@@ -1435,7 +1458,7 @@ final class LibraryRepository {
             .filter { LibraryGenerationPolicy.belongsToCurrentGeneration($0.generationID, current: generationID) }
     }
 
-    private func watchedEventRecords(for id: MediaID, context: ModelContext) -> [WatchedEventRecord] {
+    private nonisolated func watchedEventRecords(for id: MediaID, context: ModelContext) -> [WatchedEventRecord] {
         let tmdbID = id.tmdbID
         let kindRaw = id.kind.rawValue
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
@@ -1445,7 +1468,7 @@ final class LibraryRepository {
         .filter { LibraryGenerationPolicy.belongsToCurrentGeneration($0.generationID, current: generationID) }
     }
 
-    private func watchedEventRecords(forShowID showID: Int, context: ModelContext) -> [WatchedEventRecord] {
+    private nonisolated func watchedEventRecords(forShowID showID: Int, context: ModelContext) -> [WatchedEventRecord] {
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
         return ((try? context.fetch(FetchDescriptor<WatchedEventRecord>(
             predicate: #Predicate { $0.showTMDbID == showID }
@@ -1478,5 +1501,5 @@ nonisolated enum EpisodeSeasonCachePolicy {
 }
 
 private extension Int {
-    var nonZero: Int? { self == 0 ? nil : self }
+    nonisolated var nonZero: Int? { self == 0 ? nil : self }
 }

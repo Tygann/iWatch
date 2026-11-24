@@ -102,7 +102,7 @@ struct ContentRecoveryTests {
     func cachedSeasonAppearsBeforeRefreshCompletes(fails: Bool) async throws {
         let container = AppContainer.preview()
         let showID = MediaID(kind: .show, id: 202, traktID: 2002)
-        let cached = try container.contentRepository.cachedEpisodes(for: showID, seasonNumber: 1)
+        let cached = try await container.contentRepository.cachedEpisodes(for: showID, seasonNumber: 1)
         #expect(!cached.isEmpty)
         let pending = TestValue<CheckedContinuation<[EpisodeDetails], Error>?>(nil)
         let model = MediaDetailScreenModel(ref: showID, contentRepository: container.contentRepository,

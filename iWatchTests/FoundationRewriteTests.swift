@@ -620,6 +620,31 @@ struct FoundationRewriteTests {
     }
 
     @Test
+    func cachedEpisodeIsAvailableWhenDetailRefreshFails() async throws {
+        let persistence = makePersistence()
+        let context = persistence.makeContext()
+        context.insert(EpisodeRecord(
+            showTMDbID: 515, tmdbID: 101, seasonNumber: 1, episodeNumber: 1,
+            name: "First", airDate: .distantPast
+        ))
+        try context.save()
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ProgressCatalogURLProtocol.self]
+        let repository = LibraryRepository(
+            persistence: persistence,
+            tmdb: TMDbService(apiClient: APIClient(session: URLSession(configuration: configuration)), apiKey: "test-key")
+        )
+        let ref = EpisodeRef(showId: 515, season: 1, episode: 1, tmdbID: 101)
+        var preview: EpisodeDetails?
+        await #expect(throws: (any Error).self) {
+            try await repository.episodeDetails(for: ref) { preview = $0 }
+        }
+        #expect(preview?.name == "First")
+        #expect(preview?.id == 101)
+    }
+
+    @Test
     func episodeEnrichmentRefreshesCachedImportedProgressWithoutLibraryMutation() async throws {
         let persistence = makePersistence()
         let configuration = URLSessionConfiguration.ephemeral

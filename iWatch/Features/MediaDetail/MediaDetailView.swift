@@ -91,6 +91,7 @@ final class MediaDetailScreenModel {
 
         do {
             let details = try await contentRepository.details(for: ref, forceRefresh: forceRefresh)
+            try Task.checkCancellation()
             loadState = .loaded(details)
 
             Task { await loadSupplementaryDetails() }
@@ -196,7 +197,7 @@ final class MediaDetailScreenModel {
 
         do {
             let showID = MediaID(kind: .show, id: show.common.id, traktID: show.common.traktID)
-            let cached = try contentRepository.cachedEpisodes(for: showID, seasonNumber: seasonNumber)
+            let cached = try await contentRepository.cachedEpisodes(for: showID, seasonNumber: seasonNumber)
             if !cached.isEmpty { episodesBySeason[seasonNumber] = cached }
             episodesBySeason[seasonNumber] = try await loadEpisodes(showID, seasonNumber, forceRefresh)
             await refreshLibraryState()
@@ -386,8 +387,6 @@ struct MediaDetailView: View {
                 session: session
             )
             model = newModel
-            // Let SwiftUI commit the loading state before starting local persistence work.
-            await Task.yield()
             await newModel.load()
         }
         .toolbar {

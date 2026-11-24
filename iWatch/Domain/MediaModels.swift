@@ -105,8 +105,8 @@ struct EpisodeDetails: Equatable, Identifiable, Sendable {
     let overview: String?
     var extras: Extras?
 
-    struct Extras: Equatable, Sendable, Codable {
-        struct Credit: Identifiable, Hashable, Sendable, Codable {
+    nonisolated struct Extras: Equatable, Sendable, Codable {
+        nonisolated struct Credit: Identifiable, Hashable, Sendable, Codable {
             let id: Int
             let name: String
             let role: String?      // character (cast/guest)
@@ -114,14 +114,14 @@ struct EpisodeDetails: Equatable, Identifiable, Sendable {
             let profilePath: String?
             let order: Int?          // NEW: TMDb “cast order” for sorting (optional)
         }
-        struct ExternalIDs: Equatable, Sendable, Codable {
+        nonisolated struct ExternalIDs: Equatable, Sendable, Codable {
             let imdb: String?
             let tvdb: Int?
             let facebook: String?
             let instagram: String?
             let twitter: String?
         }
-        struct Video: Identifiable, Equatable, Sendable, Codable {
+        nonisolated struct Video: Identifiable, Equatable, Sendable, Codable {
             let id: String
             let key: String   // YouTube key
             let name: String
