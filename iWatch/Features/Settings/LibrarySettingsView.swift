@@ -36,7 +36,7 @@ struct LibrarySettingsView: View {
                 }
             }
         }
-        .navigationTitle("Your Library")
+        .navigationTitle("Sync")
         .navigationBarTitleDisplayMode(.inline)
     }
 

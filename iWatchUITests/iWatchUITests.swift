@@ -289,8 +289,8 @@ final class iWatchUITests: XCTestCase {
         XCTAssertFalse(app.buttons["settings-trakt-sync"].exists)
         XCTAssertFalse(app.buttons["Manage Data"].exists)
         capture(app, "Simplified settings - " + contentSize)
-        app.buttons["settings-library"].tap()
-        XCTAssertTrue(app.navigationBars["Your Library"].waitForExistence(timeout: 5))
+        app.buttons["settings-sync"].tap()
+        XCTAssertTrue(app.navigationBars["Sync"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["Details"].exists)
         capture(app, "Library sync overview - " + contentSize)
         let counts = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Show Progress'")).firstMatch
@@ -381,24 +381,24 @@ final class iWatchUITests: XCTestCase {
     private func revealTraktSection(in app: XCUIApplication) {
         let connection = app.descendants(matching: .any)["trakt-connection"]
         let connect = app.buttons["Connect Trakt"]
-        if app.navigationBars["Your Library"].exists {
+        if app.navigationBars["Sync"].exists {
             // Returning from maintenance may leave the form below the Trakt section.
             for _ in 0..<15 {
                 if connection.isHittable || connect.isHittable { break }
                 app.swipeDown()
             }
         } else {
-            let library = app.buttons["settings-library"]
-            reveal(library, in: app)
-            library.tap()
+            let sync = app.buttons["settings-sync"]
+            reveal(sync, in: app)
+            sync.tap()
         }
-        XCTAssertTrue(app.navigationBars["Your Library"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Sync"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["settings-trakt"].exists)
         for _ in 0..<15 {
             if connection.isHittable || connect.isHittable { return }
             app.swipeUp()
         }
-        XCTFail("Expected inline Trakt connection or Connect control in Your Library")
+        XCTFail("Expected inline Trakt connection or Connect control in Sync")
     }
 
     @MainActor
@@ -424,9 +424,9 @@ final class iWatchUITests: XCTestCase {
         if app.buttons["Cancel"].exists {
             app.buttons["Cancel"].tap()
         } else {
-            app.navigationBars["Your Library"].tap()
+            app.navigationBars["Sync"].tap()
         }
-        XCTAssertTrue(app.navigationBars["Your Library"].exists)
+        XCTAssertTrue(app.navigationBars["Sync"].exists)
     }
 
     @MainActor
@@ -462,7 +462,7 @@ final class iWatchUITests: XCTestCase {
         for state in ["normal", "offline", "syncing", "setup"] {
             let app = launchSyncSettings(contentSize: "UICTContentSizeCategoryL", state: state)
             revealTraktSection(in: app)
-            XCTAssertTrue(app.navigationBars["Your Library"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.navigationBars["Sync"].waitForExistence(timeout: 5))
             let expected = ["normal": "Trakt", "offline": "Connection Interrupted",
                             "syncing": "Syncing…", "setup": "Finish Setup"][state]!
             if state == "normal" {
@@ -532,6 +532,12 @@ final class iWatchUITests: XCTestCase {
             let account = app.buttons["settings-account"]
             XCTAssertTrue(account.waitForExistence(timeout: 5))
             XCTAssertTrue(account.isHittable)
+            XCTAssertTrue(account.label.contains("Guest"))
+            XCTAssertTrue(account.label.contains("Account"))
+            let sync = app.buttons["settings-sync"]
+            XCTAssertTrue(sync.isHittable)
+            XCTAssertLessThan(account.frame.minY, sync.frame.minY)
+            capture(app, "Settings account row - " + contentSize)
             account.tap()
 
             let accountBar = app.navigationBars["Account"]
@@ -539,6 +545,7 @@ final class iWatchUITests: XCTestCase {
             XCTAssertTrue(app.staticTexts["Guest"].isHittable)
             XCTAssertTrue(app.staticTexts["You can use iWatch without an account."].isHittable)
 
+            capture(app, "Guest account - " + contentSize)
             accountBar.buttons.firstMatch.tap()
             XCTAssertTrue(account.isHittable)
             app.terminate()
@@ -557,15 +564,14 @@ final class iWatchUITests: XCTestCase {
 
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Preferences"].exists)
-        XCTAssertFalse(app.staticTexts["Sync"].exists)
-        XCTAssertTrue(app.buttons["settings-library"].exists)
+        XCTAssertTrue(app.buttons["settings-sync"].exists)
 
         revealTraktSection(in: app)
-        XCTAssertTrue(app.navigationBars["Your Library"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Sync"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Connect Trakt"].exists)
         capture(app, "Disconnected Trakt")
 
-        app.navigationBars["Your Library"].buttons.firstMatch.tap()
+        app.navigationBars["Sync"].buttons.firstMatch.tap()
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Appearance,'")).firstMatch.tap()
         XCTAssertTrue(app.buttons["System"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Light"].exists)

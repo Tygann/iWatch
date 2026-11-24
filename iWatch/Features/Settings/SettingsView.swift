@@ -24,15 +24,8 @@ struct SettingsView: View {
     // MARK: - Body
     var body: some View {
         Form {
-            Section {
-                NavigationLink {
-                    AccountView()
-                } label: {
-                    SettingsNavigationLabel(title: "Account", systemImage: "person.crop.circle", detail: "Guest")
-                }
-                .accessibilityIdentifier("settings-account")
-            }
-            librarySection
+            accountSection
+            syncSection
             preferencesSection
             appSection
             #if DEBUG
@@ -52,15 +45,43 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Library
-    private var librarySection: some View {
+    private var accountSection: some View {
+        Section {
+            NavigationLink {
+                AccountView()
+            } label: {
+                HStack(spacing: AppSpacing.large) {
+                    Image(systemName: "person.crop.circle.fill")
+                        .resizable()
+                        .scaledToFit()
+                        .foregroundStyle(.secondary)
+                        .frame(width: 60, height: 60)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
+                        Text("Guest").font(.headline).fontDesign(.rounded)
+                        Text("Account").font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, AppSpacing.small)
+                .accessibilityElement(children: .combine)
+            }
+            .accessibilityIdentifier("settings-account")
+        }
+    }
+
+    private var syncSection: some View {
         Section {
             NavigationLink {
                 LibrarySettingsView()
             } label: {
-                SettingsLibraryLabel(status: cloudStatus)
+                SettingsNavigationLabel(
+                    title: "Sync",
+                    systemImage: "arrow.triangle.2.circlepath",
+                    detail: syncStatus
+                )
             }
-            .accessibilityIdentifier("settings-library")
+            .accessibilityIdentifier("settings-sync")
         }
     }
 
@@ -122,7 +143,7 @@ struct SettingsView: View {
         }
     }
 
-    private var cloudStatus: String? {
+    private var syncStatus: String? {
         if session.pendingTraktAccountKey != nil { return "Finish Trakt Setup" }
         if session.traktSyncPresentation.needsAttention { return "Trakt Needs Attention" }
         if session.traktSyncPresentation.isWorking { return "Trakt: " + session.traktSyncPresentation.title }
@@ -136,34 +157,6 @@ struct SettingsView: View {
     private var notificationStatus: String {
         NotificationPermissionPresentation.summary(enabled: notificationsEnabled,
             status: container.releaseNotificationCoordinator.authorizationStatus)
-    }
-}
-
-// MARK: - Settings Components
-
-private struct SettingsLibraryLabel: View {
-    @Environment(\.dynamicTypeSize) private var typeSize
-    let status: String?
-
-    var body: some View {
-        HStack(spacing: AppSpacing.medium) {
-            if !typeSize.isAccessibilitySize {
-                Image(systemName: "books.vertical")
-                    .font(.title2)
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 48, height: 48)
-                    .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.control))
-                    .accessibilityHidden(true)
-            }
-            VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
-                Text("Your Library").font(.headline)
-                Text(status ?? "Watchlist, history, and sync")
-                    .font(.subheadline).foregroundStyle(.secondary)
-            }
-            .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.vertical, AppSpacing.small)
-        .accessibilityElement(children: .combine)
     }
 }
 
