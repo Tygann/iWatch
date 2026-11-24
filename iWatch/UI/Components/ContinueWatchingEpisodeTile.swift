@@ -11,6 +11,7 @@ struct ContinueWatchingEpisodeTile<ExtraMenu: View>: View {
     @ViewBuilder var extraMenu: () -> ExtraMenu
 
     @Namespace private var navigation
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let width: CGFloat = 176
     private let height: CGFloat = 99
@@ -23,20 +24,25 @@ struct ContinueWatchingEpisodeTile<ExtraMenu: View>: View {
             EpisodeView(ref: episodeRef)
                 .navigationTransition(.zoom(sourceID: transitionID, in: navigation))
         } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                artwork
-                    .matchedTransitionSource(id: transitionID, in: navigation)
-                Text(showTitle)
-                    .font(.caption)
-                    .lineLimit(1)
-                    .foregroundStyle(.primary)
-                Text(episodeName ?? "")
-                    .font(.caption)
-                    .lineLimit(1)
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(episodeName?.isEmpty != false)
+            ZStack(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: 4) {
+                    artwork
+                        .matchedTransitionSource(id: transitionID, in: navigation)
+                    Text(showTitle)
+                        .font(.caption)
+                        .lineLimit(1)
+                        .foregroundStyle(.primary)
+                    Text(episodeName ?? "")
+                        .font(.caption)
+                        .lineLimit(1)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(episodeName?.isEmpty != false)
+                }
+                .frame(width: width, alignment: .leading)
+                .id(episodeRef)
+                .transition(.opacity)
             }
-            .frame(width: width, alignment: .leading)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: episodeRef)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(showTitle), Season \(episodeRef.season) Episode \(episodeRef.episode), Continue Watching")

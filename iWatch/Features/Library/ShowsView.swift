@@ -281,7 +281,6 @@ private struct ShowsViewBody: View {
     // MARK: Library Sections
 
     private var continueWatchingEpisodeSection: some View {
-        let usesFrostedFooter = false
         if !model.snapshot.continueWatching.isEmpty {
             MediaCollectionRow(title: "Continue Watching", alignment: .top) {
                 WatchlistView(
@@ -291,38 +290,10 @@ private struct ShowsViewBody: View {
                 )
             } content: {
                 ForEach(model.continueWatchingItems) { item in
-                    if let next = item.progress.nextEpisode {
-                        ContinueWatchingEpisodeTile(
-                            showTitle: item.title,
-                            episodeName: next.name,
-                            episodeRef: EpisodeRef(
-                                showId: item.mediaID.tmdbID,
-                                showTraktID: item.mediaID.traktID,
-                                season: next.season,
-                                episode: next.episode,
-                                tmdbID: next.tmdbID,
-                                traktID: next.traktID
-                            ),
-                            stillPath: next.stillPath,
-                            fallbackPosterPath: item.posterPath,
-                            remainingEpisodes: item.progress.remainingReleased,
-                            usesFrostedFooter: usesFrostedFooter,
-                            extraMenu: { continueWatchingMenu(for: item) }
-                        )
-                        .accessibilityIdentifier("continue-watching-episode-\(item.id)")
-                        .overlay(alignment: .topTrailing) {
-                            QuickEpisodeWatchButton(
-                                showTitle: item.title, season: next.season,
-                                episode: next.episode,
-                                isWorking: model.markingShowIDs.contains(item.id),
-                                releasedProgress: usesFrostedFooter ? nil : item.progress.watchedReleasedCount.map {
-                                    (watched: $0, remaining: item.progress.remainingReleased)
-                                }
-                            ) { onSaved in
-                                await model.markNextEpisodeWatched(for: item, showsFeedback: true, onSaved: onSaved)
-                            }
-                            .accessibilityIdentifier("episode-preview-watch-\(item.id)")
-                        }
+                    ContinueWatchingCard(item: item, isWorking: model.markingShowIDs.contains(item.id)) {
+                        continueWatchingMenu(for: item)
+                    } markWatched: { onSaved in
+                        await model.markNextEpisodeWatched(for: item, showsFeedback: true, onSaved: onSaved)
                     }
                 }
             }
@@ -596,4 +567,61 @@ private struct ShowCollectionView: View {
         .environment(container.session)
         .environment(container.router)
         .modelContainer(container.persistence.modelContainer)
+}
+
+// Keep the outgoing episode visible briefly while the saved checkmark starts drawing.
+private struct ContinueWatchingCard<ExtraMenu: View>: View {
+    let item: LibraryShowItem
+    let isWorking: Bool
+    @ViewBuilder let extraMenu: () -> ExtraMenu
+    let markWatched: (@escaping () -> Void) async -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var confirmedItem: LibraryShowItem?
+
+    var body: some View {
+        let displayed = confirmedItem ?? item
+        if let next = displayed.progress.nextEpisode {
+            ContinueWatchingEpisodeTile(
+                showTitle: displayed.title,
+                episodeName: next.name,
+                episodeRef: EpisodeRef(
+                    showId: displayed.mediaID.tmdbID,
+                    showTraktID: displayed.mediaID.traktID,
+                    season: next.season,
+                    episode: next.episode,
+                    tmdbID: next.tmdbID,
+                    traktID: next.traktID
+                ),
+                stillPath: next.stillPath,
+                fallbackPosterPath: displayed.posterPath,
+                remainingEpisodes: displayed.progress.remainingReleased,
+                usesFrostedFooter: false,
+                extraMenu: extraMenu
+            )
+            .accessibilityIdentifier("continue-watching-episode-\(item.id)")
+            .disabled(confirmedItem != nil)
+            .overlay(alignment: .topTrailing) {
+                QuickEpisodeWatchButton(
+                    showTitle: displayed.title, season: next.season, episode: next.episode,
+                    isWorking: isWorking || confirmedItem != nil,
+                    releasedProgress: item.progress.watchedReleasedCount.map {
+                        (watched: $0, remaining: item.progress.remainingReleased)
+                    }
+                ) { onSaved in
+                    await markWatched {
+                        if !reduceMotion { confirmedItem = displayed }
+                        onSaved()
+                    }
+                }
+                .accessibilityIdentifier("episode-preview-watch-\(item.id)")
+            }
+            .task(id: confirmedItem != nil) {
+                guard confirmedItem != nil else { return }
+                try? await Task.sleep(for: .milliseconds(175))
+                guard !Task.isCancelled else { return }
+                confirmedItem = nil
+            }
+        }
+    }
 }
