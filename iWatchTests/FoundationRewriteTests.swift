@@ -441,36 +441,25 @@ struct FoundationRewriteTests {
                 title: "Progress Show",
                 overview: "A show for progress testing.",
                 posterPath: "/show.jpg",
-                totalEpisodes: 2,
+                totalEpisodes: 6,
                 seasonsData: try JSONEncoder().encode([
-                    StoredShowSeason(id: 1, traktID: 1, seasonNumber: 1, name: "Season 1", episodeCount: 2, posterPath: "/season.jpg")
+                    StoredShowSeason(id: 1, traktID: 1, seasonNumber: 1, name: "Season 1", episodeCount: 5, posterPath: "/season.jpg")
                 ])
             )
         )
-        context.insert(
-            EpisodeRecord(
+        let releaseDate = Date.now.addingTimeInterval(-86_400)
+        for episode in [1, 3, 2, 8, 4] {
+            context.insert(EpisodeRecord(
                 showTMDbID: 202,
                 showTraktID: 2002,
-                tmdbID: 301,
-                traktID: 3001,
+                tmdbID: 300 + episode,
+                traktID: 3000 + episode,
                 seasonNumber: 1,
-                episodeNumber: 1,
-                name: "Episode 1",
-                airDate: Calendar.current.date(byAdding: .day, value: -5, to: .now)
-            )
-        )
-        context.insert(
-            EpisodeRecord(
-                showTMDbID: 202,
-                showTraktID: 2002,
-                tmdbID: 302,
-                traktID: 3002,
-                seasonNumber: 1,
-                episodeNumber: 2,
-                name: "Episode 2",
-                airDate: Calendar.current.date(byAdding: .day, value: -1, to: .now)
-            )
-        )
+                episodeNumber: episode,
+                name: "Episode \(episode)",
+                airDate: releaseDate
+            ))
+        }
         context.insert(
             EpisodeRecord(
                 showTMDbID: 202,
@@ -497,16 +486,36 @@ struct FoundationRewriteTests {
         )
         try context.save()
 
-        let progress = try await repository.showProgress(for: MediaID(kind: .show, id: 202, traktID: 2002))
+        let showID = MediaID(kind: .show, id: 202, traktID: 2002)
+        let progress = try await repository.showProgress(for: showID)
+        let before = try await repository.showLibrarySnapshot(revision: 1)
 
         #expect(progress.watchedCount == 1)
-        #expect(progress.remainingReleased == 1)
+        #expect(progress.remainingReleased == 4)
         #expect(progress.nextEpisode?.season == 1)
         #expect(progress.nextEpisode?.episode == 2)
         #expect(progress.nextEpisode?.tmdbID == 302)
         #expect(progress.nextUpcomingEpisode?.season == 2)
         #expect(progress.nextUpcomingEpisode?.episode == 1)
         #expect(progress.mostRecentWatchedSeason == 1)
+        #expect(before.continueWatching.first?.progress.nextEpisode?.episode == 2)
+
+        for episode in [2, 3] {
+            context.insert(WatchedEventRecord(
+                kind: .episode,
+                tmdbID: 300 + episode,
+                showTMDbID: 202,
+                seasonNumber: 1,
+                episodeNumber: episode,
+                watchedAt: .now
+            ))
+        }
+        try context.save()
+
+        let updatedProgress = try await repository.showProgress(for: showID)
+        let after = try await repository.showLibrarySnapshot(revision: 2)
+        #expect(updatedProgress.nextEpisode?.episode == 4)
+        #expect(after.continueWatching.first?.progress.nextEpisode?.episode == 4)
     }
 
     @Test

@@ -797,12 +797,11 @@ final class LibraryRepository {
         let remaining = released.filter { row in
             !trackedWatchedKeys.contains("ep:\(showID.tmdbID):S\(row.seasonNumber):E\(row.episodeNumber)")
         }
-        .sorted {
-            ($0.airDate ?? .distantFuture) < ($1.airDate ?? .distantFuture)
-        }
 
         let totalEpisodes = media?.totalEpisodes ?? trackableEpisodeRows.count.nonZero
-        let next = remaining.first.map {
+        let next = remaining.min {
+            ($0.seasonNumber, $0.episodeNumber) < ($1.seasonNumber, $1.episodeNumber)
+        }.map {
             ShowProgress.NextEpisode(
                 tmdbID: $0.tmdbID,
                 traktID: $0.traktID,

@@ -313,8 +313,9 @@ actor LibrarySnapshotReader {
                 let key = "ep:\(showID.tmdbID):S\(episode.seasonNumber):E\(episode.episodeNumber)"
                 return !watchedTrackableKeys.contains(key)
             }
-            .sorted { ($0.airDate ?? .distantFuture) < ($1.airDate ?? .distantFuture) }
-        let next = remaining.first.map {
+        let next = remaining.min {
+            ($0.seasonNumber, $0.episodeNumber) < ($1.seasonNumber, $1.episodeNumber)
+        }.map {
             ShowProgress.NextEpisode(
                 tmdbID: $0.tmdbID,
                 traktID: $0.traktID,
