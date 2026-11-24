@@ -51,12 +51,7 @@ struct SettingsView: View {
                 AccountView()
             } label: {
                 HStack(spacing: AppSpacing.large) {
-                    Image(systemName: "person.crop.circle.fill")
-                        .resizable()
-                        .scaledToFit()
-                        .foregroundStyle(.secondary)
-                        .frame(width: 60, height: 60)
-                        .accessibilityHidden(true)
+                    AccountAvatar(size: 60)
                     VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
                         Text("Guest").font(.headline).fontDesign(.rounded)
                         Text("Account").font(.subheadline).foregroundStyle(.secondary)

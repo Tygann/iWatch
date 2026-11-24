@@ -5,15 +5,7 @@ struct AccountView: View {
         Form {
             Section {
                 VStack(spacing: AppSpacing.medium) {
-                    Circle()
-                        .fill(.quaternary)
-                        .frame(width: 100, height: 100)
-                        .overlay {
-                            Image(systemName: "person.fill")
-                                .font(.system(size: 48))
-                                .foregroundStyle(.secondary)
-                        }
-                        .accessibilityHidden(true)
+                    AccountAvatar(size: 100)
                     Text("Guest")
                         .font(.title.bold())
                         .fontDesign(.rounded)
