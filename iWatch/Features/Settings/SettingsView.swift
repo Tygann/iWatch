@@ -38,6 +38,7 @@ struct SettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task(id: session.libraryRevision) { await session.refreshSyncDiagnostics() }
         .task { await container.releaseNotificationCoordinator.refreshStatus() }
+        .task { await container.account.refresh() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 Task { await container.releaseNotificationCoordinator.refreshStatus() }
@@ -48,13 +49,17 @@ struct SettingsView: View {
     private var accountSection: some View {
         Section {
             NavigationLink {
-                AccountView()
+                AccountView(account: container.account)
             } label: {
                 HStack(spacing: AppSpacing.large) {
                     AccountAvatar(size: 60)
                     VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
-                        Text("Guest").font(.headline).fontDesign(.rounded)
-                        Text("Account").font(.subheadline).foregroundStyle(.secondary)
+                        if container.account.userID == nil || container.account.displayName != nil {
+                            Text(container.account.title).font(.headline).fontDesign(.rounded)
+                            Text("Account").font(.subheadline).foregroundStyle(.secondary)
+                        } else {
+                            Text("Account").font(.headline).fontDesign(.rounded)
+                        }
                     }
                     .fixedSize(horizontal: false, vertical: true)
                 }

@@ -22,6 +22,7 @@ final class AppContainer {
     let releaseNotificationCoordinator: ReleaseNotificationCoordinator
     let syncEngine: SyncEngine
     let session: AppSession
+    let account: AccountSession
     let router: AppRouter
     private var hasLoadedTMDbSandboxCatalog = false
 
@@ -39,7 +40,8 @@ final class AppContainer {
          syncEngine: SyncEngine,
          session: AppSession,
          router: AppRouter,
-         notificationCoordinator: ReleaseNotificationCoordinator? = nil) {
+         notificationCoordinator: ReleaseNotificationCoordinator? = nil,
+         account: AccountSession? = nil) {
         self.config = config
         self.apiClient = apiClient
         self.cacheService = cacheService
@@ -54,6 +56,7 @@ final class AppContainer {
         self.releaseNotificationCoordinator = notificationCoordinator ?? ReleaseNotificationCoordinator(repository: libraryRepository)
         self.syncEngine = syncEngine
         self.session = session
+        self.account = account ?? AccountSession()
         self.router = router
     }
 
@@ -145,7 +148,8 @@ final class AppContainer {
             peopleRepository: peopleRepository,
             syncEngine: syncEngine,
             session: session,
-            router: router
+            router: router,
+            account: AccountSession(backend: config.accountBackend.map(AccountBackend.init))
         )
     }
 

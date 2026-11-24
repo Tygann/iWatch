@@ -1,0 +1,4 @@
+project_id = "iWatch"
+
+[functions.delete-account]
+verify_jwt = false

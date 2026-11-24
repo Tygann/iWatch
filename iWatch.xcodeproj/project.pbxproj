@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A19A10022F90000000000001 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = A19A10022F90000000000002 /* Supabase */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		2F5CA3222E4F9E73005780E0 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -65,6 +69,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A19A10022F90000000000001 /* Supabase in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -126,6 +131,7 @@
 			);
 			name = iWatch;
 			packageProductDependencies = (
+				A19A10022F90000000000002 /* Supabase */,
 			);
 			productName = iWatch;
 			productReference = 2F5CA3102E4F9E72005780E0 /* iWatch.app */;
@@ -210,6 +216,7 @@
 			mainGroup = 2F5CA3072E4F9E72005780E0;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				A19A10022F90000000000003 /* XCRemoteSwiftPackageReference "supabase-swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 2F5CA3112E4F9E72005780E0 /* Products */;
@@ -624,6 +631,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A19A10022F90000000000003 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift.git";
+			requirement = {
+				kind = exactVersion;
+				version = 2.55.8;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A19A10022F90000000000002 /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A19A10022F90000000000003 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 2F5CA3082E4F9E72005780E0 /* Project object */;
 }

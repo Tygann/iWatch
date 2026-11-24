@@ -6,6 +6,8 @@ struct AppConfig {
     let traktClientSecret: String
     let traktRedirectURI: String
 
+    var accountBackend: AccountBackend.Configuration? = nil
+
     static func load() -> AppConfig {
         // 1) Read from Info.plist (build settings or manual entries)
         let info = Bundle.main.infoDictionary ?? [:]
@@ -44,7 +46,11 @@ struct AppConfig {
             tmdbKey: tmdbKey,
             traktClientId: traktId,
             traktClientSecret: traktSecret,
-            traktRedirectURI: traktRedirectURI
+            traktRedirectURI: traktRedirectURI,
+            accountBackend: AccountBackend.Configuration(
+                url: readInfo("SUPABASE_URL") ?? readSecret("SUPABASE_URL"),
+                publishableKey: readInfo("SUPABASE_PUBLISHABLE_KEY") ?? readSecret("SUPABASE_PUBLISHABLE_KEY")
+            )
         )
     }
 }
