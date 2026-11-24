@@ -145,6 +145,33 @@ struct LibraryPreviewTests {
     }
 
     @Test
+    func quickWatchConfirmsSaveBeforeRefreshingTheShow() async throws {
+        let container = AppContainer.preview()
+        let repository = container.libraryRepository
+        let saved = try await repository.showLibrarySnapshot(revision: 0)
+        let item = try #require(saved.continueWatching.first)
+        let episode = try #require(item.progress.nextEpisode)
+        let model = ShowsScreenModel(repository: repository, session: container.session) { _, _ in
+            Issue.record("Quick watch should update the show without waiting for the full library.")
+            return saved
+        }
+        model.snapshot = saved
+
+        var didConfirm = false
+        await model.markNextEpisodeWatched(for: item) {
+            didConfirm = true
+            #expect(model.snapshot.continueWatching.first?.progress.nextEpisode == episode)
+        }
+
+        #expect(didConfirm)
+        let updated = try #require(model.snapshot.all.first { $0.id == item.id })
+        #expect(updated.progress.watchedCount == item.progress.watchedCount + 1)
+        #expect(updated.progress.nextEpisode != episode)
+        let full = try await repository.showLibrarySnapshot(revision: container.session.libraryRevision)
+        #expect(updated == full.all.first { $0.id == item.id })
+    }
+
+    @Test
     func cachedMarkWatchedDoesNotDuplicateAnAlreadyWatchedEpisode() async throws {
         let directory = directory()
         defer { try? FileManager.default.removeItem(at: directory) }

@@ -148,43 +148,50 @@ struct QuickEpisodeWatchButton: View {
     let episode: Int
     let isWorking: Bool
     var releasedProgress: (watched: Int, remaining: Int)? = nil
-    let action: () -> Void
+    let action: (@escaping () -> Void) async -> Void
 
-    @State private var previousWatchedCount: Int?
-    @State private var showsConfirmation = false
-    @State private var didTapWatch = false
+    @State private var isSaving = false
+    @State private var showsSpinner = false
+    @State private var confirmationID: UUID?
+    @State private var isSubmitting = false
 
     var body: some View {
         EpisodeWatchButton(
             isWatched: false,
-            isWorking: isWorking,
+            isWorking: isSaving && showsSpinner,
             progress: progressFraction,
-            showsConfirmation: showsConfirmation
+            showsConfirmation: confirmationID != nil
         ) {
-            didTapWatch = releasedProgress != nil
-            action()
+            guard !isSubmitting, !isWorking else { return }
+            isSubmitting = true
+            isSaving = true
+            confirmationID = nil
+            Task {
+                await action {
+                    isSaving = false
+                    confirmationID = UUID()
+                }
+                isSaving = false
+                isSubmitting = false
+            }
         }
-        .disabled(isWorking)
+        .disabled(isSubmitting || isWorking)
+        .opacity(isSaving && !showsSpinner ? 0.7 : 1)
         .accessibilityLabel("Mark \(showTitle), Season \(season) Episode \(episode) watched")
         .accessibilityHint("Updates this card to the next unwatched episode")
         .accessibilityValue(progressDescription)
-        .task(id: releasedProgress?.watched) {
-            let watchedCount = releasedProgress?.watched
-            let previousCount = previousWatchedCount
-            previousWatchedCount = watchedCount
-            showsConfirmation = false
-            guard didTapWatch, let watchedCount, let previousCount, watchedCount > previousCount else { return }
-            didTapWatch = false
-            showsConfirmation = true
-            try? await Task.sleep(for: .milliseconds(650))
-            if !Task.isCancelled {
-                showsConfirmation = false
-            }
+        .task(id: isSaving) {
+            showsSpinner = false
+            guard isSaving else { return }
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            showsSpinner = true
         }
-        .onChange(of: isWorking) { _, working in
-            if !working, previousWatchedCount == releasedProgress?.watched {
-                didTapWatch = false
-            }
+        .task(id: confirmationID) {
+            guard confirmationID != nil else { return }
+            try? await Task.sleep(for: .milliseconds(650))
+            guard !Task.isCancelled else { return }
+            confirmationID = nil
         }
     }
 

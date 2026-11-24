@@ -188,20 +188,23 @@ actor LibrarySnapshotReader {
 
     // MARK: Shows
 
-    func showItems() throws -> [LibraryShowItem] {
+    func showItems(for showID: Int? = nil) throws -> [LibraryShowItem] {
         let context = try persistence.makeMetadataContext()
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
         let includesLegacyRows = generationID == LibraryGenerationPolicy.legacyGenerationID
         let showKind = MediaKind.show.rawValue
+        let requestedID = showID ?? 0
+        let includesAllShows = showID == nil
         let watchlist = try context.fetch(FetchDescriptor<WatchlistRecord>(
             predicate: #Predicate {
                 ($0.generationID == generationID || (includesLegacyRows && $0.generationID == "")) &&
-                    $0.kindRaw == showKind && $0.isInWatchlist
+                    $0.kindRaw == showKind && $0.isInWatchlist &&
+                    (includesAllShows || $0.tmdbID == requestedID)
             },
             sortBy: [SortDescriptor(\.localUpdatedAt, order: .reverse)]
         ))
         let media = try context.fetch(FetchDescriptor<MediaRecord>(
-            predicate: #Predicate { $0.kindRaw == showKind }
+            predicate: #Predicate { $0.kindRaw == showKind && (includesAllShows || $0.tmdbID == requestedID) }
         ))
         let dispositions = try context.fetch(FetchDescriptor<ShowDispositionRecord>(
             predicate: #Predicate {
@@ -217,14 +220,16 @@ actor LibrarySnapshotReader {
             uniquingKeysWith: { first, _ in first }
         )
         let episodesByShowID = Dictionary(
-            grouping: try context.fetch(FetchDescriptor<EpisodeRecord>()),
+            grouping: try context.fetch(FetchDescriptor<EpisodeRecord>(
+                predicate: #Predicate { includesAllShows || $0.showTMDbID == requestedID }
+            )),
             by: \.showTMDbID
         )
         let eventsByShowID = Dictionary(
             grouping: try context.fetch(FetchDescriptor<WatchedEventRecord>(
                 predicate: #Predicate {
                     ($0.generationID == generationID || (includesLegacyRows && $0.generationID == "")) &&
-                        !$0.tombstoned
+                        !$0.tombstoned && (includesAllShows || $0.showTMDbID == requestedID)
                 }
             ))
         ) { $0.showTMDbID ?? -1 }

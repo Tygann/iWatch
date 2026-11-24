@@ -670,6 +670,11 @@ final class LibraryRepository {
         try await snapshotReader.showItems()
     }
 
+    func showLibraryItem(for showID: Int) async throws -> LibraryShowItem? {
+        // Keep the quick update independent of any queued full-library read.
+        try await LibrarySnapshotReader(persistence: persistence).showItems(for: showID).first
+    }
+
     func showLibrarySnapshot(revision: Int, forceRefresh: Bool = false) async throws -> ShowLibrarySnapshot {
         let scope = previewScope()
         if !forceRefresh, let cachedShowSnapshot, cachedShowSnapshot.scope == scope, cachedShowSnapshot.revision == revision, Date().timeIntervalSince(cachedShowSnapshot.cachedAt) < 60 {

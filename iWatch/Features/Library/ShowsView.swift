@@ -140,7 +140,9 @@ final class ShowsScreenModel {
         return "\(days) days"
     }
 
-    func markNextEpisodeWatched(for item: LibraryShowItem, showsFeedback: Bool = false) async {
+    func markNextEpisodeWatched(
+        for item: LibraryShowItem, showsFeedback: Bool = false, onSaved: () -> Void = {}
+    ) async {
         guard let next = item.progress.nextEpisode,
               markingShowIDs.insert(item.id).inserted else { return }
         defer { markingShowIDs.remove(item.id) }
@@ -149,6 +151,7 @@ final class ShowsScreenModel {
                 for: MediaID(kind: .episode, id: next.tmdbID, traktID: next.traktID),
                 watchedAt: Date(), allowRewatch: false
             )
+            if eventID != nil { onSaved() }
             if showsFeedback, let eventID {
                 session.showEpisodeWatchSuccess(showTitle: item.title, season: next.season,
                     episode: next.episode, undo: { [self] in
@@ -162,7 +165,14 @@ final class ShowsScreenModel {
                     })
             }
             session.markLibraryUpdated(syncIfConnected: true)
-            await load(revision: session.libraryRevision)
+            let revision = session.libraryRevision
+            let updated = try? await repository.showLibraryItem(for: item.id)
+            guard session.libraryRevision == revision, loadedRevision != revision else { return }
+            if let updated {
+                snapshot = ShowLibrarySnapshot(items: snapshot.all.map { $0.id == updated.id ? updated : $0 })
+            } else {
+                await load(revision: revision)
+            }
         } catch {
             errorText = UserFacingError.message(for: error, context: .action)
         }
@@ -308,8 +318,8 @@ private struct ShowsViewBody: View {
                                 releasedProgress: usesFrostedFooter ? nil : item.progress.watchedReleasedCount.map {
                                     (watched: $0, remaining: item.progress.remainingReleased)
                                 }
-                            ) {
-                                Task { await model.markNextEpisodeWatched(for: item, showsFeedback: true) }
+                            ) { onSaved in
+                                await model.markNextEpisodeWatched(for: item, showsFeedback: true, onSaved: onSaved)
                             }
                             .accessibilityIdentifier("episode-preview-watch-\(item.id)")
                         }
@@ -357,8 +367,8 @@ private struct ShowsViewBody: View {
                     .overlay(alignment: .topTrailing) {
                         if let next = item.progress.nextEpisode {
                             QuickEpisodeWatchButton(showTitle: item.title, season: next.season,
-                                episode: next.episode, isWorking: model.markingShowIDs.contains(item.id)) {
-                                    Task { await model.markNextEpisodeWatched(for: item, showsFeedback: true) }
+                                episode: next.episode, isWorking: model.markingShowIDs.contains(item.id)) { onSaved in
+                                    await model.markNextEpisodeWatched(for: item, showsFeedback: true, onSaved: onSaved)
                                 }
                                 .padding(.top, 110 / PosterImage.aspectRatio - 44)
                         }
