@@ -51,7 +51,7 @@ struct TraktPendingChangesView: View {
             }
             if session.traktSyncPresentation.needsAttention {
                 Section {
-                    NavigationLink("Help with These Changes") { TraktTroubleshootingView() }
+                    NavigationLink("Help with These Changes") { TraktTroubleshootingView(title: "Help with Changes") }
                 }
             } else if session.syncDiagnostics.changes.contains(where: { !$0.isOnThisDevice }) {
                 Section {

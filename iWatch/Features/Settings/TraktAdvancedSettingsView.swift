@@ -2,9 +2,17 @@ import SwiftUI
 
 struct TraktTroubleshootingView: View {
     @Environment(AppSession.self) private var session
+    var title = "Help with Sync"
 
     var body: some View {
         Form {
+            Section {
+                Link(destination: URL(string: "https://status.trakt.tv")!) {
+                    Label("Trakt Service Status", systemImage: "arrow.up.right")
+                }
+            } footer: {
+                Text("Check for a Trakt outage before troubleshooting your library.")
+            }
             Section {
                 Text("Start by checking your library. The check can repair duplicate records and inconsistent links. Review the result before trying another recovery option.")
                 NavigationLink("Check Library Data") { TraktLibraryCheckView() }
@@ -27,7 +35,7 @@ struct TraktTroubleshootingView: View {
                 Text("Rebuilding replaces your iWatch library and discards unsynced changes. Contact support first if you’re unsure.")
             }
         }
-        .navigationTitle("Help with Changes")
+        .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
     }
 }

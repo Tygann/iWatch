@@ -9,7 +9,7 @@ struct TraktSettingsSection: View {
     var body: some View {
         Section {
             TraktConnectionRow()
-            if health.action != .setup && (health.needsAttention || health.isWorking || health.title == "Changes Pending") {
+            if !session.traktConnected && (health.needsAttention || health.isWorking) {
                 TraktStatusRow()
             }
             if session.pendingTraktAccountKey != nil {
@@ -20,7 +20,11 @@ struct TraktSettingsSection: View {
                 }
                 .accessibilityIdentifier("trakt-setup")
             } else if session.traktConnected {
-                TraktLastSyncRow()
+                TraktLastCheckRow()
+                if health.needsAttention || health.isWorking || health.title == "Changes Pending" {
+                    TraktStatusRow(showsAction: false)
+                }
+                TraktSyncActionButton(fullWidth: true)
                 if !session.syncDiagnostics.changes.isEmpty || health.needsAttention {
                     NavigationLink {
                         TraktPendingChangesView()
@@ -154,54 +158,30 @@ struct TraktConnectionRow: View {
     }
 }
 
-struct TraktLastSyncRow: View {
+private struct TraktLastCheckRow: View {
     @Environment(AppSession.self) private var session
-    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        Group {
-            if typeSize.isAccessibilitySize {
-                VStack(alignment: .leading) {
-                    copy
-                    if showsSyncAction { action }
-                }
+        LabeledContent("Last Trakt Check") {
+            if let date = session.syncDiagnostics.lastSuccessfulPullAt {
+                Text(date, format: .relative(presentation: .named))
+                    .accessibilityLabel(Text(date.formatted(date: .abbreviated, time: .shortened)))
             } else {
-                HStack {
-                    copy
-                    Spacer()
-                    if showsSyncAction { action }
-                }
+                Text("Not checked yet")
             }
         }
-    }
-
-    private var showsSyncAction: Bool {
-        let health = session.traktSyncPresentation
-        return !health.needsAttention && !health.isWorking && !session.syncDiagnostics.hasPendingWork
-    }
-
-    private var copy: some View {
-        VStack(alignment: .leading) {
-            Text("Last Sync")
-            Text(session.lastSyncAt.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "Not synced yet")
-                .font(.subheadline).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
         .accessibilityElement(children: .combine)
-    }
-
-    private var action: some View {
-        TraktSyncActionButton()
     }
 }
 
 struct TraktStatusRow: View {
     @Environment(AppSession.self) private var session
+    var showsAction = true
 
     var body: some View {
         let health = session.traktSyncPresentation
         SettingsStatusRow(title: health.rowTitle, detail: detail, symbol: health.symbol, needsAttention: health.needsAttention) {
-            TraktSyncActionButton()
+            if showsAction { TraktSyncActionButton() }
         }
     }
 
@@ -219,6 +199,7 @@ struct TraktSyncActionButton: View {
 
     @State private var retryOffer: SyncEngine.HistoryRetry?
     @State private var showsRetryConfirmation = false
+    var fullWidth = false
 
     var body: some View {
         let health = session.traktSyncPresentation
@@ -239,7 +220,13 @@ struct TraktSyncActionButton: View {
                         }
                     }
                 } label: {
-                    SettingsCapsule(title: title)
+                    if fullWidth {
+                        Text(title)
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            .contentShape(Rectangle())
+                    } else {
+                        SettingsCapsule(title: title)
+                    }
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel(title)
