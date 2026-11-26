@@ -2,7 +2,6 @@ import SwiftUI
 
 struct TraktSettingsSection: View {
     @Environment(AppSession.self) private var session
-    @State private var showDisconnect = false
 
     private var health: TraktSyncPresentation { session.traktSyncPresentation }
 
@@ -17,7 +16,7 @@ struct TraktSettingsSection: View {
                 NavigationLink {
                     TraktSetupView()
                 } label: {
-                    SettingsNavigationLabel(title: "Finish Setup", systemImage: "person.crop.circle.badge.checkmark")
+                    Text("Finish Setup")
                 }
                 .accessibilityIdentifier("trakt-setup")
             } else if session.traktConnected {
@@ -29,11 +28,9 @@ struct TraktSettingsSection: View {
                     NavigationLink {
                         TraktPendingChangesView()
                     } label: {
-                        SettingsNavigationLabel(title: "Pending Changes", systemImage: "clock",
-                            detail: session.syncDiagnostics.changes.isEmpty ? "Review" : session.syncDiagnostics.changes.count.formatted())
+                        LabeledContent("Pending Changes", value: session.syncDiagnostics.changes.count.formatted())
                     }
                 }
-                TraktLastCheckRow()
                 NavigationLink("Help with Sync") { TraktTroubleshootingView() }
             }
         } header: {
@@ -46,18 +43,6 @@ struct TraktSettingsSection: View {
                     : "Optionally sync your Watchlist and watched history with Trakt.")
         }
         .task { await session.refreshSyncDiagnostics() }
-
-        if session.traktConnected {
-            Section {
-                Button("Disconnect Trakt", role: .destructive) { showDisconnect = true }
-                    .disabled(session.syncActionsUnavailable)
-            }
-            .confirmationDialog("Disconnect Trakt?", isPresented: $showDisconnect, titleVisibility: .visible) {
-                Button("Disconnect Trakt", role: .destructive) { session.logoutTrakt() }
-            } message: {
-                Text("Your iWatch library will remain. Future changes won’t sync with Trakt until you reconnect.")
-            }
-        }
     }
 }
 
@@ -128,8 +113,11 @@ struct TraktConnectionRow: View {
     var body: some View {
         Group {
             if session.traktConnected {
-                LabeledContent("Account", value: "Connected")
-                    .accessibilityElement(children: .combine)
+                NavigationLink {
+                    TraktAccountSettingsView()
+                } label: {
+                    LabeledContent("Account", value: "Connected")
+                }
             } else if session.traktIsConnecting {
                 ProgressView("Connecting to Trakt…")
             } else if !session.traktSyncPresentation.needsAttention {
@@ -141,19 +129,35 @@ struct TraktConnectionRow: View {
     }
 }
 
-private struct TraktLastCheckRow: View {
+private struct TraktAccountSettingsView: View {
     @Environment(AppSession.self) private var session
+    @Environment(\.dismiss) private var dismiss
+    @State private var showDisconnect = false
 
     var body: some View {
-        LabeledContent("Last Trakt Check") {
-            if let date = session.syncDiagnostics.lastSuccessfulPullAt {
-                Text(date, format: .relative(presentation: .named))
-                    .accessibilityLabel(Text(date.formatted(date: .abbreviated, time: .shortened)))
-            } else {
-                Text("Not checked yet")
+        Form {
+            Section {
+                if let date = session.syncDiagnostics.lastSuccessfulPullAt {
+                    SyncDateRow(title: "Last Trakt Check", date: date)
+                } else {
+                    LabeledContent("Last Trakt Check", value: "Not checked yet")
+                }
+            }
+            Section {
+                Button("Disconnect Trakt", role: .destructive) { showDisconnect = true }
+                    .disabled(session.syncActionsUnavailable)
             }
         }
-        .accessibilityElement(children: .combine)
+        .navigationTitle("Trakt Account")
+        .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog("Disconnect Trakt?", isPresented: $showDisconnect, titleVisibility: .visible) {
+            Button("Disconnect Trakt", role: .destructive) {
+                session.logoutTrakt()
+                dismiss()
+            }
+        } message: {
+            Text("Your iWatch library will remain. Future changes won’t sync with Trakt until you reconnect.")
+        }
     }
 }
 
@@ -207,7 +211,6 @@ struct TraktSyncActionButton: View {
                     }
                 } label: {
                     Text(title)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 }
                 .disabled(session.syncActionsUnavailable || session.pendingTraktAccountKey != nil)
             }

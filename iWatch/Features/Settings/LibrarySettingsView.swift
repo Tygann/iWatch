@@ -30,9 +30,7 @@ struct LibrarySettingsView: View {
             }
             LibraryIncludedSection()
             Section {
-                NavigationLink { AdvancedSettingsView() } label: {
-                    SettingsNavigationLabel(title: "Manage Data", systemImage: "externaldrive")
-                }
+                NavigationLink("Manage Data") { AdvancedSettingsView() }
             }
         }
         .navigationTitle("Sync")

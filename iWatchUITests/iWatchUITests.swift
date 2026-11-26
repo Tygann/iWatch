@@ -296,10 +296,15 @@ final class iWatchUITests: XCTestCase {
         revealTraktSection(in: app)
         XCTAssertFalse(app.buttons["Advanced"].exists)
         reveal(app.staticTexts["Waiting for Confirmation"], in: app)
-        reveal(app.buttons["Check Trakt History"], in: app)
+        let checkHistory = app.buttons["Check Trakt History"]
+        reveal(checkHistory, in: app)
         capture(app, "Contextual Trakt issue - " + contentSize)
         let pending = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Pending Changes'")).firstMatch
         reveal(pending, in: app)
+        if !contentSize.contains("Accessibility") {
+            XCTAssertEqual(checkHistory.frame.height, pending.frame.height, accuracy: 1)
+            XCTAssertGreaterThanOrEqual(checkHistory.frame.height, 44)
+        }
         pending.tap()
         XCTAssertTrue(app.navigationBars["Pending Changes"].waitForExistence(timeout: 5))
         let episode = app.staticTexts["Example Show · S1 E1"]
@@ -417,6 +422,9 @@ final class iWatchUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Replace and Import"].waitForExistence(timeout: 5))
         app.buttons["Cancel"].tap()
         app.navigationBars["Set Up Trakt"].buttons.firstMatch.tap()
+        app.buttons["trakt-connection"].tap()
+        XCTAssertTrue(app.navigationBars["Trakt Account"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Last Trakt Check'")).firstMatch.exists)
         let disconnect = app.buttons["Disconnect Trakt"]
         reveal(disconnect, in: app)
         XCTAssertTrue(disconnect.waitForExistence(timeout: 5))
@@ -427,9 +435,9 @@ final class iWatchUITests: XCTestCase {
         if app.buttons["Cancel"].exists {
             app.buttons["Cancel"].tap()
         } else {
-            app.navigationBars["Sync"].tap()
+            app.navigationBars["Trakt Account"].tap()
         }
-        XCTAssertTrue(app.navigationBars["Sync"].exists)
+        XCTAssertTrue(app.navigationBars["Trakt Account"].exists)
     }
 
     @MainActor
@@ -471,7 +479,6 @@ final class iWatchUITests: XCTestCase {
             if state == "normal" {
                 XCTAssertTrue(app.descendants(matching: .any)["trakt-connection"].waitForExistence(timeout: 5))
                 XCTAssertTrue(app.descendants(matching: .any)["trakt-connection"].label.contains("Connected"))
-                XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Last Trakt Check'")).firstMatch.exists)
                 XCTAssertTrue(app.buttons["Sync Now"].waitForExistence(timeout: 5))
                 XCTAssertFalse(app.staticTexts["Signed In to Trakt"].exists)
                 XCTAssertFalse(app.staticTexts["Last Successful Sync"].exists)
