@@ -15,7 +15,11 @@ final class AccountAvatarUITests: XCTestCase {
             settings.tap()
             app.buttons["settings-account"].tap()
             app.navigationBars["Account"].buttons["Edit"].tap()
+            let edit = app.navigationBars["Edit Account"]
+            let save = edit.buttons["Save"]
+            let cancel = edit.buttons["Cancel"]
             let addPhoto = app.buttons["Add Photo"]
+            XCTAssertFalse(save.isEnabled)
             XCTAssertTrue(addPhoto.waitForExistence(timeout: 5))
             XCTAssertFalse(app.buttons["Remove Photo"].exists)
             addPhoto.tap()
@@ -35,8 +39,33 @@ final class AccountAvatarUITests: XCTestCase {
 
             let changePhoto = app.buttons["Change Photo"]
             XCTAssertTrue(changePhoto.waitForExistence(timeout: 5))
-            app.buttons["Remove Photo"].tap()
+            XCTAssertTrue(save.isEnabled)
+            let editScreenshot = XCTAttachment(screenshot: app.screenshot())
+            editScreenshot.name = "Draft photo - " + contentSize
+            editScreenshot.lifetime = .keepAlways
+            add(editScreenshot)
+            save.tap()
+
+            let account = app.navigationBars["Account"]
+            XCTAssertTrue(account.waitForExistence(timeout: 5))
+            account.buttons["Edit"].tap()
+            let remove = app.buttons["Remove Photo"]
+            XCTAssertTrue(remove.waitForExistence(timeout: 5))
+            XCTAssertFalse(save.isEnabled)
+            remove.tap()
             XCTAssertTrue(addPhoto.waitForExistence(timeout: 5))
+            XCTAssertTrue(save.isEnabled)
+            cancel.tap()
+            XCTAssertTrue(account.waitForExistence(timeout: 5))
+
+            account.buttons["Edit"].tap()
+            XCTAssertTrue(changePhoto.waitForExistence(timeout: 5))
+            remove.tap()
+            save.tap()
+            XCTAssertTrue(account.waitForExistence(timeout: 5))
+            account.buttons["Edit"].tap()
+            XCTAssertTrue(addPhoto.waitForExistence(timeout: 5))
+            XCTAssertFalse(save.isEnabled)
             app.terminate()
         }
     }

@@ -9,6 +9,7 @@ struct AvatarCropSelection: Identifiable {
 struct AvatarCropView: View {
     let selection: AvatarCropSelection
     let account: AccountSession
+    let usePhoto: (Data) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var zoom = 1.0
     @State private var horizontal = 0.0
@@ -111,7 +112,7 @@ struct AvatarCropView: View {
         guard account.userID == selection.ownerID else { dismiss(); return }
         do {
             let png = try AvatarImageService.crop(selection.image, zoom: zoom, horizontal: horizontal, vertical: vertical)
-            try account.setPhoto(png, for: selection.ownerID)
+            usePhoto(png)
             dismiss()
         } catch {
             errorMessage = error.localizedDescription
