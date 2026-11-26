@@ -558,6 +558,9 @@ actor SyncEngine {
                 let mayRetryMissingPlay = historyRetry?.account == accountKey && historyRetry?.ids.contains(operationID) == true
                 try await process(operation: operation, context: processContext, mayRetryMissingPlay: mayRetryMissingPlay)
                 operation.status = .succeeded
+                if operation.kind == .addHistory {
+                    try resumeDependentHistoryRemovals(after: operation, deviceID: deviceID, context: processContext)
+                }
                 operation.claimedByDeviceID = nil
                 operation.claimedAt = nil
                 try processContext.save()
@@ -570,12 +573,16 @@ actor SyncEngine {
                     try processContext.save()
                     throw error
                 }
-                operation.attemptCount += 1
+                let waitingForAddition = (error as? HistoryReconciliationError) == .waitingForAddition
+                if !waitingForAddition { operation.attemptCount += 1 }
                 let attemptedAt = Date()
                 operation.lastAttemptAt = attemptedAt
                 operation.claimedByDeviceID = nil
                 operation.claimedAt = nil
-                if isRetryable(error), operation.attemptCount < 5 {
+                if waitingForAddition {
+                    operation.status = .pending
+                    operation.nextAttemptAt = attemptedAt.addingTimeInterval(30)
+                } else if isRetryable(error), operation.attemptCount < 5 {
                     operation.status = .pending
                     operation.nextAttemptAt = attemptedAt.addingTimeInterval(retryDelay(forAttempt: operation.attemptCount, error: error))
                 } else {
@@ -601,6 +608,22 @@ actor SyncEngine {
         let state = syncState(context: stateContext)
         state.lastSuccessfulPushAt = Date()
         try stateContext.save()
+    }
+
+    private func resumeDependentHistoryRemovals(after addition: SyncOperationRecord, deviceID: String, context: ModelContext) throws {
+        let addedPlay = try SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: addition.payload)
+        let generation = LibraryGenerationPolicy.currentGeneration(in: context)
+        guard LibraryGenerationPolicy.belongsToCurrentGeneration(addition.generationID, current: generation) else { return }
+        for removal in allOperations(context: context) where removal.kind == .removeHistory
+            && removal.accountKey == addition.accountKey
+            && (removal.status == .pending || removal.status == .deadletter) {
+            guard let play = try? SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: removal.payload),
+                  play.originDeviceID == deviceID, play.historyID == nil,
+                  HistoryMatchPolicy.samePlay(play, addedPlay) else { continue }
+            removal.status = .pending
+            removal.attemptCount = 0
+            removal.nextAttemptAt = nil
+        }
     }
 
     private func claimNextOperation(deviceID: String, accountKey: String) async throws -> UUID? {
@@ -765,7 +788,11 @@ actor SyncEngine {
                 && canAcknowledge(operation, in: acknowledgement)
             event.traktHistoryID = remote.id
             for duplicate in allEvents(context: acknowledgement) where duplicate !== event && duplicate.traktHistoryID == remote.id {
+                let localRemovalAt = event.tombstoned && event.dirty && !duplicate.dirty ? event.updatedAt : nil
                 mergeWatchedEvent(event, with: duplicate)
+                // A pull can import the same play before this confirmation. Its import time
+                // must not supersede the local removal that still needs to be acknowledged.
+                if let localRemovalAt { event.updatedAt = localRemovalAt }
                 acknowledgement.delete(duplicate)
             }
             if canClearDirty, !event.tombstoned {

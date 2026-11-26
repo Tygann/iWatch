@@ -5,21 +5,20 @@ struct LibrarySettingsView: View {
 
     var body: some View {
         Form {
-            LibraryIncludedSection()
+            TraktSettingsSection()
             Section {
-                LabeledContent("iCloud Sync") {
-                    SettingsCapsule(title: capsuleTitle, tint: needsAttention ? .orange : .accentColor)
+                if isWorking {
+                    ProgressView(detail)
+                } else if needsAttention {
+                    LabeledContent("Status", value: "Needs Attention")
+                    Text(detail).font(.subheadline).foregroundStyle(.secondary)
+                } else {
+                    LabeledContent("Status", value: "Automatic")
                 }
                 if let date = session.lastCloudActivityAt {
                     SyncDateRow(title: "Last Activity", date: date)
                 } else {
                     LabeledContent("Last Activity", value: "Not recorded yet")
-                }
-                if isWorking || needsAttention {
-                    HStack {
-                        Text(detail).font(.subheadline).foregroundStyle(.secondary)
-                        if isWorking { ProgressView().accessibilityLabel(session.cloudSyncStatus.title) }
-                    }
                 }
                 if needsAttention {
                     Link("Get Help with iCloud", destination: URL(string: "https://support.apple.com/guide/icloud/set-up-icloud-on-your-devices-mmfc0f1e2a/icloud")!)
@@ -29,7 +28,7 @@ struct LibrarySettingsView: View {
             } footer: {
                 Text("Your library syncs automatically across devices using the same Apple Account.")
             }
-            TraktSettingsSection()
+            LibraryIncludedSection()
             Section {
                 NavigationLink { AdvancedSettingsView() } label: {
                     SettingsNavigationLabel(title: "Manage Data", systemImage: "externaldrive")
@@ -38,14 +37,6 @@ struct LibrarySettingsView: View {
         }
         .navigationTitle("Sync")
         .navigationBarTitleDisplayMode(.inline)
-    }
-
-    private var capsuleTitle: String {
-        switch session.cloudSyncStatus {
-        case .importing, .exporting: "Syncing"
-        case .failed, .unavailable, .timedOut: "Needs Attention"
-        default: "Automatic"
-        }
     }
 
     private var detail: String {

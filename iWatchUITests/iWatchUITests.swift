@@ -293,20 +293,10 @@ final class iWatchUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Sync"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["Details"].exists)
         capture(app, "Library sync overview - " + contentSize)
-        let counts = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Show Progress'")).firstMatch
-        reveal(counts, in: app)
-        capture(app, "Library counts - " + contentSize)
-        let manage = app.buttons["Manage Data"]
-        reveal(manage, in: app)
-        manage.tap()
-        XCTAssertTrue(app.navigationBars["Manage Data"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["iCloud Diagnostics"].exists)
-        capture(app, "Manage data - " + contentSize)
-        app.navigationBars["Manage Data"].buttons.firstMatch.tap()
         revealTraktSection(in: app)
         XCTAssertFalse(app.buttons["Advanced"].exists)
         reveal(app.staticTexts["Waiting for Confirmation"], in: app)
-        reveal(app.buttons["Try Again"], in: app)
+        reveal(app.buttons["Check Trakt History"], in: app)
         capture(app, "Contextual Trakt issue - " + contentSize)
         let pending = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Pending Changes'")).firstMatch
         reveal(pending, in: app)
@@ -339,6 +329,19 @@ final class iWatchUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Discard Changes and Rebuild"].waitForExistence(timeout: 5))
         capture(app, "Protected rebuild - " + contentSize)
         app.buttons["Cancel"].tap()
+        app.navigationBars["Rebuild from Trakt"].buttons.firstMatch.tap()
+        app.navigationBars["Help with Changes"].buttons.firstMatch.tap()
+        app.navigationBars["Pending Changes"].buttons.firstMatch.tap()
+        let counts = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Show Progress'")).firstMatch
+        reveal(counts, in: app)
+        capture(app, "Library counts - " + contentSize)
+        let manage = app.buttons["Manage Data"]
+        reveal(manage, in: app)
+        manage.tap()
+        XCTAssertTrue(app.navigationBars["Manage Data"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["iCloud Diagnostics"].exists)
+        capture(app, "Manage data - " + contentSize)
+        app.navigationBars["Manage Data"].buttons.firstMatch.tap()
     }
 
     @MainActor

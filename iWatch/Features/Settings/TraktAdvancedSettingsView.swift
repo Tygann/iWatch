@@ -6,16 +6,17 @@ struct TraktTroubleshootingView: View {
 
     var body: some View {
         Form {
-            Section {
-                Link(destination: URL(string: "https://status.trakt.tv")!) {
-                    Label("Trakt Service Status", systemImage: "arrow.up.right")
-                }
-            } footer: {
-                Text("Check for a Trakt outage before troubleshooting your library.")
+            Section("Trakt") {
+                Link("Trakt Service Status", destination: URL(string: "https://status.trakt.tv")!)
+                Link("Open Trakt", destination: URL(string: "https://trakt.tv")!)
             }
             Section {
-                Text("Start by checking your library. The check can repair duplicate records and inconsistent links. Review the result before trying another recovery option.")
                 NavigationLink("Check Library Data") { TraktLibraryCheckView() }
+                NavigationLink("Contact Support") { SyncSupportView() }
+            } header: {
+                Text("Troubleshooting")
+            } footer: {
+                Text("Check Library Data looks for duplicate records and repairs inconsistent links.")
             }
             if session.syncDiagnostics.changes.contains(where: { !$0.isOnThisDevice }) {
                 Section {
@@ -25,14 +26,11 @@ struct TraktTroubleshootingView: View {
                 }
             }
             Section {
-                NavigationLink("Contact Support") { SyncSupportView() }
-            }
-            Section {
                 NavigationLink("Rebuild from Trakt") { TraktRebuildView() }
             } header: {
-                Text("If the Problem Continues")
+                Text("Library Recovery")
             } footer: {
-                Text("Rebuilding replaces your iWatch library and discards unsynced changes. Contact support first if you’re unsure.")
+                Text("Rebuilding replaces your iWatch library and discards unsynced changes.")
             }
         }
         .navigationTitle(title)

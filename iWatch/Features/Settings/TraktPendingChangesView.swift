@@ -6,18 +6,20 @@ struct TraktPendingChangesView: View {
     private let states: [SyncPendingChange.State] = [.failed, .confirming, .uploading, .waiting]
 
     var body: some View {
+        let health = session.traktSyncPresentation
         Form {
-            Section {
-                let health = session.traktSyncPresentation
-                TraktStatusRow()
-                if health.needsAttention {
-                    Link("Open Trakt", destination: URL(string: "https://trakt.tv")!)
+            if health.isWorking || health.needsAttention {
+                Section {
+                    if health.isWorking || health.action != .check || session.syncDiagnostics.failure == .ambiguous
+                        || session.syncDiagnostics.changes.isEmpty {
+                        TraktStatusRow()
+                    }
+                    TraktSyncActionButton()
                 }
             }
             if session.syncDiagnostics.changes.isEmpty {
-                Section {
-                    Text("No pending uploads for this Trakt account.").foregroundStyle(.secondary)
-                }
+                ContentUnavailableView("No Pending Changes", systemImage: "checkmark.circle",
+                    description: Text("New changes will appear here while they sync to Trakt."))
             } else {
                 ForEach(states.indices, id: \.self) { index in
                     let state = states[index]
@@ -25,22 +27,22 @@ struct TraktPendingChangesView: View {
                     if !changes.isEmpty {
                         Section {
                             ForEach(changes) { change in
-                                VStack(alignment: .leading, spacing: 6) {
+                                VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
                                     Text(change.title)
                                     Text(change.action).font(.subheadline).foregroundStyle(.secondary)
+                                    Text(change.createdAt.formatted(.dateTime.month().day().hour().minute().second()))
+                                        .font(.caption).foregroundStyle(.secondary)
                                     if !change.isOnThisDevice {
-                                        Label("From another device", systemImage: "iphone")
-                                            .font(.subheadline).foregroundStyle(.secondary)
+                                        Text("From another device").font(.caption).foregroundStyle(.secondary)
                                     }
                                 }
-                                .padding(.vertical, 4)
                                 .accessibilityElement(children: .combine)
                             }
                         } header: {
-                            Label(stateTitle(changes[0]), systemImage: symbol(changes[0]))
+                            Text("\(stateTitle(state)) (\(changes.count))")
                         } footer: {
                             if state == .confirming {
-                                Text("Try Again checks Trakt for these plays. If any appear missing, iWatch can ask you to retry their uploads.")
+                                Text("Check Trakt History looks for these plays and can offer to retry a missing upload.")
                             }
                             if changes.contains(where: { !$0.isOnThisDevice }) {
                                 Text("Open iWatch on the device where a change was made to upload it.")
@@ -49,7 +51,7 @@ struct TraktPendingChangesView: View {
                     }
                 }
             }
-            if session.traktSyncPresentation.needsAttention {
+            if health.needsAttention {
                 Section {
                     NavigationLink("Help with These Changes") { TraktTroubleshootingView(title: "Help with Changes") }
                 }
@@ -64,21 +66,12 @@ struct TraktPendingChangesView: View {
         .task { await session.refreshSyncDiagnostics() }
     }
 
-    private func stateTitle(_ change: SyncPendingChange) -> String {
-        switch change.state {
+    private func stateTitle(_ state: SyncPendingChange.State) -> String {
+        switch state {
         case .waiting: "Waiting to Upload"
         case .uploading: "Uploading"
         case .failed: "Needs Attention"
         case .confirming: "Waiting for Confirmation"
-        }
-    }
-
-    private func symbol(_ change: SyncPendingChange) -> String {
-        switch change.state {
-        case .waiting: "clock"
-        case .uploading: "arrow.up.circle"
-        case .failed: "exclamationmark.triangle"
-        case .confirming: "clock.badge.exclamationmark"
         }
     }
 }

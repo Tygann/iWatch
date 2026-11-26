@@ -998,8 +998,23 @@ struct FoundationRewriteTests {
         let succeeded = await engine.run(reason: .localMutation)
         #expect(succeeded == !lostResponse)
         if lostResponse {
-            _ = try await engine.recoverPendingUploads()
-            #expect(await engine.run(reason: .localMutation))
+            let deferred = persistence.makeContext()
+            let addition = try #require(deferred.fetch(FetchDescriptor<SyncOperationRecord>()).first { $0.kind == .addHistory })
+            addition.nextAttemptAt = .distantFuture
+            try deferred.save()
+            #expect(await engine.run(reason: .localMutation) == false)
+
+            let context = persistence.makeContext()
+            let removal = try #require(context.fetch(FetchDescriptor<SyncOperationRecord>()).first { $0.kind == .removeHistory })
+            #expect(removal.status == .pending)
+            #expect(removal.attemptCount == 0)
+            #expect(removal.nextAttemptAt != nil)
+            // Simulate an existing queue where waiting exhausted the old retry budget.
+            removal.status = .deadletter
+            removal.attemptCount = 5
+            try context.save()
+            try await engine.prepareHistoryConfirmationChecks()
+            #expect(await engine.run(reason: .userInitiated))
         }
         let snapshot = await remote.snapshot()
         #expect(snapshot.addHistoryCalls == 1)
