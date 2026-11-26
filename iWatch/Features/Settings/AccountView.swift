@@ -4,6 +4,9 @@ import SwiftUI
 struct AccountView: View {
     @Bindable var account: AccountSession
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @FocusState private var isNameFocused: Bool
+    @State private var isEditing = false
     @State private var nonce: String?
     @State private var displayName = ""
     @State private var isDeleting = false
@@ -15,14 +18,20 @@ struct AccountView: View {
             Section {
                 VStack(spacing: AppSpacing.medium) {
                     AccountAvatar(size: 100)
-                    Text(account.title)
-                        .font(.title.bold())
-                        .fontDesign(.rounded)
+                    if !isEditing {
+                        Text(account.title)
+                            .font(.title.bold())
+                            .fontDesign(.rounded)
+                    }
                     if account.userID == nil {
                         Text("You can use iWatch without an account.")
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
+                        if account.isAvailable {
+                            signInButton
+                                .padding(.top, AppSpacing.small)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -31,24 +40,29 @@ struct AccountView: View {
             .listRowBackground(Color.clear)
 
             if account.userID != nil {
-                profileSection
-                Section {
-                    Button("Sign Out") { Task { await account.signOut() } }
-                }
-                Section {
-                    Button("Delete Account", role: .destructive) { isDeleting = true }
-                }
-            } else if account.isAvailable {
-                Section {
-                    SignInWithAppleButton(.signIn) { request in
-                        nonce = AccountSession.configureSignIn(request)
-                    } onCompletion: { result in
-                        let signInNonce = nonce
-                        nonce = nil
-                        Task { await account.signIn(result, nonce: signInNonce) }
+                if isEditing {
+                    editSections
+                } else {
+                    if account.profileFailed {
+                        Section {
+                            Text("Your profile couldn’t be loaded.")
+                            Button("Try Again") { Task { await account.refresh() } }
+                        }
                     }
-                    .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
-                    .frame(height: 50)
+                    Section {
+                        Button {
+                            Task { await account.signOut() }
+                        } label: {
+                            Text("Sign Out").frame(maxWidth: .infinity)
+                        }
+                    }
+                    Section {
+                        Button(role: .destructive) {
+                            isDeleting = true
+                        } label: {
+                            Text("Delete Account").frame(maxWidth: .infinity)
+                        }
+                    }
                 }
             }
         }
@@ -56,9 +70,26 @@ struct AccountView: View {
         .overlay {
             if account.isBusy { ProgressView().accessibilityLabel("Updating account") }
         }
-        .onChange(of: account.displayName, initial: true) { _, name in displayName = name ?? "" }
-        .navigationTitle("Account")
+        .scrollDismissesKeyboard(.interactively)
+        .onChange(of: account.userID) { _, _ in endEditing() }
+        .navigationTitle(isEditing ? "Edit Account" : "Account")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if account.userID != nil {
+                ToolbarItem(placement: .primaryAction) {
+                    if isEditing {
+                        Button("Cancel", action: endEditing)
+                            .disabled(account.isBusy)
+                    } else {
+                        Button("Edit") {
+                            displayName = account.displayName ?? ""
+                            isEditing = true
+                        }
+                        .disabled(account.isBusy || account.profileFailed)
+                    }
+                }
+            }
+        }
         .sheet(isPresented: $isDeleting) {
             NavigationStack {
                 Form {
@@ -94,18 +125,58 @@ struct AccountView: View {
         }
     }
 
-    private var profileSection: some View {
-        Section("Profile") {
-            if account.profileFailed {
-                Text("Your profile couldn’t be loaded.")
-                Button("Try Again") { Task { await account.refresh() } }
-            } else {
-                TextField("Display Name", text: $displayName)
+    private var signInButton: some View {
+        SignInWithAppleButton(.signIn) { request in
+            nonce = AccountSession.configureSignIn(request)
+        } onCompletion: { result in
+            let signInNonce = nonce
+            nonce = nil
+            Task { await account.signIn(result, nonce: signInNonce) }
+        }
+        .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+        .frame(height: 50)
+    }
+
+    @ViewBuilder
+    private var editSections: some View {
+        Section {
+            let layout = typeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: AppSpacing.small))
+                : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: AppSpacing.medium))
+
+            layout {
+                Text("Username")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityHidden(true)
+                TextField("Username", text: $displayName)
                     .textContentType(.nickname)
-                Button("Save Name") { Task { await account.saveName(displayName) } }
-                    .disabled(trimmedName == nil || trimmedName == account.displayName)
+                    .multilineTextAlignment(typeSize.isAccessibilitySize ? .leading : .trailing)
+                    .focused($isNameFocused)
+                    .submitLabel(.done)
+                    .onSubmit { isNameFocused = false }
             }
         }
+
+        Section {
+            Button {
+                isNameFocused = false
+                Task {
+                    if await account.saveName(displayName) {
+                        endEditing()
+                    }
+                }
+            } label: {
+                Text("Save").frame(maxWidth: .infinity)
+            }
+            .disabled(trimmedName == nil || trimmedName == account.displayName)
+        }
+    }
+
+    private func endEditing() {
+        isNameFocused = false
+        isEditing = false
+        displayName = ""
     }
 }
 

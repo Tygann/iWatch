@@ -495,11 +495,13 @@ final class iWatchUITests: XCTestCase {
     }
 
     @MainActor
-    private func launchSyncSettings(contentSize: String, state: String) -> XCUIApplication {
+    private func launchSyncSettings(
+        contentSize: String, state: String, additionalArguments: [String] = []
+    ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += ["UITEST_MODE", "UITEST_SYNC_STATE", state,
             "-appTheme", contentSize.contains("Accessibility") ? "2" : "1",
-            "-UIPreferredContentSizeCategoryName", contentSize]
+            "-UIPreferredContentSizeCategoryName", contentSize] + additionalArguments
         if contentSize.contains("Accessibility") { app.launchArguments.append("UITEST_ACCESSIBILITY_TEXT") }
         app.launch()
         let settings = app.buttons["Settings"]
@@ -528,7 +530,8 @@ final class iWatchUITests: XCTestCase {
     @MainActor
     func testGuestAccountAtStandardAndAccessibilityTextSizes() {
         for contentSize in ["UICTContentSizeCategoryL", "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"] {
-            let app = launchSyncSettings(contentSize: contentSize, state: "normal")
+            let app = launchSyncSettings(contentSize: contentSize, state: "normal",
+                                         additionalArguments: ["UITEST_ACCOUNT_SIGN_IN"])
             let account = app.buttons["settings-account"]
             XCTAssertTrue(account.waitForExistence(timeout: 5))
             XCTAssertTrue(account.isHittable)
@@ -545,9 +548,55 @@ final class iWatchUITests: XCTestCase {
             XCTAssertTrue(app.staticTexts["Guest"].isHittable)
             XCTAssertTrue(app.staticTexts["You can use iWatch without an account."].isHittable)
 
+            let signIn = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Sign in with Apple")).firstMatch
+            XCTAssertTrue(signIn.isHittable)
+            XCTAssertFalse(accountBar.buttons["Edit"].exists)
             capture(app, "Guest account - " + contentSize)
             accountBar.buttons.firstMatch.tap()
             XCTAssertTrue(account.isHittable)
+            app.terminate()
+        }
+    }
+
+    @MainActor
+    func testSignedInAccountEditingAtStandardAndAccessibilityTextSizes() {
+        for contentSize in ["UICTContentSizeCategoryL", "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"] {
+            let app = XCUIApplication()
+            app.launchArguments += ["UITEST_MODE", "UITEST_ACCOUNT_PROFILE", "-appTheme", "2",
+                                    "-UIPreferredContentSizeCategoryName", contentSize]
+            if contentSize.contains("Accessibility") { app.launchArguments.append("UITEST_ACCESSIBILITY_TEXT") }
+            app.launch()
+            let settings = app.buttons["Settings"]
+            XCTAssertTrue(settings.waitForExistence(timeout: 5))
+            settings.tap()
+            app.buttons["settings-account"].tap()
+
+            let accountBar = app.navigationBars["Account"]
+            XCTAssertTrue(accountBar.waitForExistence(timeout: 5))
+            let username = app.textFields["Username"]
+            XCTAssertFalse(username.exists)
+            XCTAssertTrue(app.buttons["Sign Out"].exists)
+            XCTAssertTrue(app.buttons["Delete Account"].exists)
+            capture(app, "Signed-in account - " + contentSize)
+            accountBar.buttons["Edit"].tap()
+
+            let editBar = app.navigationBars["Edit Account"]
+            XCTAssertTrue(editBar.waitForExistence(timeout: 5))
+            XCTAssertEqual(username.value as? String, "Sample Viewer")
+            XCTAssertFalse(app.buttons["Save"].isEnabled)
+            XCTAssertFalse(app.buttons["Sign Out"].exists)
+            XCTAssertFalse(app.buttons["Delete Account"].exists)
+            capture(app, "Edit account - " + contentSize)
+
+            username.tap()
+            username.typeText(" Updated")
+            XCTAssertTrue(app.buttons["Save"].isEnabled)
+            editBar.buttons["Cancel"].tap()
+            XCTAssertTrue(accountBar.waitForExistence(timeout: 5))
+            XCTAssertTrue(app.staticTexts["Sample Viewer"].exists)
+
+            accountBar.buttons["Edit"].tap()
+            XCTAssertEqual(username.value as? String, "Sample Viewer")
             app.terminate()
         }
     }

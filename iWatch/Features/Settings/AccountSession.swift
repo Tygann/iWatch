@@ -21,6 +21,14 @@ final class AccountSession {
         userID = backend?.cachedUserID
     }
 
+    #if DEBUG
+    convenience init(previewDisplayName: String) {
+        self.init()
+        userID = UUID()
+        displayName = previewDisplayName
+    }
+    #endif
+
     func refresh() async {
         guard let backend, !isBusy else { return }
         let cachedID = backend.cachedUserID
@@ -62,17 +70,20 @@ final class AccountSession {
         }
     }
 
-    func saveName(_ name: String) async {
-        guard let backend, let userID, !isBusy else { return }
-        guard let trimmed = Self.validatedName(name) else { return }
+    func saveName(_ name: String) async -> Bool {
+        guard let backend, let userID, !isBusy, let trimmed = Self.validatedName(name) else {
+            return false
+        }
         isBusy = true
         defer { isBusy = false }
         do {
             try await backend.saveProfile(.init(id: userID, displayName: trimmed))
             displayName = trimmed
             profileFailed = false
+            return true
         } catch {
             message = "Couldn’t save your name. Please try again."
+            return false
         }
     }
 

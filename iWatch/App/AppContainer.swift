@@ -259,6 +259,23 @@ final class AppContainer {
         )
         let router = AppRouter(defaultTab: ProcessInfo.processInfo.arguments.contains("UITEST_START_ON_SHOWS") ? 1 : 0)
 
+        let account: AccountSession
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("UITEST_ACCOUNT_PROFILE") {
+            account = AccountSession(previewDisplayName: "Sample Viewer")
+        } else if arguments.contains("UITEST_ACCOUNT_SIGN_IN"),
+                  let config = AccountBackend.Configuration(
+                    url: "https://iwatch-account-ui-test.invalid", publishableKey: "sb_publishable_fixture"
+                  ) {
+            account = AccountSession(backend: AccountBackend(configuration: config))
+        } else {
+            account = AccountSession()
+        }
+        #else
+        account = AccountSession()
+        #endif
+
         seedPreviewCatalog(into: persistence)
 
         return AppContainer(
@@ -275,7 +292,8 @@ final class AppContainer {
             peopleRepository: peopleRepository,
             syncEngine: syncEngine,
             session: session,
-            router: router
+            router: router,
+            account: account
         )
     }
 
