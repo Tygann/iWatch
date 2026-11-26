@@ -7,6 +7,8 @@ import Observation
 @Observable
 final class AccountSession {
     private let backend: AccountBackend?
+    private let photoStore: AccountPhotoStore
+    private(set) var photo: Data?
     private(set) var userID: UUID?
     private(set) var displayName: String?
     private(set) var isBusy = false
@@ -16,9 +18,12 @@ final class AccountSession {
     var isAvailable: Bool { backend != nil }
     var title: String { displayName ?? (userID == nil ? "Guest" : "Account") }
 
-    init(backend: AccountBackend? = nil) {
+    init(backend: AccountBackend? = nil, photoStore: AccountPhotoStore? = nil) {
         self.backend = backend
+        let photoStore = photoStore ?? AccountPhotoStore()
+        self.photoStore = photoStore
         userID = backend?.cachedUserID
+        photo = userID.flatMap { photoStore.photo(for: $0) }
     }
 
     #if DEBUG
@@ -35,6 +40,7 @@ final class AccountSession {
         if userID != cachedID {
             displayName = nil
             userID = cachedID
+            photo = cachedID.flatMap { photoStore.photo(for: $0) }
         }
         guard let cachedID else { return }
         isBusy = true
@@ -63,6 +69,7 @@ final class AccountSession {
             }
             let id = try await backend.signIn(identityToken: token, nonce: nonce)
             userID = id
+            photo = photoStore.photo(for: id)
             await loadProfile(from: backend, for: id)
         } catch let error as ASAuthorizationError where error.code == .canceled {
         } catch {
@@ -101,7 +108,7 @@ final class AccountSession {
     }
 
     func delete(_ result: Result<ASAuthorization, any Error>) async {
-        guard let backend, userID != nil, !isBusy else { return }
+        guard let backend, let userID, !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
         do {
@@ -112,12 +119,19 @@ final class AccountSession {
                 return
             }
             try await backend.deleteAccount(authorizationCode: code)
+            try? photoStore.setPhoto(nil, for: userID)
             try? await backend.signOut()
             clear()
         } catch let error as ASAuthorizationError where error.code == .canceled {
         } catch {
             message = "Couldn’t delete your account. Please try again."
         }
+    }
+
+    func setPhoto(_ data: Data?, for ownerID: UUID) throws {
+        guard userID == ownerID, !isBusy else { throw CocoaError(.userCancelled) }
+        try photoStore.setPhoto(data, for: ownerID)
+        photo = data
     }
 
     static func validatedName(_ name: String) -> String? {
@@ -143,6 +157,7 @@ final class AccountSession {
 
     private func clear() {
         userID = nil
+        photo = nil
         displayName = nil
         profileFailed = false
     }

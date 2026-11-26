@@ -52,7 +52,7 @@ struct SettingsView: View {
                 AccountView(account: container.account)
             } label: {
                 HStack(spacing: AppSpacing.large) {
-                    AccountAvatar(size: 60)
+                    AccountAvatar(localPhoto: container.account.photo, size: 60)
                     VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
                         if container.account.userID == nil || container.account.displayName != nil {
                             Text(container.account.title).font(.headline).fontDesign(.rounded)

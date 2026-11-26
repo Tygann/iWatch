@@ -1,12 +1,15 @@
 import SwiftUI
 
 struct AccountAvatar: View {
+    var localPhoto: Data? = nil
     var photoURL: URL? = nil
     let size: CGFloat
 
     var body: some View {
         Group {
-            if let photoURL {
+            if let localPhoto, let image = UIImage(data: localPhoto) {
+                Image(uiImage: image).resizable().scaledToFill()
+            } else if let photoURL {
                 AsyncImage(url: photoURL) { phase in
                     if let image = phase.image {
                         image.resizable().scaledToFill()

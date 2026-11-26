@@ -1,4 +1,5 @@
 import AuthenticationServices
+import PhotosUI
 import SwiftUI
 
 struct AccountView: View {
@@ -10,6 +11,9 @@ struct AccountView: View {
     @State private var nonce: String?
     @State private var displayName = ""
     @State private var isDeleting = false
+    @State private var pickedPhoto: PhotosPickerItem?
+    @State private var cropSelection: AvatarCropSelection?
+    @State private var isLoadingPhoto = false
 
     private var trimmedName: String? { AccountSession.validatedName(displayName) }
 
@@ -17,7 +21,18 @@ struct AccountView: View {
         Form {
             Section {
                 VStack(spacing: AppSpacing.medium) {
-                    AccountAvatar(size: 100)
+                    AccountAvatar(localPhoto: account.photo, size: 100)
+                        .overlay(alignment: .bottomTrailing) {
+                            if isEditing, let ownerID = account.userID {
+                                photoPicker(for: ownerID)
+                                    .offset(x: 6, y: 4)
+                            }
+                        }
+                    if isEditing, account.photo != nil {
+                        Button("Remove Photo", role: .destructive, action: removePhoto)
+                            .buttonStyle(.borderless)
+                            .frame(minHeight: 44)
+                    }
                     if !isEditing {
                         Text(account.title)
                             .font(.title.bold())
@@ -90,6 +105,10 @@ struct AccountView: View {
                 }
             }
         }
+        .task(id: pickedPhoto) { await loadPickedPhoto(pickedPhoto) }
+        .sheet(item: $cropSelection) { selection in
+            AvatarCropView(selection: selection, account: account)
+        }
         .sheet(isPresented: $isDeleting) {
             NavigationStack {
                 Form {
@@ -122,6 +141,88 @@ struct AccountView: View {
             Button("OK", role: .cancel) { account.message = nil }
         } message: {
             Text(account.message ?? "")
+        }
+    }
+
+    @ViewBuilder
+    private func photoPicker(for ownerID: UUID) -> some View {
+        let title = account.photo == nil ? "Add Photo" : "Change Photo"
+        #if DEBUG && targetEnvironment(simulator)
+        if ProcessInfo.processInfo.arguments.contains("UITEST_ACCOUNT_AVATAR") {
+            Button {
+                let size = CGSize(width: 320, height: 240)
+                let image = UIGraphicsImageRenderer(size: size).image { context in
+                    UIColor.systemTeal.setFill()
+                    context.fill(CGRect(origin: .zero, size: size))
+                    UIColor.systemOrange.setFill()
+                    context.cgContext.fillEllipse(in: CGRect(x: 90, y: 50, width: 140, height: 140))
+                }
+                cropSelection = AvatarCropSelection(image: image, ownerID: ownerID)
+            } label: {
+                pencil
+            }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+            .accessibilityLabel(title)
+        } else {
+            nativePhotoPicker(title: title)
+        }
+        #else
+        nativePhotoPicker(title: title)
+        #endif
+    }
+
+    private func nativePhotoPicker(title: String) -> some View {
+        PhotosPicker(selection: $pickedPhoto, matching: .images) {
+            if isLoadingPhoto {
+                ProgressView().frame(width: 44, height: 44)
+            } else {
+                pencil
+            }
+        }
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
+        .disabled(isLoadingPhoto)
+        .accessibilityLabel(title)
+    }
+
+    private var pencil: some View {
+        Image(systemName: "pencil")
+            .foregroundStyle(.primary)
+            .frame(width: 26, height: 26)
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
+    }
+
+    private func loadPickedPhoto(_ item: PhotosPickerItem?) async {
+        guard let item, let ownerID = account.userID, isEditing else { return }
+        isLoadingPhoto = true
+        defer {
+            if pickedPhoto == item {
+                isLoadingPhoto = false
+                pickedPhoto = nil
+            }
+        }
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self) else {
+                throw AvatarImageService.PhotoError.unreadable
+            }
+            try Task.checkCancellation()
+            guard account.userID == ownerID, pickedPhoto == item, isEditing else { return }
+            cropSelection = AvatarCropSelection(image: try AvatarImageService.image(from: data), ownerID: ownerID)
+        } catch {
+            if !Task.isCancelled, pickedPhoto == item {
+                account.message = "That photo couldn’t be opened. Try choosing another image."
+            }
+        }
+    }
+
+    private func removePhoto() {
+        guard let ownerID = account.userID else { return }
+        do {
+            try account.setPhoto(nil, for: ownerID)
+        } catch {
+            account.message = "Couldn’t remove your photo. Please try again."
         }
     }
 
@@ -175,6 +276,9 @@ struct AccountView: View {
 
     private func endEditing() {
         isNameFocused = false
+        pickedPhoto = nil
+        cropSelection = nil
+        isLoadingPhoto = false
         isEditing = false
         displayName = ""
     }
