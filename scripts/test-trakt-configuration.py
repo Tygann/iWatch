@@ -82,11 +82,16 @@ elif args[0] in ('-replace', '-remove'):
             assert 'TRAKT_CLIENT_SECRET' not in plistlib.loads(secrets.read_bytes())
         print('PASS:', name)
     local_secrets.unlink(missing_ok=True)
-    run(valid, True)
+    supabase = {'SUPABASE_URL': 'https://fixture.supabase.co', 'SUPABASE_PUBLISHABLE_KEY': 'sb_publishable_fixture'}
+    run(valid | supabase, True)
+    for path in (info, secrets):
+        assert supabase.items() <= plistlib.loads(path.read_bytes()).items()
+    print('PASS: CI bundles the optional iWatch account configuration')
     run({}, False)
     assert not secrets.exists()
     assert 'TRAKT_CLIENT_ID' not in plistlib.loads(info.read_bytes())
     assert 'TMDB_API_KEY' not in plistlib.loads(info.read_bytes())
+    assert not (supabase.keys() & plistlib.loads(info.read_bytes()).keys())
     print('PASS: removed CI inputs cannot reuse stale credentials')
     local_secrets.write_bytes(plistlib.dumps(valid))
     run({}, True)

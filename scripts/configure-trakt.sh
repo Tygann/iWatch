@@ -1,5 +1,5 @@
 #!/bin/sh
-# Configures TMDb and Trakt after Copy Bundle Resources. Never prints values.
+# Configures TMDb, Trakt, and optional Supabase settings after Copy Bundle Resources. Never prints values.
 set -eu
 
 bundle="${TARGET_BUILD_DIR:?}/${UNLOCALIZED_RESOURCES_FOLDER_PATH:?}"
@@ -31,7 +31,7 @@ if [ -f "$local_secrets" ]; then
 else
     /bin/rm -f "$secrets"
 fi
-for key in TMDB_API_KEY TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET TRAKT_REDIRECT_URI; do
+for key in TMDB_API_KEY TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET TRAKT_REDIRECT_URI SUPABASE_URL SUPABASE_PUBLISHABLE_KEY; do
     /usr/bin/plutil -remove "$key" "$info" 2>/dev/null || true
 done
 
@@ -40,11 +40,13 @@ done
 
 # Environment variables are a private CI input. Write only into the build
 # product, leaving the developer's local Secrets.plist untouched.
-for key in TMDB_API_KEY TRAKT_CLIENT_ID TRAKT_REDIRECT_URI; do
+for key in TMDB_API_KEY TRAKT_CLIENT_ID TRAKT_REDIRECT_URI SUPABASE_URL SUPABASE_PUBLISHABLE_KEY; do
     case "$key" in
         TMDB_API_KEY) value="${TMDB_API_KEY:-}" ;;
         TRAKT_CLIENT_ID) value="${TRAKT_CLIENT_ID:-}" ;;
         TRAKT_REDIRECT_URI) value="${TRAKT_REDIRECT_URI:-}" ;;
+        SUPABASE_URL) value="${SUPABASE_URL:-}" ;;
+        SUPABASE_PUBLISHABLE_KEY) value="${SUPABASE_PUBLISHABLE_KEY:-}" ;;
     esac
     if [ -n "$value" ]; then
         if [ ! -f "$secrets" ]; then
