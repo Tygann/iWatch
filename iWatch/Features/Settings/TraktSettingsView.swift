@@ -192,11 +192,12 @@ struct TraktSyncActionButton: View {
 
     @State private var retryOffer: SyncEngine.HistoryRetry?
     @State private var showsRetryConfirmation = false
+    var historyCheckOnly = false
 
     var body: some View {
         let health = session.traktSyncPresentation
         Group {
-            if !health.isWorking && health.action != .setup {
+            if !health.isWorking && health.action != .setup && (!historyCheckOnly || health.action == .check) {
                 Button {
                     Task {
                         switch health.action {

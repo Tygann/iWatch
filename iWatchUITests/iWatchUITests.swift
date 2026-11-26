@@ -307,8 +307,15 @@ final class iWatchUITests: XCTestCase {
         }
         pending.tap()
         XCTAssertTrue(app.navigationBars["Pending Changes"].waitForExistence(timeout: 5))
+        let confirmation = app.staticTexts["Waiting for Confirmation (1)"]
+        reveal(confirmation, in: app)
+        reveal(checkHistory, in: app)
         let episode = app.staticTexts["Example Show · S1 E1"]
         reveal(episode, in: app)
+        if !contentSize.contains("Accessibility") {
+            XCTAssertLessThan(confirmation.frame.maxY, checkHistory.frame.midY)
+            XCTAssertLessThan(checkHistory.frame.midY, episode.frame.minY)
+        }
         capture(app, "Pending changes - " + contentSize)
         let help = app.buttons["Help with These Changes"]
         reveal(help, in: app)
@@ -337,14 +344,14 @@ final class iWatchUITests: XCTestCase {
         app.navigationBars["Rebuild from Trakt"].buttons.firstMatch.tap()
         app.navigationBars["Help with Changes"].buttons.firstMatch.tap()
         app.navigationBars["Pending Changes"].buttons.firstMatch.tap()
-        let counts = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Show Progress'")).firstMatch
-        reveal(counts, in: app)
-        capture(app, "Library counts - " + contentSize)
         let manage = app.buttons["Manage Data"]
         reveal(manage, in: app)
         manage.tap()
         XCTAssertTrue(app.navigationBars["Manage Data"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["iCloud Diagnostics"].exists)
+        let counts = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Show Progress'")).firstMatch
+        reveal(counts, in: app)
+        capture(app, "Library counts - " + contentSize)
         capture(app, "Manage data - " + contentSize)
         app.navigationBars["Manage Data"].buttons.firstMatch.tap()
     }

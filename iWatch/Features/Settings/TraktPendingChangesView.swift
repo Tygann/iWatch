@@ -7,14 +7,17 @@ struct TraktPendingChangesView: View {
 
     var body: some View {
         let health = session.traktSyncPresentation
+        let hasConfirmingChanges = session.syncDiagnostics.changes.contains { $0.state == .confirming }
+        let checkInConfirmationSection = health.action == .check && hasConfirmingChanges
+        let showsStatus = health.isWorking || (health.needsAttention &&
+            (!checkInConfirmationSection || session.syncDiagnostics.failure == .ambiguous))
         Form {
-            if health.isWorking || health.needsAttention {
+            if showsStatus {
                 Section {
-                    if health.isWorking || health.action != .check || session.syncDiagnostics.failure == .ambiguous
-                        || session.syncDiagnostics.changes.isEmpty {
-                        TraktStatusRow()
+                    TraktStatusRow()
+                    if !checkInConfirmationSection {
+                        TraktSyncActionButton()
                     }
-                    TraktSyncActionButton()
                 }
             }
             if session.syncDiagnostics.changes.isEmpty {
@@ -26,6 +29,9 @@ struct TraktPendingChangesView: View {
                     let changes = session.syncDiagnostics.changes.filter { $0.state == state }
                     if !changes.isEmpty {
                         Section {
+                            if state == .confirming {
+                                TraktSyncActionButton(historyCheckOnly: true)
+                            }
                             ForEach(changes) { change in
                                 VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
                                     Text(change.title)
@@ -42,7 +48,7 @@ struct TraktPendingChangesView: View {
                             Text("\(stateTitle(state)) (\(changes.count))")
                         } footer: {
                             if state == .confirming {
-                                Text("Check Trakt History looks for these plays and can offer to retry a missing upload.")
+                                Text("Checking looks for the plays in this section on Trakt. If any are missing, you may be offered a retry.")
                             }
                             if changes.contains(where: { !$0.isOnThisDevice }) {
                                 Text("Open iWatch on the device where a change was made to upload it.")

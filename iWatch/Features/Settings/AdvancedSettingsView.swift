@@ -17,6 +17,8 @@ struct AdvancedSettingsView: View {
 
     var body: some View {
         Form {
+            LibraryIncludedSection()
+
             Section {
                 Button {
                     Task {
@@ -145,6 +147,52 @@ struct AdvancedSettingsView: View {
     }
 }
 
+private struct LibraryIncludedSection: View {
+    @Environment(AppSession.self) private var session
+    @Environment(AppContainer.self) private var container
+    @State private var counts: LibraryCounts?
+    @State private var countsFailed = false
+
+    var body: some View {
+        Section("Library") {
+            includedRow("Watchlist", symbol: "bookmark", detail: counts?.watchlistDescription)
+            includedRow("Watched History", symbol: "clock", detail: counts?.historyDescription)
+            includedRow("Show Progress", symbol: "play.rectangle", detail: counts?.progressDescription)
+            if countsFailed {
+                Button("Try Again") { Task { await loadCounts() } }
+            }
+        }
+        .task(id: session.libraryRevision) { await loadCounts() }
+    }
+
+    private func includedRow(_ title: String, symbol: String, detail: String?) -> some View {
+        Label {
+            VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
+                Text(title)
+                Text(detail ?? (countsFailed ? "Count unavailable" : "Loading…"))
+                    .font(.subheadline).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } icon: {
+            Image(systemName: symbol)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func loadCounts() async {
+        do {
+            let updated = try await container.libraryRepository.libraryCounts()
+            try Task.checkCancellation()
+            counts = updated
+            countsFailed = false
+        } catch is CancellationError {
+        } catch {
+            if !Task.isCancelled { countsFailed = true }
+        }
+    }
+
+}
+
 // MARK: - Previews
 
 #Preview {
@@ -154,4 +202,5 @@ struct AdvancedSettingsView: View {
     }
     .environment(container.session)
     .environment(container.router)
+    .environment(container)
 }
