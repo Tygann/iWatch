@@ -479,9 +479,10 @@ final class iWatchUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Share iWatch"].exists)
         XCTAssertFalse(app.buttons["Rate iWatch"].exists)
         XCTAssertFalse(app.buttons["Acknowledgments"].exists)
-        reveal(app.buttons["The Movie Database (TMDB)"], in: app)
-        reveal(app.buttons["Trakt"], in: app)
-        let attribution = app.staticTexts["This product uses the TMDB API but is not endorsed or certified by TMDB."]
+        XCTAssertTrue(app.navigationBars["About"].waitForExistence(timeout: 5))
+        reveal(app.descendants(matching: .any)["about-tmdb"].firstMatch, in: app)
+        reveal(app.descendants(matching: .any)["about-trakt"].firstMatch, in: app)
+        let attribution = app.staticTexts["iWatch is not endorsed or certified by TMDB or Trakt."]
         reveal(attribution, in: app)
         capture(app, "Inline provider credits - " + contentSize)
     }
@@ -959,10 +960,10 @@ final class iWatchUITests: XCTestCase {
         XCTAssertLessThanOrEqual(app.buttons["about-support"].frame.width, 600)
         XCTAssertFalse(app.buttons["Share iWatch"].exists)
         XCTAssertFalse(app.buttons["Rate iWatch"].exists)
-        revealAbout(app.buttons["Privacy Policy"])
+        revealAbout(app.descendants(matching: .any)["about-privacy"].firstMatch)
         XCTAssertFalse(app.buttons["Acknowledgments"].exists)
-        for label in ["The Movie Database (TMDB)", "Trakt"] {
-            let link = app.collectionViews.firstMatch.buttons[label]
+        for identifier in ["about-tmdb", "about-trakt"] {
+            let link = app.descendants(matching: .any)[identifier].firstMatch
             revealAbout(link)
             XCTAssertGreaterThanOrEqual(link.frame.width, 44)
             XCTAssertGreaterThanOrEqual(link.frame.height, 44)

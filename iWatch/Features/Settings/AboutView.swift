@@ -52,6 +52,7 @@ struct AboutView: View {
                         .foregroundStyle(Color.primary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("about-privacy")
             }
 
             Section {
@@ -121,6 +122,7 @@ struct AboutView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("The Movie Database (TMDB)")
+        .accessibilityIdentifier("about-tmdb")
         .accessibilityHint("Opens the TMDB website")
     }
 
@@ -135,6 +137,7 @@ struct AboutView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Trakt")
+        .accessibilityIdentifier("about-trakt")
         .accessibilityHint("Opens the Trakt website")
     }
 

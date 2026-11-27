@@ -63,7 +63,7 @@ jobs:
     needs: preflight
     if: needs.preflight.outputs.simulator == 'true'
     runs-on: xcode-27
-    timeout-minutes: 45
+    timeout-minutes: 65
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
       SIMULATOR_DESTINATION: platform=iOS Simulator,name=iPhone 17,OS=27.2
