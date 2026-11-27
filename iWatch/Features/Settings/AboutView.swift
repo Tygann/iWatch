@@ -41,14 +41,14 @@ struct AboutView: View {
 
             Section {
                 NavigationLink { SyncSupportView() } label: {
-                    SettingsNavigationLabel(title: "Contact Support", systemImage: "questionmark.circle")
+                    SettingsNavigationLabel(title: "Contact Support", systemImage: "questionmark.circle", tint: .blue)
                 }
                 .accessibilityIdentifier("about-support")
             }
 
             Section {
                 Link(destination: URL(string: "https://tylerkeegan.com/iwatch/privacy/")!) {
-                    SettingsNavigationLabel(title: "Privacy Policy", systemImage: "hand.raised")
+                    SettingsNavigationLabel(title: "Privacy Policy", systemImage: "hand.raised", tint: .indigo)
                         .foregroundStyle(Color.primary)
                 }
                 .buttonStyle(.plain)

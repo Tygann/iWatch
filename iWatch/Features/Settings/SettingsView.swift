@@ -31,7 +31,9 @@ struct SettingsView: View {
             appSection
             #if DEBUG
             Section("Development") {
-                NavigationLink("Reference Gallery") { ReferenceGallery() }
+                NavigationLink { ReferenceGallery() } label: {
+                    SettingsNavigationLabel(title: "Reference Gallery", systemImage: "hammer", tint: .gray)
+                }
             }
             #endif
         }
@@ -79,6 +81,7 @@ struct SettingsView: View {
                 SettingsNavigationLabel(
                     title: "Library Sync",
                     systemImage: "arrow.triangle.2.circlepath",
+                    tint: .purple,
                     detail: syncStatus
                 )
             }
@@ -95,7 +98,7 @@ struct SettingsView: View {
                         .tag(theme)
                 }
             } label: {
-                SettingsNavigationLabel(title: "Appearance", systemImage: "circle.righthalf.filled")
+                SettingsNavigationLabel(title: "Appearance", systemImage: "circle.righthalf.filled", tint: .indigo)
             }
             .pickerStyle(.menu)
             .tint(.secondary)
@@ -108,7 +111,7 @@ struct SettingsView: View {
                 Text("Shows").tag(AppRouter.Tab.shows.rawValue)
                 Text("Search").tag(AppRouter.Tab.search.rawValue)
             } label: {
-                SettingsNavigationLabel(title: "Start Page", systemImage: "platter.filled.bottom.iphone")
+                SettingsNavigationLabel(title: "Start Page", systemImage: "platter.filled.bottom.iphone", tint: .blue)
             }
             .pickerStyle(.menu)
             .tint(.secondary)
@@ -119,6 +122,7 @@ struct SettingsView: View {
                 SettingsNavigationLabel(
                     title: "Notifications",
                     systemImage: "bell",
+                    tint: .pink,
                     detail: notificationStatus
                 )
             }
@@ -128,17 +132,17 @@ struct SettingsView: View {
     private var appSection: some View {
         Section(SettingsHomeSection.app.rawValue) {
             ShareLink(item: AppDistributionPresentation.shareText) {
-                SettingsNavigationLabel(title: "Share iWatch", systemImage: "square.and.arrow.up")
+                SettingsNavigationLabel(title: "Share iWatch", systemImage: "square.and.arrow.up", tint: .blue)
                     .foregroundStyle(Color.primary)
             }
             .buttonStyle(.plain)
             Button { requestReview() } label: {
-                SettingsNavigationLabel(title: "Rate iWatch", systemImage: "star")
+                SettingsNavigationLabel(title: "Rate iWatch", systemImage: "star", tint: .purple)
                     .foregroundStyle(Color.primary)
             }
             .buttonStyle(.plain)
             NavigationLink { AboutView() } label: {
-                SettingsNavigationLabel(title: "About", systemImage: "info.circle")
+                SettingsNavigationLabel(title: "About", systemImage: "info.circle", tint: .gray)
             }
             .accessibilityIdentifier("settings-about")
         }
