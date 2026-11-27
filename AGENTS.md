@@ -1,5 +1,11 @@
 # iWatch agent guidance
 
+## Cloud startup and delivery
+
+- Before editing in Codex Cloud, run `scripts/refresh-cloud-checkout.sh` with network access and use the path it prints. Re-read `AGENTS.md` from that checkout. If the helper is absent, fetch `origin/main` and use a clean checkout at that revision. If shell Git cannot fetch, use the GitHub connector to verify the current base. Preserve any existing local changes and report a failed refresh.
+- When iOS verification is required and the workspace lacks Xcode, publish a scoped commit to a task branch and open a draft PR to run the repository’s macOS GitHub Actions workflow. Use the GitHub connector when shell Git publishing is unavailable. Monitor CI to completion and land the verified change when authorized. Honor any explicit instruction to keep work local. Report the specific blocker if publishing or CI cannot proceed.
+- After landing changes on `main`, run the refresh helper again and verify that the active checkout uses the landed revision.
+
 ## Scope and architecture
 
 - iWatch is a local-first SwiftUI app. SwiftData/CloudKit owns cross-device library replication; Trakt is an optional external account sync.
@@ -24,7 +30,6 @@
 
 - Run `git diff --check` and applicable architecture, Trakt configuration, and CloudKit schema checks. For app or test code, run a simulator build and the full `iWatchTests` target. For UI changes, run the affected `iWatchUITests` cases from the same build.
 - Review the final diff for sync regressions, actor isolation, accidental secrets, and UI-state correctness.
-- At the start of a cloud task and after landing changes on GitHub `main`, run `scripts/refresh-cloud-checkout.sh` and use the checkout path printed on stdout. If shell Git requires network access, use the environment’s network-enabled execution mode. If the helper is missing from an older checkout or fetch still fails, verify the current GitHub head through the connector and use a clean checkout or apply only the intended patch to that verified base. Report a failed refresh.
 - Automatically commit and push completed, self-contained changes when verification supports shipping them. Use a direct push to `main` for small changes when the remote base is current, the completed checks cover the change, and repository rules allow it. Honor explicit instructions to keep changes local.
 - Require green macOS CI on a PR before landing persistence or schema migrations, CloudKit or Trakt sync, authentication, and CI or release workflow changes. Use a draft PR whenever required simulator checks cannot run before publishing the change. Monitor CI through completion, investigate failures, and report any unverified checks.
 - Run the full UI suite before releasing and use the weekly run to catch cross-flow regressions. Keep simulator checks on fixtures or test configuration. Keep signing credentials and production keys in the release environment.
