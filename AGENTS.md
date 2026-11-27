@@ -24,7 +24,8 @@
 
 - For Swift changes: run the focused affected tests, a simulator build, and `git diff --check`.
 - Review the final diff for sync regressions, actor isolation, accidental secrets, and UI-state correctness.
-- When a self-contained task passes its required checks, commit only its files with a concise imperative message. Do not commit if unrelated changes obscure ownership; report that blocker instead.
+- Start each cloud task from current GitHub `main`. If a checkout is stale or has unrelated edits, preserve it and apply only the intended patch to a fresh checkout, worktree, or verified GitHub base.
+- Automatically commit and push completed, self-contained changes when verification supports shipping them. Use a direct push to `main` for small changes when the branch is current and repository rules allow it. Use a draft PR when macOS CI needs to pass before landing. Honor explicit instructions to keep changes local.
 
 ## TestFlight and App Store release notes
 

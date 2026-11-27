@@ -21,7 +21,8 @@ jobs:
         run: |
           test ! -f iWatch/Secrets.plist
           ! git grep -nE '(TRAKT_CLIENT_SECRET|TMDB_API_KEY).*[=:][[:space:]]*[A-Za-z0-9_-]{24,}' -- ':!iWatch/Secrets.example.plist'
-      - name: Check whitespace
+      - name: Check whitespace and detect notification changes
+        id: changes
         env:
           EVENT_NAME: ${{ github.event_name }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -35,20 +36,35 @@ jobs:
             base=$(git hash-object -t tree /dev/null)
           fi
           git diff --check "$base" HEAD
+          notification_changes=$(git diff --name-only "$base" HEAD -- \
+            .github/workflows/ios.yml iWatch.xcodeproj \
+            iWatch/App iWatch/iWatchApp.swift iWatch/Features/Settings \
+            iWatch/Platform/Notifications iWatchUITests)
+          if [ -n "$notification_changes" ]; then
+            echo "notifications=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Check UI architecture boundaries
         run: python3 scripts/check-view-boundaries.py
       - name: Check Trakt configuration validation
         run: python3 scripts/test-trakt-configuration.py
       - name: Check CloudKit schema preflight
         run: python3 scripts/check-cloudkit-schema.py --self-test
-      - name: Build
-        run: xcodebuild -project iWatch.xcodeproj -scheme iWatch -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build
+      - name: Build for testing
+        run: >-
+          xcodebuild build-for-testing -project iWatch.xcodeproj -scheme iWatch
+          -destination 'platform=iOS Simulator,name=iPhone 17'
+          -derivedDataPath work/DerivedData CODE_SIGNING_ALLOWED=NO
       - name: Unit tests
-        run: xcodebuild test -project iWatch.xcodeproj -scheme iWatch -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:iWatchTests -parallel-testing-enabled NO -resultBundlePath work/iWatchTests.xcresult
+        run: >-
+          xcodebuild test-without-building -project iWatch.xcodeproj -scheme iWatch
+          -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath work/DerivedData
+          -only-testing:iWatchTests -parallel-testing-enabled NO
+          -resultBundlePath work/iWatchTests.xcresult
       - name: Notification settings UI tests
+        if: steps.changes.outputs.notifications == 'true'
         run: |
-          xcodebuild test -project iWatch.xcodeproj -scheme iWatch \
-            -destination 'platform=iOS Simulator,name=iPhone 17' \
+          xcodebuild test-without-building -project iWatch.xcodeproj -scheme iWatch \
+            -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath work/DerivedData \
             -only-testing:iWatchUITests/iWatchUITests/testNotificationSettingsAtStandardTextSize \
             -only-testing:iWatchUITests/iWatchUITests/testNotificationSettingsAtAccessibilityTextSize \
             -parallel-testing-enabled NO -resultBundlePath work/iWatchNotificationUITests.xcresult

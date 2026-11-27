@@ -61,8 +61,6 @@ struct ReleaseNotificationsSettingsView: View {
                     }
                 }
                 .pickerStyle(.navigationLink)
-
-                LabeledContent("Time Zone", value: TimeZone.current.localizedName(for: .standard, locale: .current) ?? TimeZone.current.identifier)
             } footer: {
                 Text("When an exact episode airtime isn’t available, iWatch sends the reminder at 9:00 AM local time. Movie reminders are always sent the morning of release.")
             }
