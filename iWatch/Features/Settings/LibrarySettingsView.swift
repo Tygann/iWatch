@@ -5,42 +5,62 @@ struct LibrarySettingsView: View {
 
     var body: some View {
         Form {
+            iCloudSection
             TraktSettingsSection()
             Section {
-                if isWorking {
-                    ProgressView(detail)
-                } else if needsAttention {
-                    LabeledContent("Status", value: "Needs Attention")
-                    Text(detail).font(.subheadline).foregroundStyle(.secondary)
-                } else {
-                    LabeledContent("Status", value: "Automatic")
+                NavigationLink {
+                    AdvancedSettingsView()
+                } label: {
+                    Text("Library Maintenance")
                 }
-                if let date = session.lastCloudActivityAt {
-                    SyncDateRow(title: "Last Activity", date: date)
-                } else {
-                    LabeledContent("Last Activity", value: "Not recorded yet")
-                }
-                if needsAttention {
-                    Link("Get Help with iCloud", destination: URL(string: "https://support.apple.com/guide/icloud/set-up-icloud-on-your-devices-mmfc0f1e2a/icloud")!)
-                }
-            } header: {
-                Text("iCloud")
-            } footer: {
-                Text("Your library syncs automatically across devices using the same Apple Account.")
+                .accessibilityIdentifier("settings-library-maintenance")
             }
         }
-        .navigationTitle("Sync")
+        .navigationTitle("Library Sync")
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private var detail: String {
+    private var iCloudSection: some View {
+        Section {
+            SettingsStatusRow(title: statusTitle, detail: statusDetail, symbol: needsAttention ? "exclamationmark.icloud" : "icloud",
+                              needsAttention: needsAttention) {
+                if isWorking {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityHidden(true)
+                }
+            }
+            .accessibilityIdentifier("icloud-sync-status")
+
+            if needsAttention {
+                Link("Get Help with iCloud", destination: URL(string: "https://support.apple.com/guide/icloud/set-up-icloud-on-your-devices-mmfc0f1e2a/icloud")!)
+            }
+        } header: {
+            Text("iCloud")
+        } footer: {
+            Text("Your Watchlist, watched history, and show progress sync automatically across devices using the same Apple Account.")
+        }
+    }
+
+    private var statusTitle: String {
         switch session.cloudSyncStatus {
         case .idle, .completed, .imported:
-            session.lastCloudActivityAt.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "No completed transfers recorded on this device."
-        case .importing: "Downloading library changes."
-        case .exporting: "Uploading library changes."
+            session.lastCloudActivityAt == nil ? "Automatic Sync" : "Last Activity"
+        case .importing: "Downloading Changes…"
+        case .exporting: "Uploading Changes…"
+        case .failed, .unavailable: "iCloud Needs Attention"
+        case .timedOut: "Upload Not Confirmed"
+        }
+    }
+
+    private var statusDetail: String {
+        switch session.cloudSyncStatus {
+        case .idle, .completed, .imported:
+            session.lastCloudActivityAt?.formatted(date: .abbreviated, time: .shortened)
+                ?? "No recent activity on this device."
+        case .importing, .exporting: ""
         case let .failed(message), let .unavailable(message): message
-        case .timedOut: "An upload hasn’t been confirmed yet."
+        case .timedOut: "iCloud can continue syncing in the background."
         }
     }
 

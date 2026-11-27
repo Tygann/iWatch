@@ -76,18 +76,12 @@ struct SettingsView: View {
                 LibrarySettingsView()
             } label: {
                 SettingsNavigationLabel(
-                    title: "Sync",
+                    title: "Library Sync",
                     systemImage: "arrow.triangle.2.circlepath",
                     detail: syncStatus
                 )
             }
             .accessibilityIdentifier("settings-sync")
-            NavigationLink {
-                AdvancedSettingsView()
-            } label: {
-                SettingsNavigationLabel(title: "Manage Data", systemImage: "externaldrive")
-            }
-            .accessibilityIdentifier("settings-manage-data")
         }
     }
 

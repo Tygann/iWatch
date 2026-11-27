@@ -20,7 +20,11 @@ extension AppSession {
         lastSyncAt = Date(timeIntervalSince1970: 1793037600)
         lastCloudImportAt = lastSyncAt
         lastCloudExportAt = lastSyncAt
-        cloudSyncStatus = state == "offline" ? .failed("Test connection unavailable") : .completed(lastSyncAt!)
+        switch state {
+        case "offline": cloudSyncStatus = .failed("Test connection unavailable")
+        case "syncing": cloudSyncStatus = .exporting
+        default: cloudSyncStatus = .completed(lastSyncAt!)
+        }
         syncDiagnostics = SyncDiagnostics(initialBaselineComplete: true, importedMovieCount: 49,
             importedShowCount: 32, importedHistoryCount: 5127, pendingOperationCount: 0,
             processingOperationCount: 0, deadletterOperationCount: 0, duplicateCandidateCount: 0,

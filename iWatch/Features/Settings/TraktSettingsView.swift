@@ -41,7 +41,7 @@ struct TraktSettingsSection: View {
             if health.title == "Connection Interrupted" { return health.title }
             if !session.traktConnected { return health.detail }
             if !session.syncDiagnostics.changes.isEmpty {
-                return "Some changes still need attention. See Pending Changes for details."
+                return ""
             }
             return health.detail
         }
@@ -157,8 +157,15 @@ struct TraktSyncActionButton: View {
     var body: some View {
         Group {
             if session.traktSyncPresentation.isWorking {
-                ProgressView("Syncing…")
-                    .accessibilityIdentifier("trakt-sync-progress")
+                HStack {
+                    Text("Syncing…")
+                    Spacer()
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityHidden(true)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("trakt-sync-progress")
             } else {
                 Button("Sync Now") {
                     Task {
