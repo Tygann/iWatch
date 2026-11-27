@@ -5,6 +5,12 @@
 3. Verify app and test changes on an iPhone simulator. Use XcodeBuildMCP on a Mac for interactive builds and visual checks. From Codex Cloud on Linux, use GitHub Actions for simulator verification and the GitHub connector to publish changes and inspect checks when shell Git is unavailable.
 4. Commit and push when the required checks pass. Push directly to `main` for small changes covered by completed checks where repository rules allow it. Use a draft PR to get required macOS results before landing. Watch CI through completion, investigate failures, and report any checks still unverified.
 
+## Refresh a cloud checkout
+
+Run `scripts/refresh-cloud-checkout.sh` at the start of each cloud task and again after the change lands on GitHub `main`. Use the path it prints for subsequent commands. The helper fetches `origin/main` and fast-forwards a clean checkout when safe. If the existing checkout has edits or diverged commits, it creates a temporary detached worktree at the fetched commit and leaves the existing checkout intact. Use `git worktree remove PATH` to clean up a temporary worktree once its work is published and it is clean.
+
+If the seed checkout predates the helper, fetch `origin/main` and create a clean worktree there first. If shell Git still cannot fetch with network access enabled, verify the head through the GitHub connector and use that verified base. A stale checkout can still be useful for recovering earlier local edits.
+
 ## GitHub Actions verification
 
 The **iOS verification** workflow runs repository checks on Linux for pushes to `main` and pull requests. Documentation-only changes can finish without acquiring a macOS runner.
