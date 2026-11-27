@@ -32,9 +32,11 @@ The `xcode-27` runner uses Xcode 27.1 and an iPhone 17 simulator running iOS 27.
 
 The full UI suite runs weekly. To run it on demand, open **Actions → iOS verification → Run workflow** and select the branch or ref you want to verify.
 
+The Actions run summary shows the selected tier, its reason, the test list, and elapsed times for Linux preflight and simulator stages. Simulator stage times include setup. Share the run link when waiting for CI.
+
 ## Release handoff
 
-For a user-visible change, add a paste-ready bullet under `TestFlight notes` in the PR description. For a direct push, use that heading in the commit body. Repeat the bullet in the chat summary. Internal-only changes such as CI tuning and test maintenance can omit the section.
+For a user-visible change, add a paste-ready bullet under `TestFlight notes` in the PR description. For a direct push, use that heading in the commit body. Repeat the bullet in the chat summary. When squash-merging, include the PR’s `TestFlight notes` section in the squash commit body and verify it on `main`. Internal-only changes such as CI tuning and test maintenance can omit the section.
 
 ```text
 TestFlight notes

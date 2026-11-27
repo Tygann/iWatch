@@ -24,6 +24,8 @@ jobs:
       unit-tests: ${{ steps.changes.outputs.unit-tests }}
       ui-selection: ${{ steps.changes.outputs.ui-selection }}
     steps:
+      - name: Start preflight timer
+        run: echo "PREFLIGHT_START=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -54,13 +56,19 @@ jobs:
           if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$EVENT_NAME" = "schedule" ]; then
             options+=(--full-ui)
           fi
-          python3 scripts/select-ios-tests.py "$base" HEAD --outputs "$GITHUB_OUTPUT" "${options[@]}"
+          python3 scripts/select-ios-tests.py "$base" HEAD --outputs "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY" "${options[@]}"
       - name: Check UI architecture boundaries
         run: python3 scripts/check-view-boundaries.py
       - name: Check Trakt configuration validation
         run: python3 scripts/test-trakt-configuration.py
       - name: Check CloudKit schema preflight
         run: python3 scripts/check-cloudkit-schema.py --self-test
+
+      - name: Report preflight duration
+        if: always() && env.PREFLIGHT_START != ''
+        run: |
+          elapsed=$(( $(date +%s) - PREFLIGHT_START ))
+          printf '### Linux preflight\n\n**%s** · %d min %02d s\n\n' "${{ job.status }}" "$((elapsed / 60))" "$((elapsed % 60))" >> "$GITHUB_STEP_SUMMARY"
 
   verify:
     needs: preflight
@@ -75,13 +83,13 @@ jobs:
       - name: Build for testing
         id: build
         run: >-
-          xcodebuild build-for-testing -project iWatch.xcodeproj -scheme iWatch
+          bash scripts/time-ios-stage.sh "Build for testing" xcodebuild build-for-testing -project iWatch.xcodeproj -scheme iWatch
           -destination "$SIMULATOR_DESTINATION"
           -derivedDataPath work/DerivedData CODE_SIGNING_ALLOWED=NO
       - name: Unit tests
         if: needs.preflight.outputs.unit-tests == 'true'
         run: >-
-          xcodebuild test-without-building -project iWatch.xcodeproj -scheme iWatch
+          bash scripts/time-ios-stage.sh "Unit tests" xcodebuild test-without-building -project iWatch.xcodeproj -scheme iWatch
           -destination "$SIMULATOR_DESTINATION" -derivedDataPath work/DerivedData
           -only-testing:iWatchTests -parallel-testing-enabled NO
           -resultBundlePath work/iWatchTests.xcresult
@@ -95,7 +103,7 @@ jobs:
           for test in "${tests[@]}"; do
             arguments+=("-only-testing:$test")
           done
-          xcodebuild test-without-building -project iWatch.xcodeproj -scheme iWatch \
+          bash scripts/time-ios-stage.sh "UI tests (including simulator setup)" xcodebuild test-without-building -project iWatch.xcodeproj -scheme iWatch \
             -destination "$SIMULATOR_DESTINATION" -derivedDataPath work/DerivedData \
             "${arguments[@]}" -parallel-testing-enabled NO -resultBundlePath work/iWatchUITests.xcresult
       - name: Save test failure diagnostics

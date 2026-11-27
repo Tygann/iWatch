@@ -3,7 +3,7 @@
 ## Cloud startup and delivery
 
 - Before editing in Codex Cloud, run `scripts/refresh-cloud-checkout.sh` with network access and use the path it prints. Re-read `AGENTS.md` from that checkout. If the helper is absent, fetch `origin/main` and use a clean checkout at that revision. If shell Git cannot fetch, use the GitHub connector to verify the current base. Preserve any existing local changes and report a failed refresh.
-- When iOS verification is required and the workspace lacks Xcode, publish a scoped commit to a task branch and open a draft PR to run the repository’s macOS GitHub Actions workflow. Use the GitHub connector when shell Git publishing is unavailable. Monitor CI to completion and land the verified change when authorized. Honor any explicit instruction to keep work local. Report the specific blocker if publishing or CI cannot proceed.
+- When iOS verification is required and the workspace lacks Xcode, publish a scoped commit to a task branch and open a draft PR to run the repository’s macOS GitHub Actions workflow. Use the GitHub connector when shell Git publishing is unavailable. Share the CI run link when waiting, monitor it to completion, and land the verified change when authorized. Honor any explicit instruction to keep work local. Report the specific blocker if publishing or CI cannot proceed.
 - After landing changes on `main`, run the refresh helper again and verify that the active checkout uses the landed revision.
 
 ## Scope and architecture
@@ -37,7 +37,7 @@
 
 ## TestFlight and App Store release notes
 
-- For user-visible changes, include a concise, tester-facing bullet under `TestFlight notes` in the PR description or, for direct pushes, in the commit body. Repeat it in the final chat summary. Omit this section for internal-only changes. Treat these bullets as draft inputs for the next uploaded build.
+- For user-visible changes, include a concise, tester-facing bullet under `TestFlight notes` in the PR description or, for direct pushes, in the commit body. Repeat it in the final chat summary. When squash-merging, carry the PR’s `TestFlight notes` section into the squash commit body and check the landed commit. Omit this section for internal-only changes. Treat these bullets as draft inputs for the next uploaded build.
 - Treat `Docs/releases/ReleaseHistory.md` as the canonical record of uploaded builds and the source of truth for the newest published-build boundary.
 - When asked for notes for an uploaded build, first identify the newest logged release and review only meaningful product changes after its recorded source commit. Ignore release-history-only commits and do not repeat work already described by the previous build.
 - For the first logged build, summarize the current tester-visible product and record the uploaded source commit as the initial boundary.
