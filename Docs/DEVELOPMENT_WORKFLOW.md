@@ -15,7 +15,20 @@ If the seed checkout predates the helper, fetch `origin/main` and create a clean
 
 The **iOS verification** workflow runs repository checks on Linux for pushes to `main` and pull requests. Documentation-only changes can finish without acquiring a macOS runner.
 
-For app and test changes, the `xcode-27` runner uses Xcode 27.1 and an iPhone 17 simulator running iOS 27.2. It builds the app and test bundles once, then runs the full `iWatchTests` suite and the selected `iWatchUITests` cases without rebuilding. The selector in `scripts/select-ios-tests.py` groups existing UI tests by settings, library, and browse/detail. Shared code, project configuration, workflow changes, and unmapped app areas get the full UI suite. Unit-test-only changes run the unit suite. The workflow uploads available result bundles, including UI attachments, on failure.
+The Linux job tests the selector against sample Git diffs and checks the workflow outputs. The selector combines the coverage requested by every changed path.
+
+| Change | Simulator coverage |
+| --- | --- |
+| Allowlisted cosmetic Settings row icon edits | Notifications Settings navigation at standard and accessibility text sizes |
+| Behavior in Settings, notifications, Library, Browse, or Media Detail | Full `iWatchTests` and the mapped UI flows, including avatar editing for Settings |
+| Unit test files only | Full `iWatchTests` |
+| Selector, routing tests, or iOS verification workflow only | Settings smoke pair |
+| Shared app or data code, project configuration, UI test changes, and unmapped paths | Full unit and UI suites |
+| `AGENTS.md` and Markdown under `Docs/` only | Linux checks |
+
+CI checks the actual before-and-after source for cosmetic changes. The allowlist covers literal font, foreground, frame, and corner radius values inside `SettingsRowIcon` in `SettingsComponents.swift`. Changes to actions, accessibility semantics, other declarations, or unrecognized edits in that file run the Settings behavior route. Extend the allowlist with focused routing tests when adding a cosmetic route for another screen. Mixed changes keep the union of focused tests and run the full unit suite if any path calls for it. A broad change takes precedence.
+
+The `xcode-27` runner uses Xcode 27.1 and an iPhone 17 simulator running iOS 27.2. It builds the app and test bundles once. Selected test steps reuse that build, and the workflow uploads available result bundles on failure.
 
 The full UI suite runs weekly. To run it on demand, open **Actions → iOS verification → Run workflow** and select the branch or ref you want to verify.
 

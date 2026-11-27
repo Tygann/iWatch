@@ -21,6 +21,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       simulator: ${{ steps.changes.outputs.simulator }}
+      unit-tests: ${{ steps.changes.outputs.unit-tests }}
       ui-selection: ${{ steps.changes.outputs.ui-selection }}
     steps:
       - uses: actions/checkout@v4
@@ -30,6 +31,8 @@ jobs:
         run: |
           test ! -f iWatch/Secrets.plist
           ! git grep -nE '(TRAKT_CLIENT_SECRET|TMDB_API_KEY).*[=:][[:space:]]*[A-Za-z0-9_-]{24,}' -- ':!iWatch/Secrets.example.plist'
+      - name: Test simulator routing
+        run: python3 scripts/test-ios-test-selection.py
       - name: Check whitespace and select simulator tests
         id: changes
         env:
@@ -76,6 +79,7 @@ jobs:
           -destination "$SIMULATOR_DESTINATION"
           -derivedDataPath work/DerivedData CODE_SIGNING_ALLOWED=NO
       - name: Unit tests
+        if: needs.preflight.outputs.unit-tests == 'true'
         run: >-
           xcodebuild test-without-building -project iWatch.xcodeproj -scheme iWatch
           -destination "$SIMULATOR_DESTINATION" -derivedDataPath work/DerivedData
