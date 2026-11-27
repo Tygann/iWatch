@@ -32,7 +32,7 @@ The `xcode-27` runner uses Xcode 27.1 and an iPhone 17 simulator running iOS 27.
 
 The full UI suite runs weekly. To run it on demand, open **Actions → iOS verification → Run workflow** and select the branch or ref you want to verify.
 
-The Actions run summary shows the selected tier, its reason, the test list, and elapsed times for Linux preflight and simulator stages. Simulator stage times include setup. Share the run link when waiting for CI.
+The Actions run summary shows the selected tier, its reason, the test list, and elapsed times for Linux preflight, build, simulator startup, and test stages. Test timings include app launch and XCTest overhead. Share the run link when waiting for CI.
 
 ## Release handoff
 

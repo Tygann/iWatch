@@ -77,24 +77,39 @@ jobs:
     timeout-minutes: 65
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
-      SIMULATOR_DESTINATION: platform=iOS Simulator,name=iPhone 17,OS=27.2
+      SIMULATOR_NAME: iPhone 17
+      SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-27-2
     steps:
       - uses: actions/checkout@v4
+      - name: Resolve simulator
+        run: |
+          simulator_id=$(xcrun simctl list devices available -j | python3 -c '
+          import json, os, sys
+          devices = json.load(sys.stdin)["devices"].get(os.environ["SIMULATOR_RUNTIME"], [])
+          matches = [device["udid"] for device in devices if device["name"] == os.environ["SIMULATOR_NAME"]]
+          if len(matches) != 1:
+              sys.exit(f"Expected one configured simulator, found {len(matches)}")
+          print(matches[0])
+          ')
+          echo "SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
       - name: Build for testing
-        id: build
         run: >-
           bash scripts/time-ios-stage.sh "Build for testing" xcodebuild build-for-testing -project iWatch.xcodeproj -scheme iWatch
-          -destination "$SIMULATOR_DESTINATION"
+          -destination "platform=iOS Simulator,id=$SIMULATOR_ID"
           -derivedDataPath work/DerivedData CODE_SIGNING_ALLOWED=NO
+      - name: Boot simulator
+        id: boot
+        timeout-minutes: 8
+        run: bash scripts/time-ios-stage.sh "Simulator startup" xcrun simctl bootstatus "$SIMULATOR_ID" -b
       - name: Unit tests
         if: needs.preflight.outputs.unit-tests == 'true'
         run: >-
           bash scripts/time-ios-stage.sh "Unit tests" xcodebuild test-without-building -project iWatch.xcodeproj -scheme iWatch
-          -destination "$SIMULATOR_DESTINATION" -derivedDataPath work/DerivedData
+          -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -derivedDataPath work/DerivedData
           -only-testing:iWatchTests -parallel-testing-enabled NO
           -resultBundlePath work/iWatchTests.xcresult
       - name: UI tests
-        if: "!cancelled() && steps.build.outcome == 'success' && needs.preflight.outputs.ui-selection != ''"
+        if: "!cancelled() && steps.boot.outcome == 'success' && needs.preflight.outputs.ui-selection != ''"
         env:
           UI_SELECTION: ${{ needs.preflight.outputs.ui-selection }}
         run: |
@@ -103,8 +118,8 @@ jobs:
           for test in "${tests[@]}"; do
             arguments+=("-only-testing:$test")
           done
-          bash scripts/time-ios-stage.sh "UI tests (including simulator setup)" xcodebuild test-without-building -project iWatch.xcodeproj -scheme iWatch \
-            -destination "$SIMULATOR_DESTINATION" -derivedDataPath work/DerivedData \
+          bash scripts/time-ios-stage.sh "UI tests" xcodebuild test-without-building -project iWatch.xcodeproj -scheme iWatch \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -derivedDataPath work/DerivedData \
             "${arguments[@]}" -parallel-testing-enabled NO -resultBundlePath work/iWatchUITests.xcresult
       - name: Save test failure diagnostics
         if: failure()
