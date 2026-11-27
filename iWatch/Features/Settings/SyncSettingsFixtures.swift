@@ -34,7 +34,7 @@ extension AppSession {
                 lastSeenRemoteActivityAt: lastSyncAt, lastErrorDescription: "Test watched upload is unconfirmed.",
                 changes: (1...10).map { episode in
                     SyncPendingChange(id: UUID(), title: "Example Show · S1 E\(episode)", action: episode <= 4 ? "Marked watched" : "Removed watched play",
-                        createdAt: .now, state: episode <= 4 ? .confirming : .failed, isOnThisDevice: true)
+                        createdAt: .now, state: episode <= 4 ? .confirming : .failed, isOnThisDevice: episode != 10)
                 }, failure: .confirmation)
         } else if state == "offline" {
             syncDiagnostics.failure = .offline

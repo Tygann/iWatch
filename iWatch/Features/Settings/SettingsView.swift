@@ -25,7 +25,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             accountSection
-            syncSection
+            librarySection
             preferencesSection
             appSection
             #if DEBUG
@@ -70,8 +70,8 @@ struct SettingsView: View {
         }
     }
 
-    private var syncSection: some View {
-        Section {
+    private var librarySection: some View {
+        Section("Library") {
             NavigationLink {
                 LibrarySettingsView()
             } label: {
@@ -82,6 +82,12 @@ struct SettingsView: View {
                 )
             }
             .accessibilityIdentifier("settings-sync")
+            NavigationLink {
+                AdvancedSettingsView()
+            } label: {
+                SettingsNavigationLabel(title: "Manage Data", systemImage: "externaldrive")
+            }
+            .accessibilityIdentifier("settings-manage-data")
         }
     }
 

@@ -48,7 +48,7 @@ struct TraktSyncPresentation: Equatable {
                         action: diagnostics.changes.contains { $0.state == .failed && $0.isOnThisDevice } ? .retry : .sync)
         }
         if diagnostics.duplicateCandidateCount > 0 {
-            return Self(title: "Library Check Recommended", detail: "Open Help with Sync to check local library data.", symbol: "exclamationmark.triangle", needsAttention: true, isWorking: false, action: .sync)
+            return Self(title: "Library Check Recommended", detail: "Open Manage Data to check your library.", symbol: "exclamationmark.triangle", needsAttention: true, isWorking: false, action: .sync)
         }
         if diagnostics.hasPendingWork {
             return Self(title: "Changes Pending", detail: "Saved changes are waiting to upload.", symbol: "clock", needsAttention: false, isWorking: false, action: .sync)

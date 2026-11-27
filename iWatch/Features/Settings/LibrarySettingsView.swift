@@ -28,9 +28,6 @@ struct LibrarySettingsView: View {
             } footer: {
                 Text("Your library syncs automatically across devices using the same Apple Account.")
             }
-            Section {
-                NavigationLink("Manage Data") { AdvancedSettingsView() }
-            }
         }
         .navigationTitle("Sync")
         .navigationBarTitleDisplayMode(.inline)

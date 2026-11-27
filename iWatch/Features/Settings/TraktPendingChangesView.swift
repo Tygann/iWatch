@@ -2,6 +2,8 @@ import SwiftUI
 
 struct TraktPendingChangesView: View {
     @Environment(AppSession.self) private var session
+    @State private var showMoveConfirmation = false
+    @State private var moveResult: String?
 
     private let states: [SyncPendingChange.State] = [.failed, .confirming, .uploading, .waiting]
 
@@ -42,13 +44,35 @@ struct TraktPendingChangesView: View {
                     }
                 }
             }
+            if changes.contains(where: { !$0.isOnThisDevice }) || moveResult != nil {
+                Section {
+                    if changes.contains(where: { !$0.isOnThisDevice }) {
+                        Button("Move Uploads to This Device") { showMoveConfirmation = true }
+                            .disabled(session.syncActionsUnavailable || !session.traktConnected || session.pendingTraktAccountKey != nil)
+                    }
+                    if let moveResult {
+                        Text(moveResult).foregroundStyle(.secondary)
+                    }
+                }
+            }
             Section {
-                NavigationLink("Get Help") { TraktTroubleshootingView() }
+                Link("Trakt Service Status", destination: URL(string: "https://status.trakt.tv")!)
+                Link("Contact Support", destination: SyncSupportView.contactURL)
             }
         }
         .navigationTitle("Pending Changes")
         .navigationBarTitleDisplayMode(.inline)
         .task { await session.refreshSyncDiagnostics() }
+        .confirmationDialog("Move Uploads to This Device?", isPresented: $showMoveConfirmation, titleVisibility: .visible) {
+            Button("Move Pending Uploads") {
+                Task {
+                    await session.recoverPendingUploads()
+                    moveResult = session.syncMaintenanceMessage ?? "Uploads couldn’t be moved. Try again later."
+                }
+            }
+        } message: {
+            Text("Stop Trakt sync on your other devices first. This changes which device uploads unfinished changes for this account.")
+        }
     }
 
     private func stateTitle(_ state: SyncPendingChange.State, count: Int) -> String {

@@ -14,6 +14,8 @@ struct AdvancedSettingsView: View {
     @Environment(AppRouter.self) private var router
 
     @State private var showEraseConfirmation = false
+    @State private var showRebuildConfirmation = false
+    @State private var maintenanceResult: String?
 
     var body: some View {
         Form {
@@ -44,6 +46,8 @@ struct AdvancedSettingsView: View {
             } footer: {
                 Text("Removes downloaded artwork and cached network responses. Your library, preferences, iCloud data, and Trakt data are not affected.")
             }
+
+            libraryMaintenanceSection
 
             if canStartReset {
                 Section {
@@ -79,6 +83,47 @@ struct AdvancedSettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This action can’t be undone. Your iWatch library will be removed from this app and iCloud.")
+        }
+    }
+
+    private var libraryMaintenanceSection: some View {
+        Section {
+            Button("Check Library Data") {
+                Task {
+                    maintenanceResult = nil
+                    await session.repairLocalSyncData()
+                    maintenanceResult = session.syncMaintenanceMessage ?? "The library check couldn’t finish."
+                }
+            }
+            .disabled(session.syncActionsUnavailable)
+            if session.traktConnected && session.pendingTraktAccountKey == nil {
+                Button("Rebuild from Trakt", role: .destructive) { showRebuildConfirmation = true }
+                    .disabled(session.syncActionsUnavailable)
+            }
+            if session.isMaintainingSync, let title = session.syncMaintenanceTitle {
+                ProgressView(title)
+            } else if let maintenanceResult {
+                Text(maintenanceResult).foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Library Maintenance")
+        } footer: {
+            Text("Check for duplicate records and repair inconsistent links.")
+        }
+        .alert("Rebuild Library from Trakt?", isPresented: $showRebuildConfirmation) {
+            Button("Discard Changes and Rebuild", role: .destructive) {
+                Task {
+                    maintenanceResult = nil
+                    await session.resetLocalTraktSyncCache()
+                    maintenanceResult = session.lastSyncAt != nil && session.traktLastError == nil && session.syncMaintenanceMessage != nil
+                        ? "Library rebuilt from Trakt."
+                        : "The rebuild couldn’t finish. Check Trakt in Sync."
+                }
+            }
+            .disabled(session.syncActionsUnavailable || !session.traktConnected || session.pendingTraktAccountKey != nil)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This replaces your iWatch Watchlist, watched history, and show progress with data from Trakt. The changes can sync through iCloud. Unsynced changes will be lost.")
         }
     }
 

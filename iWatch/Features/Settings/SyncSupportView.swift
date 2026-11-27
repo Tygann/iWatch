@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct SyncSupportView: View {
+    static let contactURL = URL(string: "https://tylerkeegan.com/iwatch/support/")!
+
     @Environment(AppSession.self) private var session
 
     private var report: String {
@@ -14,7 +16,7 @@ struct SyncSupportView: View {
     var body: some View {
         Form {
             Section {
-                Link("Contact Support", destination: URL(string: "https://tylerkeegan.com/iwatch/support/")!)
+                Link("Contact Support", destination: Self.contactURL)
             } footer: {
                 Text("Describe what happened and what you expected. A screenshot can help explain the problem.")
             }
