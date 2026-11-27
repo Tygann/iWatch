@@ -190,7 +190,8 @@ actor SyncEngine {
             .filter { $0.accountKey == account && ($0.status == .pending || $0.status == .processing) }
             .count
         await progress?(.uploadingChanges(pendingCount))
-        try await pushPendingOperations(account: account, historyRetry: historyRetry, libraryChanged: libraryChanged)
+        try await pushPendingOperations(account: account, historyRetry: historyRetry,
+            resolveCancelledPlays: reason == .pendingChanges, libraryChanged: libraryChanged)
         await progress?(.complete)
     }
 
@@ -656,7 +657,7 @@ actor SyncEngine {
         return historyActivityAt > previousRelevantActivityAt
     }
 
-    private func pushPendingOperations(account: String?, historyRetry: HistoryRetry?,
+    private func pushPendingOperations(account: String?, historyRetry: HistoryRetry?, resolveCancelledPlays: Bool,
                                        libraryChanged: (@MainActor @Sendable () -> Void)?) async throws {
         guard let accountKey = account else { return }
         try await validateRun(account: accountKey)
@@ -675,10 +676,11 @@ actor SyncEngine {
             do {
                 try await validateOperation(operation)
                 let mayRetryMissingPlay = historyRetry?.account == accountKey && historyRetry?.ids.contains(operationID) == true
-                try await process(operation: operation, context: processContext, mayRetryMissingPlay: mayRetryMissingPlay)
+                try await process(operation: operation, context: processContext, mayRetryMissingPlay: mayRetryMissingPlay,
+                    resolveCancelledPlays: resolveCancelledPlays)
                 operation.status = .succeeded
                 if operation.kind == .addHistory {
-                    try resumeDependentHistoryRemovals(after: operation, deviceID: deviceID, context: processContext)
+                    try resumeDependentHistoryRemovals(after: operation, context: processContext)
                 }
                 operation.claimedByDeviceID = nil
                 operation.claimedAt = nil
@@ -732,16 +734,22 @@ actor SyncEngine {
         try stateContext.save()
     }
 
-    private func resumeDependentHistoryRemovals(after addition: SyncOperationRecord, deviceID: String, context: ModelContext) throws {
-        let addedPlay = try SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: addition.payload)
+    private func dependentHistoryRemovals(for addition: SyncOperationRecord, play: SyncOperationPayload,
+                                          context: ModelContext) -> [SyncOperationRecord] {
+        allOperations(context: context).filter { removal in
+            guard removal.kind == .removeHistory, removal.accountKey == addition.accountKey,
+                  removal.status == .pending || removal.status == .deadletter,
+                  let payload = try? SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: removal.payload),
+                  payload.originDeviceID == addition.claimedByDeviceID, payload.historyID == nil else { return false }
+            return HistoryMatchPolicy.samePlay(play, payload)
+        }
+    }
+
+    private func resumeDependentHistoryRemovals(after addition: SyncOperationRecord, context: ModelContext) throws {
+        let play = try SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: addition.payload)
         let generation = LibraryGenerationPolicy.currentGeneration(in: context)
         guard LibraryGenerationPolicy.belongsToCurrentGeneration(addition.generationID, current: generation) else { return }
-        for removal in allOperations(context: context) where removal.kind == .removeHistory
-            && removal.accountKey == addition.accountKey
-            && (removal.status == .pending || removal.status == .deadletter) {
-            guard let play = try? SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: removal.payload),
-                  play.originDeviceID == deviceID, play.historyID == nil,
-                  HistoryMatchPolicy.samePlay(play, addedPlay) else { continue }
+        for removal in dependentHistoryRemovals(for: addition, play: play, context: context) {
             removal.status = .pending
             removal.attemptCount = 0
             removal.nextAttemptAt = nil
@@ -786,7 +794,8 @@ actor SyncEngine {
         }
     }
 
-    private func process(operation: SyncOperationRecord, context: ModelContext, mayRetryMissingPlay: Bool) async throws {
+    private func process(operation: SyncOperationRecord, context: ModelContext, mayRetryMissingPlay: Bool,
+                         resolveCancelledPlays: Bool) async throws {
         let payload = try SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: operation.payload)
         let sentAt = payload.mutationAt ?? operation.createdAt
         guard accountKeyProvider() == operation.accountKey else { throw CancellationError() }
@@ -817,13 +826,12 @@ actor SyncEngine {
                 }
             }
         case .addHistory:
-            try await processHistoryAddition(operation: operation, payload: payload, context: context, mayRetryMissingPlay: mayRetryMissingPlay)
+            try await processHistoryAddition(operation: operation, payload: payload, context: context, mayRetryMissingPlay: mayRetryMissingPlay,
+                resolveCancelledPlays: resolveCancelledPlays)
         case .removeHistory:
             try await processHistoryRemoval(operation: operation, payload: payload)
 
         }
-
-        try context.save()
     }
 
     private func validateOperation(_ operation: SyncOperationRecord) async throws {
@@ -841,12 +849,20 @@ actor SyncEngine {
         return history.filter { HistoryMatchPolicy.matches(payload, remote: $0) }
     }
 
-    private func processHistoryAddition(operation: SyncOperationRecord, payload original: SyncOperationPayload, context: ModelContext, mayRetryMissingPlay: Bool) async throws {
+    private func processHistoryAddition(operation: SyncOperationRecord, payload original: SyncOperationPayload, context: ModelContext, mayRetryMissingPlay: Bool,
+                                        resolveCancelledPlays: Bool) async throws {
         var payload = original
         guard let kind = payload.mediaKind, let id = payload.tmdbID else { throw HistoryReconciliationError.ambiguous }
         let uncertain = payload.historyRequestStartedAt != nil || (operation.attemptCount > 0 && payload.historyRequestRejected != true)
         let matchingHistory = uncertain ? try await matchingRemoteHistory(payload, operation: operation) : nil
         let initial = eventRecord(kind: kind, tmdbID: id, watchedAt: payload.watchedAt, account: operation.accountKey, context: persistence.makeContext())
+        // Give a recent upload response time to become visible before treating absence as final.
+        let requestAt = payload.historyRequestStartedAt ?? operation.lastAttemptAt ?? operation.createdAt
+        if resolveCancelledPlays, Date().timeIntervalSince(requestAt) >= 5 * 60, let matchingHistory,
+           matchingHistory.allSatisfy({ payload.historyKnownIDs?.contains($0.id) == true }),
+           finishCancelledHistoryPair(operation: operation, play: payload, kind: kind, id: id, context: context) {
+            return
+        }
         let canRetry = matchingHistory?.isEmpty == true && payload.historyUploadAccepted != true
             && initial?.tombstoned == false && initial?.traktHistoryID == nil
         if !uncertain || (mayRetryMissingPlay && canRetry) {
@@ -924,6 +940,29 @@ actor SyncEngine {
             }
             try acknowledgement.save()
         }
+    }
+
+    private func finishCancelledHistoryPair(operation: SyncOperationRecord, play: SyncOperationPayload,
+                                            kind: MediaKind, id: Int, context: ModelContext) -> Bool {
+        // The account-scoped history check found no new play. Retire both local
+        // intents together only when the exact play is still marked for removal.
+        guard let event = eventRecord(kind: kind, tmdbID: id, watchedAt: play.watchedAt,
+                                      account: operation.accountKey, context: context),
+              event.tombstoned, event.traktHistoryID == nil else { return false }
+        let removals = dependentHistoryRemovals(for: operation, play: play, context: context)
+        guard removals.contains(where: { removal in
+            let payload = try? SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: removal.payload)
+            return event.updatedAt <= (payload?.mutationAt ?? removal.createdAt)
+        }) else { return false }
+
+        for removal in removals {
+            removal.status = .succeeded
+            removal.nextAttemptAt = nil
+            removal.claimedByDeviceID = nil
+            removal.claimedAt = nil
+        }
+        context.delete(event)
+        return true
     }
 
     private func historyUploadWasRejected(_ error: Error) -> Bool {

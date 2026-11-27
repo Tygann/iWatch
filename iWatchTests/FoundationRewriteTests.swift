@@ -1024,6 +1024,42 @@ struct FoundationRewriteTests {
         #expect(try fetchAll(WatchedEventRecord.self, from: persistence).isEmpty)
     }
 
+    @Test(arguments: [false, true], [false, true])
+    func manualSyncFinishesCancelledUploadWhenThePlayIsAbsent(legacyPayload: Bool, recentRequest: Bool) async throws {
+        let persistence = makePersistence()
+        let repository = makeLibraryRepository(persistence: persistence)
+        let watchedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        try await repository.addWatchEvent(for: MediaID(kind: .movie, id: 11), watchedAt: watchedAt)
+        let context = persistence.makeContext()
+        let addition = try #require(context.fetch(FetchDescriptor<SyncOperationRecord>()).first)
+        var play = try SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: addition.payload)
+        play.historyRequestStartedAt = recentRequest ? .now : .now.addingTimeInterval(-600)
+        play.historyKnownIDs = legacyPayload ? nil : []
+        play.historyUploadAccepted = !legacyPayload
+        addition.payload = try SyncPayloadCodec.encoder.encode(play)
+        try context.save()
+        let event = try #require(fetchAll(WatchedEventRecord.self, from: persistence).first)
+        try await repository.removeWatchEvent(eventID: event.recordID)
+
+        let remote = FakeTraktSyncRemote(token: makeToken(),
+            lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now),
+            watchlist: [], history: [])
+        let engine = SyncEngine(persistence: persistence, trakt: remote,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { "default" })
+
+        #expect(await engine.run(reason: .localMutation) == false)
+        #expect(try fetchAll(SyncOperationRecord.self, from: persistence).filter { $0.status != .succeeded }.count == 2)
+        try await engine.prepareManualSync(for: "default", retryFailedChanges: true)
+        #expect(await engine.run(reason: .pendingChanges) == !recentRequest)
+
+        let snapshot = await remote.snapshot()
+        #expect(snapshot.addHistoryCalls == 0)
+        #expect(snapshot.removeHistoryCalls == 0)
+        let remaining = try fetchAll(SyncOperationRecord.self, from: persistence).filter { $0.status != .succeeded }
+        #expect(remaining.count == (recentRequest ? 2 : 0))
+        #expect(try fetchAll(WatchedEventRecord.self, from: persistence).isEmpty == !recentRequest)
+    }
+
     @Test
     func removingUnsentPlayCancelsItsPendingAddition() async throws {
         let persistence = makePersistence()
