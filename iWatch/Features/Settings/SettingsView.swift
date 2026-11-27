@@ -15,7 +15,8 @@ struct SettingsView: View {
     @Environment(AppContainer.self) private var container
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.requestReview) private var requestReview
-    @AppStorage(ReleaseNotificationPreferences.enabledKey) private var notificationsEnabled = false
+    @AppStorage(ReleaseNotificationPreferences.episodesEnabledKey) private var episodesEnabled = false
+    @AppStorage(ReleaseNotificationPreferences.moviesEnabledKey) private var moviesEnabled = false
     @Environment(AppSession.self) private var session
     @Environment(AppRouter.self) private var router
 
@@ -155,7 +156,7 @@ struct SettingsView: View {
     }
 
     private var notificationStatus: String {
-        NotificationPermissionPresentation.summary(enabled: notificationsEnabled,
+        NotificationPermissionPresentation.summary(enabled: episodesEnabled || moviesEnabled,
             status: container.releaseNotificationCoordinator.authorizationStatus)
     }
 }

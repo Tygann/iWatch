@@ -4,18 +4,25 @@ import UIKit
 import UserNotifications
 
 enum ReleaseNotificationPreferences {
-    static let enabledKey = "releaseNotificationsEnabled"
-    static let episodesEnabledKey = "episodeReleaseNotificationsEnabled"
-    static let moviesEnabledKey = "movieReleaseNotificationsEnabled"
+    static let episodesEnabledKey = "releaseNotifications.episodesEnabled"
+    static let moviesEnabledKey = "releaseNotifications.moviesEnabled"
     static let timingKey = "releaseNotificationTiming"
 
-    static var enabled: Bool { UserDefaults.standard.bool(forKey: enabledKey) }
-    static var episodesEnabled: Bool {
-        UserDefaults.standard.object(forKey: episodesEnabledKey) as? Bool ?? true
+    static var enabled: Bool { episodesEnabled || moviesEnabled }
+    static var episodesEnabled: Bool { UserDefaults.standard.bool(forKey: episodesEnabledKey) }
+    static var moviesEnabled: Bool { UserDefaults.standard.bool(forKey: moviesEnabledKey) }
+
+    static func migrateLegacyPreferences(in defaults: UserDefaults = .standard) {
+        let legacyEnabled = defaults.bool(forKey: "releaseNotificationsEnabled")
+        for (key, legacyKey) in [
+            (episodesEnabledKey, "episodeReleaseNotificationsEnabled"),
+            (moviesEnabledKey, "movieReleaseNotificationsEnabled")
+        ] where defaults.object(forKey: key) == nil {
+            let categoryEnabled = defaults.object(forKey: legacyKey) as? Bool ?? true
+            defaults.set(legacyEnabled && categoryEnabled, forKey: key)
+        }
     }
-    static var moviesEnabled: Bool {
-        UserDefaults.standard.object(forKey: moviesEnabledKey) as? Bool ?? true
-    }
+
     static var timing: ReleaseNotificationTiming {
         UserDefaults.standard.string(forKey: timingKey)
             .flatMap(ReleaseNotificationTiming.init(rawValue:)) ?? .atRelease
@@ -63,37 +70,6 @@ final class ReleaseNotificationCoordinator {
         }
         _ = try? await requestAuthorization()
         await refreshStatus()
-    }
-
-    func setEnabled(_ enabled: Bool) async -> Bool {
-        guard enabled else {
-            await reconcile()
-            return false
-        }
-
-        let status = await readAuthorization()
-        switch status {
-        case .notDetermined:
-            do {
-                guard try await requestAuthorization() else {
-                    await refreshStatus()
-                    return false
-                }
-            } catch {
-                await refreshStatus()
-                return false
-            }
-        case .denied:
-            await refreshStatus()
-            return false
-        case .authorized, .provisional, .ephemeral:
-            break
-        @unknown default:
-            return false
-        }
-
-        await reconcile()
-        return true
     }
 
     func reconcile() async {

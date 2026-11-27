@@ -758,12 +758,19 @@ final class iWatchUITests: XCTestCase {
 
     @MainActor
     private func verifyNotificationSettings(contentSize: String) {
-        let app = launchSyncSettings(contentSize: contentSize, state: "normal")
+        let app = launchSyncSettings(contentSize: contentSize, state: "normal",
+            additionalArguments: ["-releaseNotifications.episodesEnabled", "YES"])
         let notifications = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Notifications'")).firstMatch
         reveal(notifications, in: app)
         notifications.tap()
         XCTAssertTrue(app.navigationBars["Notifications"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.switches["Release Notifications"].exists)
+        XCTAssertFalse(app.switches["Release Notifications"].exists)
+        for title in ["TV Episodes", "Movies"] {
+            let toggle = app.switches[title]
+            reveal(toggle, in: app)
+            XCTAssertTrue(toggle.exists)
+            XCTAssertTrue(toggle.isEnabled)
+        }
         XCTAssertFalse(app.buttons["Allow Notifications"].exists)
         capture(app, "Notification preferences - " + contentSize)
         let timing = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Notify Me'")).firstMatch

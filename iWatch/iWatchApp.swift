@@ -15,6 +15,10 @@ struct iWatchApp: App {
 
     @AppStorage("appTheme") private var appTheme: AppTheme = .system
 
+    init() {
+        ReleaseNotificationPreferences.migrateLegacyPreferences()
+    }
+
      var body: some Scene {
          WindowGroup {
              AppStartupView(startup: startup)
