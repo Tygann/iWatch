@@ -50,8 +50,10 @@ final class SearchScreenModel {
         guard trending.isEmpty && providers.isEmpty else { return }
         async let loadedTrending = try? repository.mixedTrending()
         async let loadedProviders = try? repository.watchProviders(regionCode: regionCode)
-        trending = await loadedTrending ?? []
-        providers = await loadedProviders ?? []
+        let (trending, providers) = await (loadedTrending, loadedProviders)
+        guard !Task.isCancelled else { return }
+        self.trending = trending ?? []
+        self.providers = providers ?? []
     }
 
     func updateQuery(_ newValue: String) {
@@ -125,14 +127,13 @@ struct SearchView: View {
             prompt: "Movies and TV Shows"
         )
         .task {
-            guard model == nil else { return }
-
-            let newModel = SearchScreenModel(
-                repository: container.libraryRepository,
-                regionCode: Locale.current.region?.identifier ?? "US"
-            )
-            model = newModel
-            await newModel.bootstrap()
+            if model == nil {
+                model = SearchScreenModel(
+                    repository: container.libraryRepository,
+                    regionCode: Locale.current.region?.identifier ?? "US"
+                )
+            }
+            await model?.bootstrap()
         }
     }
 }

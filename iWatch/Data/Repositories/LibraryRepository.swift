@@ -16,6 +16,7 @@ final class LibraryRepository {
     private var lastPreviewScope: LibraryPreviewStore.Scope?
     private let snapshotReader: LibrarySnapshotReader
     private let detailReader: LibrarySnapshotReader
+    private let maintenanceReader: LibrarySnapshotReader
     private var cachedMovieSnapshot: (revision: Int, scope: LibraryPreviewStore.Scope?, cachedAt: Date, items: [LibraryMovieItem])?
     private var cachedShowSnapshot: (revision: Int, scope: LibraryPreviewStore.Scope?, cachedAt: Date, snapshot: ShowLibrarySnapshot)?
     private var showSnapshotTask: (revision: Int, scope: LibraryPreviewStore.Scope?, token: UUID, task: Task<ShowLibrarySnapshot, Error>)?
@@ -43,6 +44,7 @@ final class LibraryRepository {
         self.metadataFreshness = metadataFreshness ?? MetadataFreshnessStore()
         self.snapshotReader = LibrarySnapshotReader(persistence: persistence)
         self.detailReader = LibrarySnapshotReader(persistence: persistence)
+        self.maintenanceReader = LibrarySnapshotReader(persistence: persistence)
         self.lastPreviewScope = previewScope()
     }
 
@@ -59,9 +61,8 @@ final class LibraryRepository {
         showSnapshotTask = nil
     }
 
-    func expireProviderMetadata() throws {
-        _ = try persistence.makeMetadataContext()
-        invalidateSnapshots()
+    func expireProviderMetadata() async throws -> Bool {
+        try await maintenanceReader.expireProviderMetadata()
     }
 
     // MARK: Discovery
@@ -181,7 +182,8 @@ final class LibraryRepository {
         }
     }
 
-    func episodes(for showID: MediaID, seasonNumber: Int, forceRefresh: Bool = false) async throws -> [EpisodeDetails] {
+    func episodes(for showID: MediaID, seasonNumber: Int, forceRefresh: Bool = false,
+                  onCached: ([EpisodeDetails]) async throws -> Void = { _ in }) async throws -> [EpisodeDetails] {
         let (cached, expectedEpisodeCount) = try await detailReader.readMetadata { context in
             let episodes = self.episodeRecords(forShowID: showID.tmdbID, seasonNumber: seasonNumber, context: context)
                 .map(self.mapEpisodeRecord(_:))
@@ -192,6 +194,9 @@ final class LibraryRepository {
                 }
             return (episodes, expected)
         }
+        try Task.checkCancellation()
+        try await onCached(cached)
+        try Task.checkCancellation()
         let seasonKey = "\(showID.tmdbID):\(seasonNumber)"
         let shouldRefresh = EpisodeSeasonCachePolicy.shouldRefresh(
             cachedCount: cached.count,
@@ -211,6 +216,7 @@ final class LibraryRepository {
             throw error
         }
         let enriched = await enrichingEpisodesWithAirtimes(fresh, showID: showID, seasonNumber: seasonNumber)
+        try Task.checkCancellation()
         try upsertEpisodes(enriched, for: showID)
         refreshedSeasonArtworkKeys.insert(seasonKey)
         metadataFreshness.markFetched("season:\(seasonKey)")
@@ -311,7 +317,7 @@ final class LibraryRepository {
         guard await resetGate.allowsLibraryWork() else {
             throw AppError.unknown("Wait for the library reset to finish before making changes.")
         }
-        let context = try persistence.makeMetadataContext()
+        let context = persistence.makeContext()
         let now = Date()
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
 
@@ -366,7 +372,7 @@ final class LibraryRepository {
         guard await resetGate.allowsLibraryWork() else {
             throw AppError.unknown("Wait for the library reset to finish before making changes.")
         }
-        let context = try persistence.makeMetadataContext()
+        let context = persistence.makeContext()
         let now = Date()
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
 
@@ -622,7 +628,7 @@ final class LibraryRepository {
         let showID = MediaID(kind: .show, id: episode.showId, traktID: episode.showTraktID)
         await enrichEpisodeCatalog(for: showID, throughSeason: episode.seasonNumber)
 
-        guard let context = try? persistence.makeMetadataContext() else { return [] }
+        let context = persistence.makeContext()
         let watchedKeys = Set(
             watchedEventRecords(forShowID: episode.showId, context: context)
                 .filter { !$0.tombstoned }
@@ -900,7 +906,7 @@ final class LibraryRepository {
     func enrichShowProgress(for showID: MediaID) async throws {
         _ = try await mediaDetails(for: showID)
 
-        let context = try persistence.makeMetadataContext()
+        let context = persistence.makeContext()
         guard let media = mediaRecord(for: showID, context: context),
               let seasons = decodeSeasons(media.seasonsData) else {
             return
@@ -924,7 +930,7 @@ final class LibraryRepository {
     private func enrichEpisodeCatalog(for showID: MediaID, throughSeason targetSeason: Int) async {
         guard case let .show(show) = try? await mediaDetails(for: showID) else { return }
 
-        guard let context = try? persistence.makeMetadataContext() else { return }
+        let context = persistence.makeContext()
         let cachedEpisodeCounts = Dictionary(
             grouping: allEpisodeRecords(forShowID: showID.tmdbID, context: context),
             by: \.seasonNumber
@@ -945,7 +951,7 @@ final class LibraryRepository {
     func enrichUpcomingEpisodeAirtimes(for showID: MediaID) async -> Bool {
         guard let airtimeProvider, let showTraktID = showID.traktID else { return false }
 
-        guard let context = try? persistence.makeMetadataContext() else { return false }
+        let context = persistence.makeContext()
         let startOfToday = Calendar.current.startOfDay(for: .now)
         let candidates = allEpisodeRecords(forShowID: showID.tmdbID, context: context).filter {
             $0.airedAt == nil && ($0.airDate.map { $0 >= startOfToday } ?? false)
@@ -985,8 +991,10 @@ final class LibraryRepository {
     // MARK: Persistence Mapping
 
     private func cacheSearchItems(_ items: [SearchItem]) throws {
-        let context = try persistence.makeMetadataContext()
+        guard !items.isEmpty else { return }
+        let context = persistence.makeContext()
         let now = Date()
+        try removeExpiredMedia(keys: items.map { $0.mediaID.stableKey }, in: context, now: now)
         for item in items {
             let existing = mediaRecord(for: item.mediaID, context: context)
             if let existing {
@@ -1009,8 +1017,17 @@ final class LibraryRepository {
         try context.save()
     }
 
+    private func removeExpiredMedia(keys: [String], in context: ModelContext, now: Date = .now) throws {
+        let cutoff = Persistence.metadataCutoff(at: now)
+        let expired = try context.fetch(FetchDescriptor<MediaRecord>(predicate: #Predicate {
+            keys.contains($0.mediaKey) && ($0.metadataCachedAt <= cutoff || $0.metadataCachedAt > now)
+        }))
+        for record in expired { context.delete(record) }
+    }
+
     private func upsertMovie(_ movie: MovieDetails, requestedID: MediaID) throws {
-        let context = try persistence.makeMetadataContext()
+        let context = persistence.makeContext()
+        try removeExpiredMedia(keys: [requestedID.stableKey], in: context)
         let existing = mediaRecord(for: requestedID, context: context)
         if let existing {
             existing.traktID = requestedID.traktID ?? existing.traktID
@@ -1049,7 +1066,8 @@ final class LibraryRepository {
     }
 
     private func upsertShow(_ show: ShowDetails, requestedID: MediaID) throws {
-        let context = try persistence.makeMetadataContext()
+        let context = persistence.makeContext()
+        try removeExpiredMedia(keys: [requestedID.stableKey], in: context)
         let seasonsData = try JSONEncoder().encode(show.seasons.map {
             StoredShowSeason(
                 id: $0.id,
@@ -1105,9 +1123,18 @@ final class LibraryRepository {
     }
 
     private func upsertEpisodes(_ episodes: [EpisodeDetails], for showID: MediaID) throws {
-        let context = try persistence.makeMetadataContext()
+        guard !episodes.isEmpty else { return }
+        let context = persistence.makeContext()
         let encoder = JSONEncoder()
-        let seasonNumbers = Set(episodes.map(\.seasonNumber))
+        let seasonNumbers = Array(Set(episodes.map(\.seasonNumber)))
+        let showTMDbID = showID.tmdbID
+        let now = Date()
+        let cutoff = Persistence.metadataCutoff(at: now)
+        let expired = try context.fetch(FetchDescriptor<EpisodeRecord>(predicate: #Predicate {
+            $0.showTMDbID == showTMDbID && seasonNumbers.contains($0.seasonNumber) &&
+                ($0.metadataCachedAt <= cutoff || $0.metadataCachedAt > now)
+        }))
+        for episode in expired { context.delete(episode) }
         var existingByKey = Dictionary(
             seasonNumbers.flatMap { episodeRecords(forShowID: showID.tmdbID, seasonNumber: $0, context: context) }.map {
                 ("\($0.seasonNumber):\($0.episodeNumber)", $0)
@@ -1337,8 +1364,10 @@ final class LibraryRepository {
 
     private nonisolated func mediaRecord(for id: MediaID, context: ModelContext) -> MediaRecord? {
         let mediaKey = id.stableKey
+        let now = Date()
+        let cutoff = Persistence.metadataCutoff(at: now)
         var descriptor = FetchDescriptor<MediaRecord>(
-            predicate: #Predicate { $0.mediaKey == mediaKey }
+            predicate: #Predicate { $0.mediaKey == mediaKey && $0.metadataCachedAt > cutoff && $0.metadataCachedAt <= now }
         )
         descriptor.fetchLimit = 1
         return try? context.fetch(descriptor).first
@@ -1348,11 +1377,13 @@ final class LibraryRepository {
         let showID = ref.showId
         let seasonNumber = ref.season
         let episodeNumber = ref.episode
+        let now = Date()
+        let cutoff = Persistence.metadataCutoff(at: now)
         var descriptor = FetchDescriptor<EpisodeRecord>(
             predicate: #Predicate {
                 $0.showTMDbID == showID &&
                     $0.seasonNumber == seasonNumber &&
-                    $0.episodeNumber == episodeNumber
+                    $0.episodeNumber == episodeNumber && $0.metadataCachedAt > cutoff && $0.metadataCachedAt <= now
             }
         )
         descriptor.fetchLimit = 1
@@ -1360,22 +1391,25 @@ final class LibraryRepository {
     }
 
     private nonisolated func episodeRecord(forTMDbID tmdbID: Int, context: ModelContext) -> EpisodeRecord? {
+        let now = Date()
+        let cutoff = Persistence.metadataCutoff(at: now)
         var descriptor = FetchDescriptor<EpisodeRecord>(
-            predicate: #Predicate { $0.tmdbID == tmdbID }
+            predicate: #Predicate { $0.tmdbID == tmdbID && $0.metadataCachedAt > cutoff && $0.metadataCachedAt <= now }
         )
         descriptor.fetchLimit = 1
         return try? context.fetch(descriptor).first
     }
 
     private func watchlistRecord(for id: MediaID, context: ModelContext) -> WatchlistRecord? {
-        let mediaKey = id.stableKey
+        let kind = id.kind.rawValue
+        let tmdbID = id.tmdbID
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
         let descriptor = FetchDescriptor<WatchlistRecord>(
-            predicate: #Predicate { $0.mediaKey == mediaKey }
+            predicate: #Predicate { $0.kindRaw == kind && $0.tmdbID == tmdbID }
         )
-        return (try? context.fetch(descriptor))?.first {
+        return (try? context.fetch(descriptor))?.filter {
             LibraryGenerationPolicy.belongsToCurrentGeneration($0.generationID, current: generationID)
-        }
+        }.max { WatchlistRecord.prefersMembership($1, over: $0) }
     }
 
     private func showDispositionRecord(for id: MediaID, context: ModelContext) -> ShowDispositionRecord? {
@@ -1432,8 +1466,10 @@ final class LibraryRepository {
     }
 
     private nonisolated func allEpisodeRecords(forShowID showID: Int, context: ModelContext) -> [EpisodeRecord] {
-        (try? context.fetch(FetchDescriptor<EpisodeRecord>(
-            predicate: #Predicate { $0.showTMDbID == showID },
+        let now = Date()
+        let cutoff = Persistence.metadataCutoff(at: now)
+        return (try? context.fetch(FetchDescriptor<EpisodeRecord>(
+            predicate: #Predicate { $0.showTMDbID == showID && $0.metadataCachedAt > cutoff && $0.metadataCachedAt <= now },
             sortBy: [
                 SortDescriptor(\.seasonNumber),
                 SortDescriptor(\.episodeNumber)
@@ -1442,9 +1478,11 @@ final class LibraryRepository {
     }
 
     private nonisolated func episodeRecords(forShowID showID: Int, seasonNumber: Int, context: ModelContext) -> [EpisodeRecord] {
-        (try? context.fetch(FetchDescriptor<EpisodeRecord>(
+        let now = Date()
+        let cutoff = Persistence.metadataCutoff(at: now)
+        return (try? context.fetch(FetchDescriptor<EpisodeRecord>(
             predicate: #Predicate {
-                $0.showTMDbID == showID && $0.seasonNumber == seasonNumber
+                $0.showTMDbID == showID && $0.metadataCachedAt > cutoff && $0.metadataCachedAt <= now && $0.seasonNumber == seasonNumber
             },
             sortBy: [SortDescriptor(\.episodeNumber)]
         ))) ?? []

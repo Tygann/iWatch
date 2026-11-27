@@ -45,9 +45,9 @@ nonisolated final class Persistence: @unchecked Sendable {
 
     // Only provider metadata is disposable. Library/history/outbox rows are never touched.
     // Unknown legacy provenance expires immediately; 150 days leaves margin below six months.
-    func makeMetadataContext(now: Date = .now) throws -> ModelContext {
-        let context = makeContext()
-        let cutoff = now.addingTimeInterval(-150 * 86400)
+    @discardableResult
+    func expireProviderMetadata(in context: ModelContext, now: Date = .now) throws -> Bool {
+        let cutoff = Self.metadataCutoff(at: now)
         let media = try context.fetch(FetchDescriptor<MediaRecord>(
             predicate: #Predicate { $0.metadataCachedAt <= cutoff || $0.metadataCachedAt > now }
         ))
@@ -56,8 +56,13 @@ nonisolated final class Persistence: @unchecked Sendable {
         ))
         for record in media { context.delete(record) }
         for record in episodes { context.delete(record) }
-        if context.hasChanges { try context.save() }
-        return context
+        guard !media.isEmpty || !episodes.isEmpty else { return false }
+        try context.save()
+        return true
+    }
+
+    static func metadataCutoff(at now: Date) -> Date {
+        now.addingTimeInterval(-150 * 86400)
     }
 
     func makeContext() -> ModelContext {

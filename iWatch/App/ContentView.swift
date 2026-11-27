@@ -21,9 +21,15 @@ struct ContentView: View {
             }
         }
         .scrollEdgeEffectStyle(.soft, for: .top)
+        .task {
+            if !ReleaseNotificationPreferences.enabled {
+                await container.releaseNotificationCoordinator.reconcile()
+            }
+        }
         .task(id: session.libraryRevision) {
-            await prewarmShows()
-            await container.releaseNotificationCoordinator.reconcile()
+            if ReleaseNotificationPreferences.enabled {
+                await container.releaseNotificationCoordinator.reconcile()
+            }
         }
         .sheet(isPresented: $router.isShowingSettings) {
             SettingsSheet()
@@ -46,12 +52,6 @@ struct ContentView: View {
             }
         }
         .animation(.snappy, value: session.transientFeedback?.id)
-    }
-
-    private func prewarmShows() async {
-        _ = try? await container.libraryRepository.showLibrarySnapshot(
-            revision: session.libraryRevision
-        )
     }
 
     private var tabView: some View {

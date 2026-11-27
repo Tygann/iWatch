@@ -33,14 +33,14 @@ private struct ReadyAppView: View {
             .environment(container.router)
             .modelContainer(container.persistence.modelContainer)
             .task {
-                container.maintainMetadataCache()
                 // Opening may finish after the scene's initial active transition.
                 if scenePhase == .active { container.session.appDidBecomeActive() }
+                await container.maintainMetadataCache()
             }
             .onChange(of: scenePhase) { _, phase in
                 switch phase {
                 case .active:
-                    container.maintainMetadataCache()
+                    Task { await container.maintainMetadataCache() }
                     container.session.appDidBecomeActive()
                 case .background: container.session.appDidEnterBackground()
                 default: break

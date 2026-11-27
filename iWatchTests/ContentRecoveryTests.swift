@@ -98,6 +98,29 @@ struct ContentRecoveryTests {
         #expect(!model.isLoading)
     }
 
+    @Test
+    func uncachedSeasonFailureCanRecoverAndEmptySeasonFinishes() async throws {
+        let container = AppContainer.preview()
+        let show = MediaID(kind: .show, id: 202, traktID: 2002)
+        let failing = TestValue(true)
+        let model = MediaDetailScreenModel(ref: show, contentRepository: container.contentRepository,
+            libraryRepository: container.libraryRepository, session: container.session,
+            loadEpisodes: { _, _, _, onCached in
+                try await onCached([])
+                if failing.value { throw URLError(.notConnectedToInternet) }
+                return []
+            })
+        model.loadState = .loaded(try await container.contentRepository.details(for: show))
+
+        await model.loadSeason(1)
+        #expect(model.seasonErrors[1] != nil)
+        #expect(model.loadingSeasons.isEmpty)
+        failing.value = false
+        await model.loadSeason(1)
+        #expect(model.seasonErrors[1] == nil)
+        #expect(model.episodesBySeason[1] == [])
+    }
+
     @Test(arguments: [false, true])
     func cachedSeasonAppearsBeforeRefreshCompletes(fails: Bool) async throws {
         let container = AppContainer.preview()
@@ -107,8 +130,9 @@ struct ContentRecoveryTests {
         let pending = TestValue<CheckedContinuation<[EpisodeDetails], Error>?>(nil)
         let model = MediaDetailScreenModel(ref: showID, contentRepository: container.contentRepository,
             libraryRepository: container.libraryRepository, session: container.session,
-            loadEpisodes: { _, _, _ in
-                try await withCheckedThrowingContinuation { pending.value = $0 }
+            loadEpisodes: { _, _, _, onCached in
+                try await onCached(cached)
+                return try await withCheckedThrowingContinuation { pending.value = $0 }
             })
         model.loadState = .loaded(try await container.contentRepository.details(for: showID))
         let refresh = Task { await model.loadSeason(1) }

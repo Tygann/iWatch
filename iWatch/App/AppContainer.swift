@@ -60,10 +60,16 @@ final class AppContainer {
         self.router = router
     }
 
-    func maintainMetadataCache() {
+    private var isMaintainingMetadataCache = false
+
+    func maintainMetadataCache() async {
+        guard !isMaintainingMetadataCache else { return }
+        isMaintainingMetadataCache = true
+        defer { isMaintainingMetadataCache = false }
         do {
-            try libraryRepository.expireProviderMetadata()
-            session.markLibraryUpdated()
+            if try await libraryRepository.expireProviderMetadata() {
+                session.markLibraryUpdated()
+            }
         } catch {
             session.cacheMaintenanceMessage = "Unable to remove expired catalog data. Please try again."
         }

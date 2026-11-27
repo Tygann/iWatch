@@ -21,7 +21,8 @@ struct MetadataRetentionTests {
         context.insert(WatchedEventRecord(kind: .movie, tmdbID: 10, watchedAt: old, dirty: true))
         context.insert(SyncOperationRecord(kind: .addHistory, payload: Data(), accountKey: "account-a"))
         try context.save()
-        let checked = try persistence.makeMetadataContext(now: now)
+        let checked = persistence.makeContext()
+        #expect(try persistence.expireProviderMetadata(in: checked, now: now))
         #expect(try checked.fetch(FetchDescriptor<MediaRecord>()).map(\.tmdbID) == [20])
         #expect(try checked.fetchCount(FetchDescriptor<EpisodeRecord>()) == 0)
         #expect(try checked.fetchCount(FetchDescriptor<WatchlistRecord>()) == 1)
@@ -41,7 +42,44 @@ struct MetadataRetentionTests {
             context.insert(record)
         }
         try context.save()
-        let checked = try persistence.makeMetadataContext(now: now)
+        let checked = persistence.makeContext()
+        #expect(try persistence.expireProviderMetadata(in: checked, now: now))
         #expect(try checked.fetchCount(FetchDescriptor<MediaRecord>()) == 0)
+    }
+
+    @Test
+    func libraryReadsAndEditsLeaveExpiredMetadataForMaintenance() async throws {
+        let container = AppContainer.preview(seedCatalog: false)
+        let context = container.persistence.makeContext()
+        let movie = MediaID(kind: .movie, id: 10)
+        let expired = MediaRecord(kind: .movie, tmdbID: movie.id, title: "Expired",
+                                  updatedAt: Date().addingTimeInterval(-151 * 86400))
+        context.insert(expired)
+        try context.save()
+
+        try await container.libraryRepository.setWatchlist(true, for: movie)
+        let movies = try await container.libraryRepository.movieLibraryItems()
+        #expect(movies.first?.title == "Unknown")
+        #expect(try container.persistence.makeContext().fetchCount(FetchDescriptor<MediaRecord>()) == 1)
+        #expect(try await container.libraryRepository.expireProviderMetadata())
+        #expect(try await !container.libraryRepository.expireProviderMetadata())
+    }
+
+    @Test
+    func watchlistSnapshotsResolveReplicasBeforeFilteringRemovals() async throws {
+        let container = AppContainer.preview(seedCatalog: false)
+        let context = container.persistence.makeContext()
+        let removed = MediaID(kind: .movie, id: 10)
+        let kept = MediaID(kind: .movie, id: 20)
+        let now = Date()
+        context.insert(WatchlistRecord(mediaID: removed, isInWatchlist: true, localUpdatedAt: now.addingTimeInterval(-60)))
+        context.insert(WatchlistRecord(mediaID: removed, isInWatchlist: false, localUpdatedAt: now))
+        context.insert(WatchlistRecord(mediaID: kept, isInWatchlist: true, localUpdatedAt: now.addingTimeInterval(-60)))
+        context.insert(WatchlistRecord(mediaID: kept, isInWatchlist: true, localUpdatedAt: now))
+        try context.save()
+
+        #expect(await !container.libraryRepository.isInWatchlist(removed))
+        let movies = try await container.libraryRepository.movieLibraryItems()
+        #expect(movies.map(\.mediaID) == [kept])
     }
 }

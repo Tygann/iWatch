@@ -19,7 +19,11 @@ final class MediaDetailScreenModel {
     private let contentRepository: ContentRepository
     private let libraryRepository: LibraryRepository
     private let session: AppSession
-    private let loadEpisodes: @MainActor (MediaID, Int, Bool) async throws -> [EpisodeDetails]
+    typealias SeasonLoader = @MainActor (MediaID, Int, Bool, ([EpisodeDetails]) async throws -> Void) async throws -> [EpisodeDetails]
+    private let loadEpisodes: SeasonLoader
+    private var seasonTasks: [Int: UUID] = [:]
+    private var loadedSeasons: Set<Int> = []
+    private var detailsTask: UUID?
 
     var loadState: LoadState = .idle
     var operationError: String?
@@ -36,6 +40,7 @@ final class MediaDetailScreenModel {
     var mostRecentWatchedSeason: Int?
     var episodesBySeason: [Int: [EpisodeDetails]] = [:]
     var loadingSeasons: Set<Int> = []
+    var seasonErrors: [Int: String] = [:]
     var supplementaryDetails: MediaSupplementaryDetails?
     var watchConfirmation: EpisodeWatchConfirmation?
 
@@ -61,19 +66,30 @@ final class MediaDetailScreenModel {
          contentRepository: ContentRepository,
          libraryRepository: LibraryRepository,
          session: AppSession,
-         loadEpisodes: (@MainActor (MediaID, Int, Bool) async throws -> [EpisodeDetails])? = nil) {
+         loadEpisodes: SeasonLoader? = nil) {
         self.ref = ref
         self.contentRepository = contentRepository
         self.libraryRepository = libraryRepository
         self.session = session
-        self.loadEpisodes = loadEpisodes ?? { showID, seasonNumber, forceRefresh in
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        var failFirstSeasonLoad = arguments.contains("UITEST_MODE") && arguments.contains("UITEST_FAIL_FIRST_SEASON_LOAD")
+        #endif
+        self.loadEpisodes = loadEpisodes ?? { showID, seasonNumber, forceRefresh, onCached in
             #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("UITEST_MODE"),
-               ProcessInfo.processInfo.arguments.contains("UITEST_DELAY_SEASON_REFRESH") {
-                try await Task.sleep(for: .seconds(30))
+            if failFirstSeasonLoad {
+                failFirstSeasonLoad = false
+                throw URLError(.notConnectedToInternet)
             }
             #endif
-            return try await contentRepository.episodes(for: showID, seasonNumber: seasonNumber, forceRefresh: forceRefresh)
+            return try await contentRepository.episodes(for: showID, seasonNumber: seasonNumber, forceRefresh: forceRefresh) { episodes in
+                try await onCached(episodes)
+                #if DEBUG
+                if arguments.contains("UITEST_MODE"), arguments.contains("UITEST_DELAY_SEASON_REFRESH") {
+                    try await Task.sleep(for: .seconds(30))
+                }
+                #endif
+            }
         }
     }
 
@@ -85,18 +101,21 @@ final class MediaDetailScreenModel {
     }
 
     func load(forceRefresh: Bool = false) async {
-        let previous = loadState
+        guard forceRefresh || loadState == .idle || loadState == .loading else { return }
+        let token = UUID()
+        detailsTask = token
+        defer { if detailsTask == token { detailsTask = nil } }
+        let previous = loadState == .loading ? .idle : loadState
         operationError = nil
         if currentDetails == nil { loadState = .loading }
 
         do {
             let details = try await contentRepository.details(for: ref, forceRefresh: forceRefresh)
             try Task.checkCancellation()
+            guard detailsTask == token else { return }
             loadState = .loaded(details)
-
-            Task { await loadSupplementaryDetails() }
-
             await refreshLibraryState()
+            guard detailsTask == token else { return }
 
             if expandedSeason == nil,
                case let .show(show) = details {
@@ -124,24 +143,26 @@ final class MediaDetailScreenModel {
                     ?? firstRegularSeason
                     ?? firstAvailableSeason
             }
-
-            if let expandedSeason,
-               case .show = details {
-                await loadSeason(expandedSeason)
-            }
         } catch {
-            guard !error.isCancelled else { loadState = previous; return }
+            guard detailsTask == token else { return }
+            guard !Task.isCancelled, !error.isCancelled else {
+                if loadState == .loading { loadState = previous }
+                return
+            }
             present(error, context: .details)
         }
     }
 
-    private func loadSupplementaryDetails() async {
+    func loadSupplementaryDetails() async {
+        guard supplementaryDetails == nil else { return }
         let regionCode = Locale.current.region?.identifier ?? "US"
         do {
-            supplementaryDetails = try await contentRepository.supplementaryDetails(
+            let details = try await contentRepository.supplementaryDetails(
                 for: ref,
                 regionCode: regionCode
             )
+            try Task.checkCancellation()
+            supplementaryDetails = details
         } catch {
             // Core details remain useful offline or when optional TMDb blocks fail.
             guard !error.isCancelled else { return }
@@ -161,12 +182,14 @@ final class MediaDetailScreenModel {
             showDisposition = await libraryRepository.showDisposition(for: ref)
             do {
                 let progress = try await libraryRepository.showProgress(for: ref)
+                guard !Task.isCancelled else { return }
                 watchedEpisodeKeys = progress.watchedEpisodeKeys
                 remainingReleasedEpisodes = progress.remainingReleased
                 nextEpisode = progress.nextEpisode
                 nextUpcomingEpisode = progress.nextUpcomingEpisode
                 mostRecentWatchedSeason = progress.mostRecentWatchedSeason
             } catch {
+                guard !Task.isCancelled, !error.isCancelled else { return }
                 watchedEpisodeKeys = []
                 remainingReleasedEpisodes = 0
                 nextEpisode = nil
@@ -185,25 +208,38 @@ final class MediaDetailScreenModel {
             return
         }
 
-        if loadingSeasons.contains(seasonNumber) {
-            return
-        }
-        if episodesBySeason[seasonNumber] != nil, !forceRefresh {
-            return
-        }
+        guard forceRefresh || !loadedSeasons.contains(seasonNumber) else { return }
 
+        let token = UUID()
+        seasonTasks[seasonNumber] = token
+        seasonErrors[seasonNumber] = nil
         loadingSeasons.insert(seasonNumber)
-        defer { loadingSeasons.remove(seasonNumber) }
+        defer {
+            if seasonTasks[seasonNumber] == token {
+                seasonTasks[seasonNumber] = nil
+                loadingSeasons.remove(seasonNumber)
+            }
+        }
 
         do {
             let showID = MediaID(kind: .show, id: show.common.id, traktID: show.common.traktID)
-            let cached = try await contentRepository.cachedEpisodes(for: showID, seasonNumber: seasonNumber)
-            if !cached.isEmpty { episodesBySeason[seasonNumber] = cached }
-            episodesBySeason[seasonNumber] = try await loadEpisodes(showID, seasonNumber, forceRefresh)
+            let episodes = try await loadEpisodes(showID, seasonNumber, forceRefresh) { cached in
+                try Task.checkCancellation()
+                guard self.seasonTasks[seasonNumber] == token, !cached.isEmpty else { return }
+                self.episodesBySeason[seasonNumber] = cached
+            }
+            try Task.checkCancellation()
+            guard seasonTasks[seasonNumber] == token else { return }
+            episodesBySeason[seasonNumber] = episodes
+            loadedSeasons.insert(seasonNumber)
             await refreshLibraryState()
         } catch {
-            guard !error.isCancelled else { return }
-            present(error, context: .details)
+            guard !Task.isCancelled, !error.isCancelled, seasonTasks[seasonNumber] == token else { return }
+            if episodesBySeason[seasonNumber]?.isEmpty != false {
+                seasonErrors[seasonNumber] = UserFacingError.message(for: error, context: .details)
+            } else {
+                present(error, context: .details)
+            }
         }
     }
 
@@ -378,16 +414,15 @@ struct MediaDetailView: View {
             }
         }
         .task {
-            guard model == nil else { return }
-
-            let newModel = MediaDetailScreenModel(
-                ref: ref,
-                contentRepository: container.contentRepository,
-                libraryRepository: container.libraryRepository,
-                session: session
-            )
-            model = newModel
-            await newModel.load()
+            if model == nil {
+                model = MediaDetailScreenModel(
+                    ref: ref,
+                    contentRepository: container.contentRepository,
+                    libraryRepository: container.libraryRepository,
+                    session: session
+                )
+            }
+            await model?.load()
         }
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
@@ -439,6 +474,7 @@ private struct MediaDetailBody: View {
     @State private var showsNavigationTitle = false
     @State private var overviewFullLines = 0
     @State private var observedLibraryRevision: Int?
+    @State private var seasonRetry = 0
 
     // MARK: - Body
     var body: some View {
@@ -478,13 +514,15 @@ private struct MediaDetailBody: View {
                 .scrollIndicators(.hidden)
                 .scrollContentBackground(.hidden)
                 .scrollEdgeEffectHidden(!showsNavigationTitle, for: .top)
+                .task { await model.loadSupplementaryDetails() }
             }
         }
         .task(id: session.libraryRevision) {
             guard observedLibraryRevision != session.libraryRevision else { return }
             observedLibraryRevision = session.libraryRevision
-            guard model.loadState != .idle else { return }
-            await model.refreshLibraryState()
+            if case .loaded = model.loadState {
+                await model.refreshLibraryState()
+            }
         }
         .confirmationDialog(
             "Mark previous episodes as watched?",
@@ -948,9 +986,6 @@ private struct MediaDetailBody: View {
                                 ForEach(seasons) { season in
                                     Button {
                                         model.toggleSeason(season.seasonNumber)
-                                        if model.expandedSeason == season.seasonNumber {
-                                            Task { await model.loadSeason(season.seasonNumber) }
-                                        }
                                     } label: {
                                         VStack(spacing: 8) {
                                             PosterImage(path: season.posterPath)
@@ -1012,6 +1047,11 @@ private struct MediaDetailBody: View {
                                 ForEach(episodes) { episode in
                                     episodeRow(episode)
                                 }
+                            } else if let error = model.seasonErrors[seasonNumber] {
+                                RecoveryNotice(message: error) { seasonRetry += 1 }
+                            } else if model.episodesBySeason[seasonNumber] != nil {
+                                Text("No episodes available.")
+                                    .foregroundStyle(.secondary)
                             } else {
                                 HStack(spacing: 8) {
                                     ProgressView()
@@ -1019,15 +1059,16 @@ private struct MediaDetailBody: View {
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
-                                .task {
-                                    await model.loadSeason(seasonNumber)
-                                }
                             }
                         }
                         .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }
                 .padding(.bottom, 24)
+                .task(id: [model.expandedSeason, seasonRetry]) {
+                    guard let seasonNumber = model.expandedSeason else { return }
+                    await model.loadSeason(seasonNumber)
+                }
             }
         }
     }

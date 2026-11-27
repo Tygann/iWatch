@@ -123,6 +123,44 @@ final class iWatchUITests: XCTestCase {
     }
 
     @MainActor
+    func testSeasonRetryStandard() { verifySeasonRetry(accessibility: false) }
+
+    @MainActor
+    func testSeasonRetryAccessibility() { verifySeasonRetry(accessibility: true) }
+
+    @MainActor
+    private func verifySeasonRetry(accessibility: Bool) {
+        let app = XCUIApplication()
+        app.launchArguments += ["UITEST_MODE", "UITEST_START_ON_SHOWS", "UITEST_FAIL_FIRST_SEASON_LOAD"]
+        if accessibility { app.launchArguments.append("UITEST_ACCESSIBILITY_TEXT") }
+        app.launch()
+        let show = app.buttons["UI Test Show, Season 1 Episode 2, Continue Watching"]
+        XCTAssertTrue(show.waitForExistence(timeout: 10))
+        show.press(forDuration: 1)
+        let goToShow = app.buttons["Go to Show"]
+        XCTAssertTrue(goToShow.waitForExistence(timeout: 3))
+        goToShow.tap()
+
+        let retry = app.buttons["Try Again"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Loading episodes…"].exists)
+        for _ in 0..<8 {
+            if retry.isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(retry.isHittable)
+        retry.tap()
+        XCTAssertTrue(retry.waitForNonExistence(timeout: 5))
+        let episode = app.staticTexts["E1 • Pilot"]
+        for _ in 0..<4 {
+            if episode.exists { break }
+            app.swipeDown()
+        }
+        XCTAssertTrue(episode.waitForExistence(timeout: 5))
+        app.terminate()
+    }
+
+    @MainActor
     func testSavedShowsAppearBeforeRefreshStandard() throws {
         verifySavedShowsAppearBeforeRefresh(accessibility: false)
     }

@@ -10,20 +10,26 @@ actor LibrarySnapshotReader {
         self.persistence = persistence
     }
 
+    func expireProviderMetadata() throws -> Bool {
+        try persistence.expireProviderMetadata(in: persistence.makeContext())
+    }
+
     func readMetadata<Value: Sendable>(
         _ read: @Sendable (ModelContext) throws -> Value
     ) throws -> Value {
         try Task.checkCancellation()
-        return try read(persistence.makeMetadataContext())
+        return try read(persistence.makeContext())
     }
 
     func episodeCounts(for showID: Int, seasons: [Int]) throws -> [Int: Int] {
-        let context = try persistence.makeMetadataContext()
+        let context = persistence.makeContext()
+        let now = Date()
+        let cutoff = Persistence.metadataCutoff(at: now)
         var counts: [Int: Int] = [:]
         for season in seasons {
             try Task.checkCancellation()
             counts[season] = try context.fetchCount(FetchDescriptor<EpisodeRecord>(
-                predicate: #Predicate { $0.showTMDbID == showID && $0.seasonNumber == season }
+                predicate: #Predicate { $0.showTMDbID == showID && $0.seasonNumber == season && $0.metadataCachedAt > cutoff && $0.metadataCachedAt <= now }
             ))
         }
         return counts
@@ -51,37 +57,57 @@ actor LibrarySnapshotReader {
     // MARK: Release Notifications
 
     func releaseNotificationSnapshot(referenceDate: Date = .now) throws -> ReleaseNotificationSnapshot {
-        let context = try persistence.makeMetadataContext()
+        let context = persistence.makeContext()
+        let now = Date()
+        let cutoff = Persistence.metadataCutoff(at: now)
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
         let includesLegacyRows = generationID == LibraryGenerationPolicy.legacyGenerationID
-        let watchlist = try context.fetch(FetchDescriptor<WatchlistRecord>(
-            predicate: #Predicate {
-                ($0.generationID == generationID || (includesLegacyRows && $0.generationID == "")) &&
-                    $0.isInWatchlist
-            }
-        ))
-        let media = try context.fetch(FetchDescriptor<MediaRecord>())
-        let episodes = try context.fetch(FetchDescriptor<EpisodeRecord>())
-        let dispositions = try context.fetch(FetchDescriptor<ShowDispositionRecord>(
+        let watchlist = try activeWatchlist(context.fetch(FetchDescriptor<WatchlistRecord>(
             predicate: #Predicate {
                 $0.generationID == generationID || (includesLegacyRows && $0.generationID == "")
             }
-        ))
-        let events = try context.fetch(FetchDescriptor<WatchedEventRecord>(
+        )))
+        guard !watchlist.isEmpty else { return .init(movies: [], episodes: []) }
+
+        let showKind = MediaKind.show.rawValue
+        let movieKind = MediaKind.movie.rawValue
+        let showIDs = watchlist.filter { $0.kindRaw == showKind }.map(\.tmdbID)
+        let movieIDs = watchlist.filter { $0.kindRaw == movieKind }.map(\.tmdbID)
+        let media = try context.fetch(FetchDescriptor<MediaRecord>(predicate: #Predicate {
+            $0.metadataCachedAt > cutoff && $0.metadataCachedAt <= now &&
+                (($0.kindRaw == movieKind && movieIDs.contains($0.tmdbID)) ||
+                 ($0.kindRaw == showKind && showIDs.contains($0.tmdbID)))
+        }))
+        let dispositions = try context.fetch(FetchDescriptor<ShowDispositionRecord>(
             predicate: #Predicate {
                 ($0.generationID == generationID || (includesLegacyRows && $0.generationID == "")) &&
-                    !$0.tombstoned
+                    showIDs.contains($0.tmdbID)
             }
         ))
-
+        let stoppedShowIDs = Set(dispositions.filter { $0.disposition == .stopped }.map(\.tmdbID))
+        let activeShowIDs = showIDs.filter { !stoppedShowIDs.contains($0) }
+        let episodes = try context.fetch(FetchDescriptor<EpisodeRecord>(predicate: #Predicate {
+            activeShowIDs.contains($0.showTMDbID) && $0.seasonNumber > 0 && $0.airDate != nil &&
+                $0.metadataCachedAt > cutoff && $0.metadataCachedAt <= now
+        }))
+        let events: [WatchedEventRecord]
+        if episodes.isEmpty {
+            events = []
+        } else {
+            events = try context.fetch(FetchDescriptor<WatchedEventRecord>(
+                predicate: #Predicate {
+                    ($0.generationID == generationID || (includesLegacyRows && $0.generationID == "")) &&
+                        !$0.tombstoned && $0.showTMDbID != nil
+                }
+            ))
+        }
         let mediaByKey = Dictionary(
             media.map { ("\($0.kindRaw):\($0.tmdbID)", $0) },
             uniquingKeysWith: { first, _ in first }
         )
-        let activeShowIDs = Set(watchlist.filter { $0.kindRaw == MediaKind.show.rawValue }.map(\.tmdbID))
-            .subtracting(dispositions.filter { $0.disposition == .stopped }.map(\.tmdbID))
+        let activeShows = Set(activeShowIDs)
         let watchedEpisodeKeys = Set(events.compactMap { event -> String? in
-            guard let showID = event.showTMDbID,
+            guard let showID = event.showTMDbID, activeShows.contains(showID),
                   let season = event.seasonNumber,
                   let episode = event.episodeNumber else { return nil }
             return "ep:\(showID):S\(season):E\(episode)"
@@ -101,9 +127,7 @@ actor LibrarySnapshotReader {
             uniquingKeysWith: { first, _ in first }
         )
         let episodeReleases = episodes.compactMap { episode -> ReleaseNotificationSnapshot.EpisodeRelease? in
-            guard activeShowIDs.contains(episode.showTMDbID),
-                  episode.seasonNumber > 0,
-                  !watchedEpisodeKeys.contains(episode.episodeKey),
+            guard !watchedEpisodeKeys.contains(episode.episodeKey),
                   let airDate = episode.airDate,
                   Calendar.current.startOfDay(for: airDate) >= Calendar.current.startOfDay(for: referenceDate),
                   let show = showMediaByID[episode.showTMDbID]
@@ -129,20 +153,31 @@ actor LibrarySnapshotReader {
         return ReleaseNotificationSnapshot(movies: movies, episodes: episodeReleases)
     }
 
+    private func activeWatchlist(_ records: [WatchlistRecord]) -> [WatchlistRecord] {
+        let rows = Dictionary(records.map { ("\($0.kindRaw):\($0.tmdbID)", $0) }) { current, candidate in
+            WatchlistRecord.prefersMembership(candidate, over: current) ? candidate : current
+        }
+        return rows.values.filter(\.isInWatchlist).sorted {
+            if $0.localUpdatedAt != $1.localUpdatedAt { return $0.localUpdatedAt > $1.localUpdatedAt }
+            return $0.tmdbID < $1.tmdbID
+        }
+    }
+
     // MARK: Movies
 
     func movieItems() throws -> [LibraryMovieItem] {
-        let context = try persistence.makeMetadataContext()
+        let context = persistence.makeContext()
+        let now = Date()
+        let cutoff = Persistence.metadataCutoff(at: now)
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
         let includesLegacyRows = generationID == LibraryGenerationPolicy.legacyGenerationID
         let movieKind = MediaKind.movie.rawValue
-        let watchlist = try context.fetch(FetchDescriptor<WatchlistRecord>(
+        let watchlist = try activeWatchlist(context.fetch(FetchDescriptor<WatchlistRecord>(
             predicate: #Predicate {
                 ($0.generationID == generationID || (includesLegacyRows && $0.generationID == "")) &&
-                    $0.kindRaw == movieKind && $0.isInWatchlist
-            },
-            sortBy: [SortDescriptor(\.localUpdatedAt, order: .reverse)]
-        ))
+                    $0.kindRaw == movieKind
+            }
+        )))
         let events = try context.fetch(FetchDescriptor<WatchedEventRecord>(
             predicate: #Predicate {
                 ($0.generationID == generationID || (includesLegacyRows && $0.generationID == "")) &&
@@ -150,7 +185,7 @@ actor LibrarySnapshotReader {
             }
         ))
         let media = try context.fetch(FetchDescriptor<MediaRecord>(
-            predicate: #Predicate { $0.kindRaw == movieKind }
+            predicate: #Predicate { $0.kindRaw == movieKind && $0.metadataCachedAt > cutoff && $0.metadataCachedAt <= now }
         ))
         let mediaByKey = Dictionary(
             media.map { ("\($0.kindRaw):\($0.tmdbID)", $0) },
@@ -196,22 +231,23 @@ actor LibrarySnapshotReader {
     // MARK: Shows
 
     func showItems(for showID: Int? = nil) throws -> [LibraryShowItem] {
-        let context = try persistence.makeMetadataContext()
+        let context = persistence.makeContext()
+        let now = Date()
+        let cutoff = Persistence.metadataCutoff(at: now)
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
         let includesLegacyRows = generationID == LibraryGenerationPolicy.legacyGenerationID
         let showKind = MediaKind.show.rawValue
         let requestedID = showID ?? 0
         let includesAllShows = showID == nil
-        let watchlist = try context.fetch(FetchDescriptor<WatchlistRecord>(
+        let watchlist = try activeWatchlist(context.fetch(FetchDescriptor<WatchlistRecord>(
             predicate: #Predicate {
                 ($0.generationID == generationID || (includesLegacyRows && $0.generationID == "")) &&
-                    $0.kindRaw == showKind && $0.isInWatchlist &&
+                    $0.kindRaw == showKind &&
                     (includesAllShows || $0.tmdbID == requestedID)
-            },
-            sortBy: [SortDescriptor(\.localUpdatedAt, order: .reverse)]
-        ))
+            }
+        )))
         let media = try context.fetch(FetchDescriptor<MediaRecord>(
-            predicate: #Predicate { $0.kindRaw == showKind && (includesAllShows || $0.tmdbID == requestedID) }
+            predicate: #Predicate { $0.kindRaw == showKind && (includesAllShows || $0.tmdbID == requestedID) && $0.metadataCachedAt > cutoff && $0.metadataCachedAt <= now }
         ))
         let dispositions = try context.fetch(FetchDescriptor<ShowDispositionRecord>(
             predicate: #Predicate {
@@ -228,7 +264,7 @@ actor LibrarySnapshotReader {
         )
         let episodesByShowID = Dictionary(
             grouping: try context.fetch(FetchDescriptor<EpisodeRecord>(
-                predicate: #Predicate { includesAllShows || $0.showTMDbID == requestedID }
+                predicate: #Predicate { (includesAllShows || $0.showTMDbID == requestedID) && $0.metadataCachedAt > cutoff && $0.metadataCachedAt <= now }
             )),
             by: \.showTMDbID
         )

@@ -36,6 +36,16 @@ final class WatchlistRecord {
         self.generationID = generationID
     }
 
+    nonisolated static func prefersMembership(_ candidate: WatchlistRecord, over current: WatchlistRecord) -> Bool {
+        if candidate.localUpdatedAt != current.localUpdatedAt {
+            return candidate.localUpdatedAt > current.localUpdatedAt
+        }
+        if candidate.isInWatchlist != current.isInWatchlist {
+            return !candidate.isInWatchlist
+        }
+        return candidate.traktID != nil && current.traktID == nil
+    }
+
     var mediaID: MediaID {
         MediaID(kind: MediaKind(rawValue: kindRaw) ?? .movie, id: tmdbID, traktID: traktID)
     }

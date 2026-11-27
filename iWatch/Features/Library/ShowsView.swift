@@ -102,16 +102,23 @@ final class ShowsScreenModel {
         let missingProgress = snapshot.all
             .filter { $0.disposition == .active && $0.needsProgressEnrichment }
             .sorted { ($0.lastWatchedAt ?? .distantPast) > ($1.lastWatchedAt ?? .distantPast) }
-        for item in missingProgress {
+        var needsSnapshot = false
+        for (index, item) in missingProgress.enumerated() {
             guard !Task.isCancelled else { return }
             do {
                 try await repository.enrichShowProgress(for: item.mediaID)
+                needsSnapshot = true
             } catch {
                 guard !error.isCancelled else { return }
                 hadEnrichmentFailure = true
             }
+            if index == 0, needsSnapshot {
+                await load(revision: session.libraryRevision, forceRefresh: true)
+                needsSnapshot = false
+            }
+        }
+        if needsSnapshot {
             await load(revision: session.libraryRevision, forceRefresh: true)
-            await Task.yield()
         }
         if hadEnrichmentFailure { enrichedRevision = nil }
     }

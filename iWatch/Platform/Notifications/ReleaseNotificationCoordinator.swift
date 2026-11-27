@@ -31,6 +31,9 @@ final class ReleaseNotificationCoordinator {
     private let readAuthorization: @MainActor () async -> UNAuthorizationStatus
     private let requestAuthorization: @MainActor () async throws -> Bool
 
+    private var reconciliationTask: Task<Void, Never>?
+    private var needsReconciliation = false
+
     private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
     private(set) var scheduledCount = 0
 
@@ -64,8 +67,7 @@ final class ReleaseNotificationCoordinator {
 
     func setEnabled(_ enabled: Bool) async -> Bool {
         guard enabled else {
-            await removeManagedRequests()
-            await refreshStatus()
+            await reconcile()
             return false
         }
 
@@ -95,6 +97,23 @@ final class ReleaseNotificationCoordinator {
     }
 
     func reconcile() async {
+        needsReconciliation = true
+        if let reconciliationTask {
+            await reconciliationTask.value
+            return
+        }
+        let task = Task {
+            while needsReconciliation {
+                needsReconciliation = false
+                await reconcilePendingRequests()
+            }
+            reconciliationTask = nil
+        }
+        reconciliationTask = task
+        await task.value
+    }
+
+    private func reconcilePendingRequests() async {
         guard ReleaseNotificationPreferences.enabled else {
             await removeManagedRequests()
             await refreshStatus()
@@ -118,7 +137,12 @@ final class ReleaseNotificationCoordinator {
             timing: ReleaseNotificationPreferences.timing
         )
 
-        await removeManagedRequests()
+        let pending = await center.pendingNotificationRequests().filter { $0.identifier.hasPrefix(Self.managedPrefix) }
+        let existing = Dictionary(uniqueKeysWithValues: pending.map { ($0.identifier, $0) })
+        let desiredIDs = Set(notifications.map(\.identifier))
+        let obsoleteIDs = existing.keys.filter { !desiredIDs.contains($0) }
+        if !obsoleteIDs.isEmpty { center.removePendingNotificationRequests(withIdentifiers: obsoleteIDs) }
+
         for notification in notifications {
             let content = UNMutableNotificationContent()
             content.title = notification.title
@@ -136,6 +160,14 @@ final class ReleaseNotificationCoordinator {
                 content: content,
                 trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
             )
+            if let current = existing[request.identifier],
+               current.content.title == content.title,
+               current.content.body == content.body,
+               current.content.categoryIdentifier == content.categoryIdentifier,
+               NSDictionary(dictionary: current.content.userInfo).isEqual(NSDictionary(dictionary: content.userInfo)),
+               (current.trigger as? UNCalendarNotificationTrigger)?.dateComponents == components {
+                continue
+            }
             try? await center.add(request)
         }
         await refreshStatus()
