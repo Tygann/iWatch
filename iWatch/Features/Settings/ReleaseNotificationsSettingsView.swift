@@ -9,9 +9,8 @@ struct ReleaseNotificationsSettingsView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var settingsOpenFailed = false
 
-    @AppStorage(ReleaseNotificationPreferences.enabledKey) private var isEnabled = false
-    @AppStorage(ReleaseNotificationPreferences.episodesEnabledKey) private var episodesEnabled = true
-    @AppStorage(ReleaseNotificationPreferences.moviesEnabledKey) private var moviesEnabled = true
+    @AppStorage(ReleaseNotificationPreferences.episodesEnabledKey) private var episodesEnabled = false
+    @AppStorage(ReleaseNotificationPreferences.moviesEnabledKey) private var moviesEnabled = false
     @AppStorage(ReleaseNotificationPreferences.timingKey) private var timing = ReleaseNotificationTiming.atRelease
 
     @State private var isUpdatingAuthorization = false
@@ -40,23 +39,20 @@ struct ReleaseNotificationsSettingsView: View {
                         .disabled(container.session.isReadOnlyPreview)
                     }
                 }
-                Toggle("Release Notifications", isOn: Binding(
-                    get: { isEnabled },
-                    set: updateEnabled
-                ))
-                .disabled(isUpdatingAuthorization || container.session.isReadOnlyPreview)
-            } footer: {
-                Text("Get reminders for releases already in your iWatch library.")
             }
 
             if settingsOpenFailed {
                 Section { Text("iOS Settings couldn’t be opened. Open Settings > Notifications > iWatch.") }
             }
-            Section("Releases") {
+            Section {
                 Toggle("TV Episodes", isOn: $episodesEnabled)
                 Toggle("Movies", isOn: $moviesEnabled)
+            } header: {
+                Text("Releases")
+            } footer: {
+                Text("Get reminders for releases already in your iWatch library.")
             }
-            .disabled(!isEnabled)
+            .disabled(isUpdatingAuthorization)
 
             Section {
                 Picker("Notify Me", selection: $timing) {
@@ -70,9 +66,9 @@ struct ReleaseNotificationsSettingsView: View {
             } footer: {
                 Text("When an exact episode airtime isn’t available, iWatch sends the reminder at 9:00 AM local time. Movie reminders are always sent the morning of release.")
             }
-            .disabled(!isEnabled)
+            .disabled(!episodesEnabled && !moviesEnabled)
 
-            if isEnabled {
+            if episodesEnabled || moviesEnabled {
                 Section("Status") {
                     LabeledContent("Scheduled Reminders", value: "\(coordinator.scheduledCount)")
                 }
@@ -88,9 +84,9 @@ struct ReleaseNotificationsSettingsView: View {
             guard phase == .active, !container.session.isReadOnlyPreview else { return }
             Task { await coordinator.reconcile() }
         }
-        .onChange(of: episodesEnabled) { _, _ in reconcile() }
-        .onChange(of: moviesEnabled) { _, _ in reconcile() }
-        .onChange(of: timing) { _, _ in reconcile() }
+        .onChange(of: episodesEnabled) { _, enabled in updateReminders(requestPermission: enabled) }
+        .onChange(of: moviesEnabled) { _, enabled in updateReminders(requestPermission: enabled) }
+        .onChange(of: timing) { _, _ in updateReminders() }
     }
 
     private var permission: NotificationPermissionPresentation {
@@ -102,20 +98,21 @@ struct ReleaseNotificationsSettingsView: View {
         openURL(url) { accepted in settingsOpenFailed = !accepted }
     }
 
-    private func updateEnabled(_ newValue: Bool) {
-        guard !isUpdatingAuthorization else { return }
-        isEnabled = newValue
-        isUpdatingAuthorization = true
-        Task {
-            let enabled = await coordinator.setEnabled(newValue)
-            isEnabled = enabled
-            isUpdatingAuthorization = false
+    private func updateReminders(requestPermission: Bool = false) {
+        guard !container.session.isReadOnlyPreview else { return }
+        let shouldRequestPermission = requestPermission
+            && coordinator.authorizationStatus == .notDetermined
+            && !isUpdatingAuthorization
+        if shouldRequestPermission {
+            isUpdatingAuthorization = true
         }
-    }
-
-    private func reconcile() {
-        guard isEnabled, !container.session.isReadOnlyPreview else { return }
-        Task { await coordinator.reconcile() }
+        Task {
+            if shouldRequestPermission {
+                await coordinator.requestPermission()
+                isUpdatingAuthorization = false
+            }
+            await coordinator.reconcile()
+        }
     }
 }
 

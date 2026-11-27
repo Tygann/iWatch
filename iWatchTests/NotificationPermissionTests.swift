@@ -26,6 +26,23 @@ struct NotificationPermissionTests {
         #expect(coordinator.authorizationStatus == .authorized)
     }
 
+    @Test(arguments: [false, true])
+    func migrationPreservesEffectiveReminderChoices(legacyEnabled: Bool) throws {
+        let suite = "NotificationPermissionTests." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        defaults.set(legacyEnabled, forKey: "releaseNotificationsEnabled")
+        defaults.set(!legacyEnabled, forKey: "movieReleaseNotificationsEnabled")
+        ReleaseNotificationPreferences.migrateLegacyPreferences(in: defaults)
+        #expect(defaults.bool(forKey: ReleaseNotificationPreferences.episodesEnabledKey) == legacyEnabled)
+        #expect(!defaults.bool(forKey: ReleaseNotificationPreferences.moviesEnabledKey))
+
+        defaults.set(true, forKey: ReleaseNotificationPreferences.moviesEnabledKey)
+        ReleaseNotificationPreferences.migrateLegacyPreferences(in: defaults)
+        #expect(defaults.bool(forKey: ReleaseNotificationPreferences.moviesEnabledKey))
+    }
+
     @Test
     func requestingPermissionDoesNotChangeReminderPreference() async {
         let container = AppContainer.preview(seedCatalog: false)

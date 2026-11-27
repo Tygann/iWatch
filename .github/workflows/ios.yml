@@ -45,10 +45,19 @@ jobs:
         run: xcodebuild -project iWatch.xcodeproj -scheme iWatch -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build
       - name: Unit tests
         run: xcodebuild test -project iWatch.xcodeproj -scheme iWatch -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:iWatchTests -parallel-testing-enabled NO -resultBundlePath work/iWatchTests.xcresult
+      - name: Notification settings UI tests
+        run: |
+          xcodebuild test -project iWatch.xcodeproj -scheme iWatch \
+            -destination 'platform=iOS Simulator,name=iPhone 17' \
+            -only-testing:iWatchUITests/iWatchUITests/testNotificationSettingsAtStandardTextSize \
+            -only-testing:iWatchUITests/iWatchUITests/testNotificationSettingsAtAccessibilityTextSize \
+            -parallel-testing-enabled NO -resultBundlePath work/iWatchNotificationUITests.xcresult
       - name: Save test failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: iwatch-test-results
-          path: work/iWatchTests.xcresult
+          path: |
+            work/iWatchTests.xcresult
+            work/iWatchNotificationUITests.xcresult
           retention-days: 7
