@@ -13,7 +13,11 @@ WORKFLOW_FILES = (".github/workflows/ios.yml", "scripts/select-ios-tests.py")
 APP_PATHS = ("iWatch/", "iWatch.xcodeproj/", "iWatchTests/", "iWatchUITests/")
 UI_GROUPS = (
     (
-        ("iWatch/Features/Settings/", "iWatch/Platform/Notifications/"),
+        (
+            "iWatch/Features/Settings/",
+            "iWatch/Platform/Notifications/",
+            "iWatch/DesignSystem/SettingsComponents.swift",
+        ),
         (
             "testSettingsNavigation", "testStartPage", "testNotificationSettings",
             "testSync", "testTrakt", "testGuestAccount", "testSignedInAccount",
@@ -47,7 +51,7 @@ def select(paths, full_ui):
         if path.startswith("iWatchTests/"):
             continue
         for roots, tests in UI_GROUPS:
-            if path.startswith(roots):
+            if any(path == root or (root.endswith("/") and path.startswith(root)) for root in roots):
                 prefixes.update(tests)
                 break
         else:
