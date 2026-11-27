@@ -40,7 +40,7 @@ struct TraktPendingChangesSection: View {
             Link("Trakt Service Status", destination: URL(string: "https://status.trakt.tv")!)
             Link("Contact Support", destination: SyncSupportView.contactURL)
         } label: {
-            LabeledContent("Pending Changes", value: changes.count.formatted())
+            Text("Review Pending Changes")
         }
         .confirmationDialog("Move Uploads to This Device?", isPresented: $showMoveConfirmation, titleVisibility: .visible) {
             Button("Move Pending Uploads") {

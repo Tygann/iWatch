@@ -82,9 +82,11 @@ struct SettingsPresentationTests {
     @Test
     @MainActor
     func confirmationSummaryDescribesTheAffectedChanges() {
-        #expect(TraktSyncPresentation.confirmationSummary(count: 0) == "A watched change needs checking.")
-        #expect(TraktSyncPresentation.confirmationSummary(count: 1) == "1 watched change needs checking.")
-        #expect(TraktSyncPresentation.confirmationSummary(count: 3) == "3 watched changes need checking.")
+        #expect(TraktSyncPresentation.confirmationSummary(count: 0, total: 6) == "A watched change needs checking.")
+        #expect(TraktSyncPresentation.confirmationSummary(count: 1, total: 1) == "1 pending change needs confirmation.")
+        #expect(TraktSyncPresentation.confirmationSummary(count: 3, total: 3) == "3 pending changes need confirmation.")
+        #expect(TraktSyncPresentation.confirmationSummary(count: 1, total: 10) == "1 of 10 pending changes needs confirmation.")
+        #expect(TraktSyncPresentation.confirmationSummary(count: 4, total: 10) == "4 of 10 pending changes need confirmation.")
     }
 
     @Test

@@ -40,8 +40,11 @@ struct TraktSyncPresentation: Equatable {
         if diagnostics.failure == .ambiguous {
             return Self(title: "Review Watched History", detail: "Review the matching plays on Trakt.", symbol: "exclamationmark.triangle", needsAttention: true, isWorking: false, action: .check)
         }
-        if diagnostics.changes.contains(where: { $0.state == .confirming }) || diagnostics.failure == .confirmation {
-            return Self(title: "Waiting for Confirmation", detail: confirmationSummary(count: diagnostics.changes.filter { $0.state == .confirming }.count), symbol: "clock.badge.exclamationmark", needsAttention: true, isWorking: false, action: .check)
+        let confirmationCount = diagnostics.changes.count(where: { $0.state == .confirming })
+        if confirmationCount > 0 || diagnostics.failure == .confirmation {
+            let detail = confirmationSummary(count: confirmationCount, total: diagnostics.changes.count)
+            return Self(title: "Waiting for Confirmation", detail: detail,
+                        symbol: "clock.badge.exclamationmark", needsAttention: true, isWorking: false, action: .check)
         }
         if diagnostics.deadletterOperationCount > 0 || error != nil || diagnostics.lastErrorDescription != nil {
             return Self(title: "Sync Needs Attention", detail: "Review pending changes or try again.", symbol: "exclamationmark.triangle", needsAttention: true, isWorking: false,
@@ -57,9 +60,14 @@ struct TraktSyncPresentation: Equatable {
                     detail: "Changes sync automatically.", symbol: "checkmark.circle", needsAttention: false, isWorking: false, action: .sync)
     }
 
-    static func confirmationSummary(count: Int) -> String {
-        count == 1 ? "1 watched change needs checking." : count > 1
-            ? "\(count) watched changes need checking." : "A watched change needs checking."
+    static func confirmationSummary(count: Int, total: Int) -> String {
+        if count == 0 { return "A watched change needs checking." }
+        if count < total {
+            return count == 1
+                ? "1 of \(total) pending changes needs confirmation."
+                : "\(count) of \(total) pending changes need confirmation."
+        }
+        return count == 1 ? "1 pending change needs confirmation." : "\(count) pending changes need confirmation."
     }
 }
 

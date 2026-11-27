@@ -11,10 +11,12 @@ struct TraktSettingsSection: View {
             if session.pendingTraktAccountKey != nil {
                 TraktSetupOptions()
             } else if session.traktConnected {
-                TraktSyncActionButton()
-                if !session.syncDiagnostics.changes.isEmpty {
+                let hasPendingChanges = !session.syncDiagnostics.changes.isEmpty
+                if hasPendingChanges {
                     TraktPendingChangesSection()
-                } else if health.needsAttention {
+                }
+                TraktSyncActionButton()
+                if !hasPendingChanges && health.needsAttention {
                     Link("Trakt Service Status", destination: URL(string: "https://status.trakt.tv")!)
                 }
             }
@@ -119,7 +121,7 @@ private struct TraktConnectionAction: View {
     var body: some View {
         Group {
             if session.traktConnected {
-                Button("Disconnect Trakt", role: .destructive) { showDisconnect = true }
+                Button("Disconnect Trakt") { showDisconnect = true }
             } else {
                 Button("Connect Trakt") { session.startTraktOAuth() }
             }

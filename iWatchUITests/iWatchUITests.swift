@@ -384,15 +384,17 @@ final class iWatchUITests: XCTestCase {
         capture(app, "Library sync overview - " + contentSize)
         revealTraktSection(in: app)
         XCTAssertFalse(app.buttons["Advanced"].exists)
-        let syncNow = app.buttons["Sync Now"]
-        reveal(syncNow, in: app)
-        capture(app, "Contextual Trakt issue - " + contentSize)
-        let pending = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Pending Changes'")).firstMatch
+        let traktStatus = app.descendants(matching: .any)["trakt-connection"]
+        XCTAssertTrue(traktStatus.label.contains("4 of 10 pending changes need confirmation."))
+        let pending = app.buttons["Review Pending Changes"]
         reveal(pending, in: app)
+        let syncNow = app.buttons["Sync Now"]
         if !contentSize.contains("Accessibility") {
             XCTAssertGreaterThanOrEqual(syncNow.frame.height, 44)
             XCTAssertGreaterThanOrEqual(pending.frame.height, 44)
+            XCTAssertLessThan(pending.frame.minY, syncNow.frame.minY)
         }
+        capture(app, "Contextual Trakt issue - " + contentSize)
         pending.tap()
         XCTAssertTrue(app.navigationBars["Library Sync"].exists)
         let failed = app.buttons["Needs Attention (6)"]
