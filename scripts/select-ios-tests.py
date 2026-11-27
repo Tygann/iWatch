@@ -31,7 +31,7 @@ UI_GROUPS = (
         ("iWatch/Features/Browse/", "iWatch/Features/MediaDetail/"),
         (
             "testLaunchTabs", "testQuickWatch", "testCachedSeason", "testSeasonRetry",
-            "testWatchFeedback",
+            "testWatchlist",
         ),
     ),
 )

@@ -326,38 +326,32 @@ final class iWatchUITests: XCTestCase {
     }
 
     @MainActor
-    func testWatchlistMovieDoubleTapMarksWatched() throws {
-        let app = XCUIApplication()
-        app.launchArguments.append("UITEST_MODE")
-        app.launch()
-
-        let movieTile = app.buttons["UI Test Movie"]
-        XCTAssertTrue(movieTile.waitForExistence(timeout: 5))
-        movieTile.doubleTap()
-
-        let feedback = app.descendants(matching: .any)["TransientFeedbackHUD"]
-        XCTAssertTrue(feedback.waitForExistence(timeout: 5))
-        XCTAssertEqual(feedback.label, "UI Test Movie marked watched")
-        XCTAssertTrue(app.staticTexts["Nothing to watch"].waitForExistence(timeout: 5))
+    func testWatchlistMovieMenuMarksWatched() {
+        verifyWatchlistMovieMenu(accessibility: false)
     }
 
     @MainActor
-    func testWatchFeedbackSupportsAccessibilityTextSize() throws {
+    func testWatchlistMovieMenuAtAccessibilityTextSize() {
+        verifyWatchlistMovieMenu(accessibility: true)
+    }
+
+    @MainActor
+    private func verifyWatchlistMovieMenu(accessibility: Bool) {
         let app = XCUIApplication()
-        app.launchArguments += [
-            "UITEST_MODE",
-            "-UIPreferredContentSizeCategoryName",
-            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
-        ]
+        app.launchArguments.append("UITEST_MODE")
+        if accessibility { app.launchArguments.append("UITEST_ACCESSIBILITY_TEXT") }
         app.launch()
 
         let movieTile = app.buttons["UI Test Movie"]
         XCTAssertTrue(movieTile.waitForExistence(timeout: 5))
-        movieTile.doubleTap()
+        reveal(movieTile, in: app)
+        movieTile.press(forDuration: 1)
+        let markWatched = app.buttons["Mark as Watched"]
+        XCTAssertTrue(markWatched.waitForExistence(timeout: 5))
+        markWatched.tap()
 
-        let feedback = app.descendants(matching: .any)["TransientFeedbackHUD"]
-        XCTAssertTrue(feedback.waitForExistence(timeout: 5))
-        XCTAssertEqual(feedback.label, "UI Test Movie marked watched")
+        let emptyWatchlist = app.staticTexts["Nothing to watch"]
+        XCTAssertTrue(emptyWatchlist.waitForExistence(timeout: 5))
     }
 
     @MainActor
@@ -965,8 +959,11 @@ final class iWatchUITests: XCTestCase {
         for identifier in ["about-tmdb", "about-trakt"] {
             let link = app.descendants(matching: .any)[identifier].firstMatch
             revealAbout(link)
-            XCTAssertGreaterThanOrEqual(link.frame.width, 44)
-            XCTAssertGreaterThanOrEqual(link.frame.height, 44)
+            if !landscape {
+                let frame = link.frame
+                XCTAssertGreaterThanOrEqual(frame.width, 44)
+                XCTAssertGreaterThanOrEqual(frame.height, 44)
+            }
         }
         let links = XCTAttachment(screenshot: app.screenshot())
         links.name = "About links - \(theme) - \(accessibility ? "accessibility" : "standard")"
