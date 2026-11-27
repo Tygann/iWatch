@@ -101,6 +101,17 @@ jobs:
         id: boot
         timeout-minutes: 8
         run: bash scripts/time-ios-stage.sh "Simulator startup" xcrun simctl bootstatus "$SIMULATOR_ID" -b
+      - name: Prepare app for UI smoke tests
+        id: smoke-app
+        if: needs.preflight.outputs.unit-tests != 'true' && needs.preflight.outputs.ui-selection != ''
+        timeout-minutes: 4
+        run: |
+          app_path=work/DerivedData/Build/Products/Debug-iphonesimulator/iWatch.app
+          bundle_id=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app_path/Info.plist")
+          bash scripts/time-ios-stage.sh "Smoke app setup" bash -e -c '
+            xcrun simctl install "$1" "$2"
+            xcrun simctl launch "$1" "$3" UITEST_MODE
+          ' _ "$SIMULATOR_ID" "$app_path" "$bundle_id"
       - name: Unit tests
         if: needs.preflight.outputs.unit-tests == 'true'
         run: >-
@@ -109,7 +120,7 @@ jobs:
           -only-testing:iWatchTests -parallel-testing-enabled NO
           -resultBundlePath work/iWatchTests.xcresult
       - name: UI tests
-        if: "!cancelled() && steps.boot.outcome == 'success' && needs.preflight.outputs.ui-selection != ''"
+        if: "!cancelled() && steps.boot.outcome == 'success' && steps.smoke-app.outcome != 'failure' && needs.preflight.outputs.ui-selection != ''"
         env:
           UI_SELECTION: ${{ needs.preflight.outputs.ui-selection }}
         run: |
