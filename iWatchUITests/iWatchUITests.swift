@@ -374,7 +374,7 @@ final class iWatchUITests: XCTestCase {
     private func verifySyncDiagnostics(contentSize: String) throws {
         let app = launchSyncSettings(contentSize: contentSize, state: "confirmation")
         XCTAssertFalse(app.buttons["settings-trakt-sync"].exists)
-        XCTAssertFalse(app.buttons["settings-library-maintenance"].exists)
+        XCTAssertFalse(app.buttons["Library Maintenance"].exists)
         capture(app, "Simplified settings - " + contentSize)
         app.buttons["settings-sync"].tap()
         XCTAssertTrue(app.navigationBars["Library Sync"].waitForExistence(timeout: 5))
@@ -390,11 +390,11 @@ final class iWatchUITests: XCTestCase {
         let pending = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Pending Changes'")).firstMatch
         reveal(pending, in: app)
         if !contentSize.contains("Accessibility") {
-            XCTAssertEqual(syncNow.frame.height, pending.frame.height, accuracy: 1)
             XCTAssertGreaterThanOrEqual(syncNow.frame.height, 44)
+            XCTAssertGreaterThanOrEqual(pending.frame.height, 44)
         }
         pending.tap()
-        XCTAssertTrue(app.navigationBars["Pending Changes"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Library Sync"].exists)
         let failed = app.buttons["Needs Attention (6)"]
         reveal(failed, in: app)
         let confirmation = app.buttons["Waiting for Confirmation (4)"]
@@ -403,7 +403,6 @@ final class iWatchUITests: XCTestCase {
         confirmation.tap()
         let episode = app.staticTexts["Example Show · S1 E1"]
         reveal(episode, in: app)
-        XCTAssertFalse(app.buttons["Sync Now"].exists)
         capture(app, "Pending changes - " + contentSize)
         confirmation.tap()
         let move = app.buttons["Move Uploads to This Device"]
@@ -413,7 +412,7 @@ final class iWatchUITests: XCTestCase {
         if app.buttons["Cancel"].exists {
             app.buttons["Cancel"].tap()
         } else {
-            app.navigationBars["Pending Changes"].tap()
+            app.navigationBars["Library Sync"].tap()
         }
         let status = app.descendants(matching: .any).matching(
             NSPredicate(format: "label == 'Trakt Service Status'")
@@ -423,12 +422,13 @@ final class iWatchUITests: XCTestCase {
             NSPredicate(format: "label == 'Contact Support'")
         ).firstMatch
         reveal(support, in: app)
-        app.navigationBars["Pending Changes"].buttons.firstMatch.tap()
 
-        let manage = app.buttons["settings-library-maintenance"]
+        let erase = app.buttons["Erase All App Data"]
+        XCTAssertFalse(erase.exists)
+        let manage = app.buttons["Library Maintenance"]
         reveal(manage, in: app)
         manage.tap()
-        XCTAssertTrue(app.navigationBars["Library Maintenance"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Library Sync"].exists)
         capture(app, "Library maintenance - " + contentSize)
         reveal(app.buttons["Check Library Data"], in: app)
         let rebuild = app.buttons["Rebuild from Trakt"]
@@ -437,7 +437,15 @@ final class iWatchUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Discard Changes and Rebuild"].waitForExistence(timeout: 5))
         capture(app, "Protected rebuild - " + contentSize)
         app.buttons["Cancel"].tap()
-        XCTAssertTrue(app.navigationBars["Library Maintenance"].exists)
+        reveal(erase, in: app)
+        erase.tap()
+        XCTAssertTrue(app.buttons["Erase All Data"].waitForExistence(timeout: 5))
+        if app.buttons["Cancel"].exists {
+            app.buttons["Cancel"].tap()
+        } else {
+            app.navigationBars["Library Sync"].tap()
+        }
+        XCTAssertTrue(app.navigationBars["Library Sync"].exists)
     }
 
     @MainActor
@@ -498,15 +506,16 @@ final class iWatchUITests: XCTestCase {
     func testTraktSetupCanStillDisconnect() throws {
         let app = launchSyncSettings(contentSize: "UICTContentSizeCategoryL", state: "setup")
         revealTraktSection(in: app)
-        let setup = app.buttons["trakt-setup"]
+        let setup = app.buttons["Finish Setup"]
         reveal(setup, in: app)
         setup.tap()
-        XCTAssertTrue(app.navigationBars["Set Up Trakt"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Library Sync"].exists)
         let replace = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Replace iWatch Library from Trakt'")).firstMatch
+        reveal(replace, in: app)
         replace.tap()
         XCTAssertTrue(app.buttons["Replace and Import"].waitForExistence(timeout: 5))
         app.buttons["Cancel"].tap()
-        app.navigationBars["Set Up Trakt"].buttons.firstMatch.tap()
+        setup.tap()
         app.buttons["trakt-connection"].tap()
         let disconnect = app.buttons["Disconnect Trakt"]
         reveal(disconnect, in: app)
@@ -527,10 +536,10 @@ final class iWatchUITests: XCTestCase {
     func testTraktSetupAtAccessibilityTextSize() throws {
         let app = launchSyncSettings(contentSize: "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge", state: "setup")
         revealTraktSection(in: app)
-        let setup = app.buttons["trakt-setup"]
+        let setup = app.buttons["Finish Setup"]
         reveal(setup, in: app)
         setup.tap()
-        XCTAssertTrue(app.navigationBars["Set Up Trakt"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Library Sync"].exists)
         capture(app, "Trakt setup choices - accessibility")
         let upload = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Upload Pending Changes'")).firstMatch
         reveal(upload, in: app)
@@ -575,11 +584,11 @@ final class iWatchUITests: XCTestCase {
                 reveal(app.staticTexts[expected], in: app)
             }
             if state == "setup" {
-                let setup = app.buttons["trakt-setup"]
+                let setup = app.buttons["Finish Setup"]
                 reveal(setup, in: app)
                 setup.tap()
-                XCTAssertTrue(app.navigationBars["Set Up Trakt"].waitForExistence(timeout: 5))
-                XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Replace iWatch Library from Trakt'")).firstMatch.exists)
+                XCTAssertTrue(app.navigationBars["Library Sync"].exists)
+                reveal(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Replace iWatch Library from Trakt'")).firstMatch, in: app)
                 XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Upload Pending Changes'")).firstMatch.exists)
             }
             capture(app, "Trakt - " + state)

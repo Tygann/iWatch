@@ -7,14 +7,7 @@ struct LibrarySettingsView: View {
         Form {
             iCloudSection
             TraktSettingsSection()
-            Section {
-                NavigationLink {
-                    AdvancedSettingsView()
-                } label: {
-                    Text("Library Maintenance")
-                }
-                .accessibilityIdentifier("settings-library-maintenance")
-            }
+            LibraryMaintenanceSection()
         }
         .navigationTitle("Library Sync")
         .navigationBarTitleDisplayMode(.inline)

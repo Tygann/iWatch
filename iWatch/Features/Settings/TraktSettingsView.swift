@@ -9,20 +9,11 @@ struct TraktSettingsSection: View {
         Section {
             TraktConnectionRow()
             if session.pendingTraktAccountKey != nil {
-                NavigationLink {
-                    TraktSetupView()
-                } label: {
-                    Text("Finish Setup")
-                }
-                .accessibilityIdentifier("trakt-setup")
+                TraktSetupOptions()
             } else if session.traktConnected {
                 TraktSyncActionButton()
                 if !session.syncDiagnostics.changes.isEmpty {
-                    NavigationLink {
-                        TraktPendingChangesView()
-                    } label: {
-                        LabeledContent("Pending Changes", value: session.syncDiagnostics.changes.count.formatted())
-                    }
+                    TraktPendingChangesSection()
                 } else if health.needsAttention {
                     Link("Trakt Service Status", destination: URL(string: "https://status.trakt.tv")!)
                 }
@@ -51,24 +42,12 @@ struct TraktSettingsSection: View {
     }
 }
 
-struct TraktSetupView: View {
+private struct TraktSetupOptions: View {
     @Environment(AppSession.self) private var session
-    @Environment(\.dismiss) private var dismiss
     @State private var showImport = false
 
     var body: some View {
-        Form {
-            setupSection
-        }
-        .navigationTitle("Set Up Trakt")
-        .navigationBarTitleDisplayMode(.inline)
-        .onChange(of: session.pendingTraktAccountKey) { _, accountKey in
-            if accountKey == nil { dismiss() }
-        }
-    }
-
-    private var setupSection: some View {
-        Section {
+        DisclosureGroup {
             Button(role: .destructive) { showImport = true } label: {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Replace iWatch Library from Trakt").foregroundStyle(.red)
@@ -91,16 +70,17 @@ struct TraktSetupView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            if session.isMaintainingSync, let title = session.syncMaintenanceTitle {
+                ProgressView(title)
+            }
             if let error = session.traktLastError {
                 DisclosureGroup("Error Details") {
                     Text(error).font(.subheadline).textSelection(.enabled)
                 }
                 Link("Contact Support", destination: SyncSupportView.contactURL)
             }
-        } header: {
-            Text("Choose How to Start")
-        } footer: {
-            Text("You can finish setup later.")
+        } label: {
+            Text("Finish Setup")
         }
         .disabled(session.syncActionsUnavailable || session.pendingTraktAccountKey == nil)
         .alert("Replace Library from Trakt?", isPresented: $showImport) {
@@ -124,15 +104,22 @@ private struct TraktConnectionRow: View {
                         .disabled(session.syncActionsUnavailable)
                 } label: {
                     LabeledContent("Account") {
-                        HStack {
+                        HStack(spacing: AppSpacing.xSmall) {
                             Text("Connected")
-                            Image(systemName: "ellipsis.circle")
+                            Image(systemName: "chevron.down")
+                                .imageScale(.small)
                                 .accessibilityHidden(true)
                         }
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.accentColor.opacity(0.12), in: Capsule())
+                        .foregroundStyle(Color.accentColor)
                     }
                 }
                 .foregroundStyle(.primary)
                 .accessibilityLabel("Account, Connected")
+                .accessibilityHint("Shows Trakt account options")
                 .accessibilityIdentifier("trakt-connection")
             } else if session.traktIsConnecting {
                 ProgressView("Connecting to Trakt…")

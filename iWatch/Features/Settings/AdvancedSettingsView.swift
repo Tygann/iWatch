@@ -1,15 +1,6 @@
 import SwiftUI
 
-// MARK: - Settings State
-
-enum AdvancedSettingsSection: String, CaseIterable {
-    case storage = "Storage"
-    case reset = "Reset"
-}
-
-// MARK: - Advanced Settings Screen
-
-struct AdvancedSettingsView: View {
+struct LibraryMaintenanceSection: View {
     @Environment(AppSession.self) private var session
     @Environment(AppRouter.self) private var router
 
@@ -18,8 +9,8 @@ struct AdvancedSettingsView: View {
     @State private var maintenanceResult: String?
 
     var body: some View {
-        Form {
-            Section {
+        Section {
+            DisclosureGroup("Library Maintenance") {
                 Button {
                     Task {
                         await session.clearCache()
@@ -39,34 +30,16 @@ struct AdvancedSettingsView: View {
                 if let message = session.cacheMaintenanceMessage {
                     Text(message).font(.subheadline).foregroundStyle(.secondary)
                 }
-            } header: {
-                Text(AdvancedSettingsSection.storage.rawValue)
-            } footer: {
-                Text("Removes downloaded artwork and cached network responses. Your library, preferences, iCloud data, and Trakt data are not affected.")
-            }
+                libraryMaintenanceActions
 
-            libraryMaintenanceSection
-
-            if canStartReset {
-                Section {
-                    Button(role: .destructive) {
+                if canStartReset {
+                    Button("Erase All App Data", role: .destructive) {
                         showEraseConfirmation = true
-                    } label: {
-                        Label("Erase All App Data", systemImage: "trash")
-                            .foregroundStyle(.red)
                     }
                     .disabled(session.syncActionsUnavailable)
-                } header: {
-                    Text(AdvancedSettingsSection.reset.rawValue)
-                } footer: {
-                    Text("Permanently removes your iWatch library and preferences from this app and iCloud, then disconnects Trakt on this device. Trakt account data is not deleted.")
                 }
             }
-
-            resetStatusSection
         }
-        .navigationTitle("Library Maintenance")
-        .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog(
             "Erase all iWatch data?",
             isPresented: $showEraseConfirmation,
@@ -80,12 +53,28 @@ struct AdvancedSettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This action can’t be undone. Your iWatch library will be removed from this app and iCloud.")
+            Text("This permanently removes your library from iWatch and iCloud, resets your app preferences, and disconnects Trakt on this device. Your Trakt account data is kept.")
         }
+        .alert("Rebuild Library from Trakt?", isPresented: $showRebuildConfirmation) {
+            Button("Discard Changes and Rebuild", role: .destructive) {
+                Task {
+                    maintenanceResult = nil
+                    await session.resetLocalTraktSyncCache()
+                    maintenanceResult = session.lastSyncAt != nil && session.traktLastError == nil && session.syncMaintenanceMessage != nil
+                        ? "Library rebuilt from Trakt."
+                        : "The rebuild couldn’t finish. Check the Trakt status above."
+                }
+            }
+            .disabled(session.syncActionsUnavailable || !session.traktConnected || session.pendingTraktAccountKey != nil)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This replaces your iWatch Watchlist, watched history, and show progress with data from Trakt. The changes can sync through iCloud. Unsynced changes will be lost.")
+        }
+        resetStatusSection
     }
 
-    private var libraryMaintenanceSection: some View {
-        Section {
+    private var libraryMaintenanceActions: some View {
+        Group {
             Button("Check Library Data") {
                 Task {
                     maintenanceResult = nil
@@ -103,25 +92,6 @@ struct AdvancedSettingsView: View {
             } else if let maintenanceResult {
                 Text(maintenanceResult).foregroundStyle(.secondary)
             }
-        } header: {
-            Text("Library Maintenance")
-        } footer: {
-            Text("Check for duplicate records and repair inconsistent links.")
-        }
-        .alert("Rebuild Library from Trakt?", isPresented: $showRebuildConfirmation) {
-            Button("Discard Changes and Rebuild", role: .destructive) {
-                Task {
-                    maintenanceResult = nil
-                    await session.resetLocalTraktSyncCache()
-                    maintenanceResult = session.lastSyncAt != nil && session.traktLastError == nil && session.syncMaintenanceMessage != nil
-                        ? "Library rebuilt from Trakt."
-                        : "The rebuild couldn’t finish. Check Trakt in Library Sync."
-                }
-            }
-            .disabled(session.syncActionsUnavailable || !session.traktConnected || session.pendingTraktAccountKey != nil)
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This replaces your iWatch Watchlist, watched history, and show progress with data from Trakt. The changes can sync through iCloud. Unsynced changes will be lost.")
         }
     }
 
@@ -188,16 +158,4 @@ struct AdvancedSettingsView: View {
             return false
         }
     }
-}
-
-// MARK: - Previews
-
-#Preview {
-    let container = AppContainer.preview()
-    NavigationStack {
-        AdvancedSettingsView()
-    }
-    .environment(container.session)
-    .environment(container.router)
-    .environment(container)
 }

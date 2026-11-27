@@ -47,14 +47,6 @@ struct SettingsPresentationTests {
     }
 
     @Test
-    func advancedSectionsKeepDestructiveActionsLast() {
-        #expect(AdvancedSettingsSection.allCases.map(\.rawValue) == [
-            "Storage",
-            "Reset"
-        ])
-    }
-
-    @Test
     @MainActor
     func syncHealthUsesConsistentActionablePrecedence() {
         var diagnostics = SyncDiagnostics.empty
