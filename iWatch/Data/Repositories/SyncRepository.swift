@@ -1803,7 +1803,13 @@ actor SyncEngine {
     }
 
     private func operationRecord(id: UUID, context: ModelContext) -> SyncOperationRecord? {
-        allOperations(context: context).first { $0.id == id }
+        let generation = LibraryGenerationPolicy.currentGeneration(in: context)
+        let legacy = generation == LibraryGenerationPolicy.legacyGenerationID
+        var request = FetchDescriptor<SyncOperationRecord>(predicate: #Predicate {
+            $0.id == id && ($0.generationID == generation || (legacy && $0.generationID == ""))
+        })
+        request.fetchLimit = 1
+        return try? context.fetch(request).first
     }
 
     private func watchlistRecord(for mediaID: MediaID, context: ModelContext) -> WatchlistRecord? {
@@ -1868,20 +1874,32 @@ private actor SyncClaimCoordinator {
             let claimContext = persistence.makeContext()
             let claimTimestamp = Date()
             let generation = LibraryGenerationPolicy.currentGeneration(in: claimContext)
-            let ownedOperations = try claimContext.fetch(FetchDescriptor<SyncOperationRecord>()).filter { operation in
-                guard operation.accountKey == accountKey,
-                      LibraryGenerationPolicy.belongsToCurrentGeneration(operation.generationID, current: generation),
-                      let payload = try? SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: operation.payload)
-                else { return false }
-                return payload.originDeviceID == deviceID
+            let legacy = generation == LibraryGenerationPolicy.legacyGenerationID
+            let scopedOperations = try claimContext.fetch(FetchDescriptor<SyncOperationRecord>(predicate: #Predicate {
+                $0.accountKey == accountKey && ($0.generationID == generation || (legacy && $0.generationID == ""))
+            }))
+            let intents = scopedOperations.compactMap { operation -> (row: SyncOperationRecord, owner: String, date: Date)? in
+                guard let payload = try? SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: operation.payload),
+                      let owner = payload.originDeviceID else { return nil }
+                return (operation, owner, payload.mutationAt ?? operation.createdAt)
             }
-            let watchlistGroups = Dictionary(grouping: ownedOperations.filter {
-                $0.kind == .addWatchlist || $0.kind == .removeWatchlist
-            }, by: \.dedupeKey)
-            // Keep this device's latest intent even when an older request is backed off.
+            let ownedOperations = intents.filter { $0.owner == deviceID }.map(\.row)
+            let watchlistGroups = Dictionary(grouping: intents.filter {
+                $0.row.kind == .addWatchlist || $0.row.kind == .removeWatchlist
+            }, by: { $0.row.dedupeKey })
             for (key, group) in watchlistGroups where key != nil && group.count > 1 {
-                let newest = group.max { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) }
-                for older in group where older !== newest && older.status != .succeeded {
+                let owned = group.filter { $0.owner == deviceID }
+                guard let newest = owned.max(by: { ($0.row.createdAt, $0.row.id.uuidString) < ($1.row.createdAt, $1.row.id.uuidString) })
+                else { continue }
+                for intent in owned where intent.row.status != .succeeded {
+                    let older = intent.row
+                    // Only retire local work. A different device's intent can supersede it
+                    // when the replicated outbox records a newer decision for this account.
+                    let superseded = older !== newest.row || group.contains {
+                        $0.owner != deviceID && $0.row.kind != older.kind &&
+                            ($0.date > intent.date || ($0.date == intent.date && $0.row.kind == .removeWatchlist))
+                    }
+                    guard superseded else { continue }
                     if older.status == .processing,
                        let claimedAt = older.claimedAt,
                        claimTimestamp.timeIntervalSince(claimedAt) <= claimExpiration { continue }
@@ -1896,8 +1914,8 @@ private actor SyncClaimCoordinator {
             let operations = ownedOperations.filter { operation in
                 if let nextAttemptAt = operation.nextAttemptAt, nextAttemptAt > claimTimestamp { return false }
                 if let key = operation.dedupeKey, let group = watchlistGroups[key], group.contains(where: {
-                    $0 !== operation && $0.status == .processing &&
-                        $0.claimedAt.map { claimTimestamp.timeIntervalSince($0) <= claimExpiration } == true
+                    $0.row !== operation && $0.row.status == .processing && $0.row.claimedByDeviceID == deviceID &&
+                        $0.row.claimedAt.map { claimTimestamp.timeIntervalSince($0) <= claimExpiration } == true
                 }) { return false }
                 switch operation.status {
                 case .pending:
@@ -1920,8 +1938,14 @@ private actor SyncClaimCoordinator {
             try claimContext.save()
 
             let verifyContext = persistence.makeContext()
-            let verified = ((try? verifyContext.fetch(FetchDescriptor<SyncOperationRecord>())) ?? [])
-                .first { $0.id == candidate.id }
+            let id = candidate.id
+            let claimed = SyncOperationStatus.processing.rawValue
+            var verification = FetchDescriptor<SyncOperationRecord>(predicate: #Predicate {
+                $0.id == id && $0.accountKey == accountKey && $0.claimedByDeviceID == deviceID && $0.statusRaw == claimed &&
+                    ($0.generationID == generation || (legacy && $0.generationID == ""))
+            })
+            verification.fetchLimit = 1
+            let verified = try verifyContext.fetch(verification).first
 
             if let verified,
                verified.claimedByDeviceID == deviceID,

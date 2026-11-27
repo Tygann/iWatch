@@ -1936,6 +1936,62 @@ struct FoundationRewriteTests {
         #expect(operations.filter { $0.status == .deadletter }.count == 2)
     }
 
+    @Test(arguments: [false, true])
+    func independentStoresConvergeAfterReplayingConflictingWatchlistEdits(removeFirst: Bool) async throws {
+        let storeA = makePersistence()
+        let storeB = makePersistence()
+        let movie = MediaID(kind: .movie, id: 42)
+        let tmdb = TMDbService(apiClient: APIClient(session: .shared), apiKey: "fixture")
+        let deviceA = FixedDeviceIdentityStore(id: "device-a")
+        let deviceB = FixedDeviceIdentityStore(id: "device-b")
+        let repoA = LibraryRepository(persistence: storeA, tmdb: tmdb,
+            deviceIdentityStore: deviceA, accountKeyProvider: { "default" })
+        let repoB = LibraryRepository(persistence: storeB, tmdb: tmdb,
+            deviceIdentityStore: deviceB, accountKeyProvider: { "default" })
+        try await repoA.setWatchlist(true, for: movie)
+        try await repoB.setWatchlist(false, for: movie)
+
+        func deliver(from source: Persistence, to destination: Persistence, kind: SyncOperationKind) throws {
+            let row = try #require(fetchAll(WatchlistRecord.self, from: source).first { $0.isInWatchlist == (kind == .addWatchlist) })
+            let operation = try #require(fetchAll(SyncOperationRecord.self, from: source).first { $0.kind == kind })
+            let context = destination.makeContext()
+            context.insert(WatchlistRecord(mediaID: row.mediaID, isInWatchlist: row.isInWatchlist,
+                localUpdatedAt: row.localUpdatedAt, dirty: row.dirty, generationID: row.generationID))
+            let replica = SyncOperationRecord(kind: kind, payload: operation.payload, dedupeKey: operation.dedupeKey,
+                accountKey: operation.accountKey, createdAt: operation.createdAt, generationID: operation.generationID)
+            replica.id = operation.id
+            context.insert(replica)
+            try context.save()
+        }
+
+        if removeFirst {
+            try deliver(from: storeB, to: storeA, kind: .removeWatchlist)
+            try deliver(from: storeA, to: storeB, kind: .addWatchlist)
+        } else {
+            try deliver(from: storeA, to: storeB, kind: .addWatchlist)
+            try deliver(from: storeB, to: storeA, kind: .removeWatchlist)
+        }
+        #expect(await !repoA.isInWatchlist(movie))
+        #expect(await !repoB.isInWatchlist(movie))
+
+        let remote = FakeTraktSyncRemote(token: makeToken(), lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now),
+            watchlist: [], history: [])
+        let engineA = SyncEngine(persistence: storeA, trakt: remote, deviceIdentityStore: deviceA, accountKeyProvider: { "default" })
+        let engineB = SyncEngine(persistence: storeB, trakt: remote, deviceIdentityStore: deviceB, accountKeyProvider: { "default" })
+        if removeFirst {
+            #expect(await engineB.run(reason: .localMutation))
+            #expect(await engineA.run(reason: .localMutation))
+        } else {
+            #expect(await engineA.run(reason: .localMutation))
+            #expect(await engineB.run(reason: .localMutation))
+        }
+        let requests = await remote.snapshot()
+        #expect(requests.addWatchlistCalls == 0)
+        #expect(requests.removeWatchlistCalls == 1)
+        #expect(await !repoA.isInWatchlist(movie))
+        #expect(await !repoB.isInWatchlist(movie))
+    }
+
     @Test
     func watchlistRepairPreservesNewerRemovalAndAccountScopedOutbox() async throws {
         let persistence = makePersistence()
