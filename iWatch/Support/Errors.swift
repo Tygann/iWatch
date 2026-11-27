@@ -23,7 +23,7 @@ enum AppError: LocalizedError {
 
 /// Common helpers for NSError bridging
 extension Error {
-    var isCancelled: Bool {
+    nonisolated var isCancelled: Bool {
         if self is CancellationError { return true }
         let nsErr = self as NSError
         return nsErr.domain == NSURLErrorDomain && nsErr.code == NSURLErrorCancelled

@@ -13,7 +13,17 @@ nonisolated protocol EpisodeAirtimeProviding: Sendable {
     func seasonAirtimes(showTraktID: Int, seasonNumber: Int) async throws -> [EpisodeAirtime]
 }
 
+nonisolated struct TraktSyncSession: Sendable {
+    let accountKey: String
+    let generation: UUID
+    let accessToken: String
+
+    @TaskLocal static var current: TraktSyncSession?
+}
+
 nonisolated protocol TraktSyncing: Sendable {
+    func authorizeSync(accountKey: String?) async throws -> TraktSyncSession?
+    func validateSyncAuthorization() async throws
     func currentToken() async -> TokenResponse?
     func getLastActivities() async throws -> TraktLastActivitiesDTO
     func getWatchlist() async throws -> [TraktWatchlistItemDTO]

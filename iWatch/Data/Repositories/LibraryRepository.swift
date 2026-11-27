@@ -536,17 +536,19 @@ final class LibraryRepository {
         let context = persistence.makeContext()
         guard let event = watchedEventRecord(forRecordID: eventID, context: context) else { return }
 
+        let account = accountKeyProvider() ?? event.traktHistoryAccountKey
+        let historyID = account != nil && (event.traktHistoryAccountKey == nil || event.traktHistoryAccountKey == account)
+            ? event.traktHistoryID : nil
         let addKey = "history:add:\(event.eventKey)"
         let outstandingAdds = allSyncOperations(context: context).filter {
-            $0.dedupeKey == addKey && $0.accountKey == (accountKeyProvider() ?? "")
+            $0.dedupeKey == addKey && $0.accountKey == (account ?? "")
         }
         let mayHaveReachedTrakt = outstandingAdds.contains {
             let payload = try? SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: $0.payload)
             return $0.status != .pending || $0.attemptCount > 0 || payload?.historyRequestStartedAt != nil
                 || payload?.originDeviceID != deviceID
         }
-        if event.traktHistoryID != nil || mayHaveReachedTrakt {
-            let historyID = event.traktHistoryID
+        if historyID != nil || mayHaveReachedTrakt {
             event.tombstoned = true
             event.dirty = true
             event.updatedAt = Date()
@@ -560,17 +562,25 @@ final class LibraryRepository {
                 seasonNumber: event.seasonNumber,
                 episodeNumber: event.episodeNumber,
                 watchedAt: event.watchedAt,
-                historyID: historyID
+                historyID: historyID,
+                historyAccountKey: historyID == nil ? nil : event.traktHistoryAccountKey
             )
             try upsertSyncOperation(
                 kind: .removeHistory,
                 payload: payload,
                 dedupeKey: "history:remove:\(event.eventKey)",
-                context: context, accountKey: accountKeyProvider() ?? "", deviceID: deviceID
+                context: context, accountKey: account ?? "", deviceID: deviceID
             )
         } else {
             removePendingAddHistory(for: event.eventKey, deviceID: deviceID, context: context)
-            context.delete(event)
+            if event.traktHistoryID != nil {
+                // Keep the local removal across imports from the previous or unknown account.
+                event.tombstoned = true
+                event.dirty = true
+                event.updatedAt = Date()
+            } else {
+                context.delete(event)
+            }
         }
 
         try context.save()

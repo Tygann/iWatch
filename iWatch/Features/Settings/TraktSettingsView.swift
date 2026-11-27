@@ -107,7 +107,7 @@ struct TraktSetupView: View {
             Button("Replace and Import", role: .destructive) { Task { await session.importTraktLibrary() } }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This removes your iWatch Watchlist, watched history, show progress, and pending uploads before importing this account. Removals can sync through iCloud. Unsynced changes will be lost.")
+            Text("After Trakt finishes downloading, iWatch replaces your Watchlist, watched history, and show progress and discards pending uploads. The replacement can sync through iCloud.")
         }
     }
 }

@@ -72,7 +72,7 @@ public struct TraktAuthorizationRequest: Sendable, Equatable {
 struct TraktAccount: Codable, Sendable {
     let ids: TraktAccountIDs
 
-    var syncKey: String {
+    nonisolated var syncKey: String {
         if let traktID = ids.trakt {
             return "trakt:\(traktID)"
         }

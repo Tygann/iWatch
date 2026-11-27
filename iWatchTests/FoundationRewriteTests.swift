@@ -1572,7 +1572,8 @@ struct FoundationRewriteTests {
             tmdbID: 12,
             traktID: 112,
             watchedAt: oldActivity,
-            traktHistoryID: 7_002
+            traktHistoryID: 7_002,
+            traktHistoryAccountKey: "default"
         ))
         context.insert(WatchedEventRecord(
             kind: .movie,
@@ -1588,6 +1589,10 @@ struct FoundationRewriteTests {
             watchedAt: oldActivity,
             dirty: true
         ))
+        context.insert(WatchedEventRecord(kind: .movie, tmdbID: 14, watchedAt: oldActivity,
+            traktHistoryID: 7_003, traktHistoryAccountKey: "other"))
+        context.insert(WatchedEventRecord(kind: .movie, tmdbID: 15, watchedAt: oldActivity,
+            traktHistoryID: 7_004))
         context.insert(SyncStateRecord(
             accountKey: "default",
             initialBaselineComplete: true,
@@ -1620,6 +1625,93 @@ struct FoundationRewriteTests {
         #expect(events.first(where: { $0.traktHistoryID == 7_002 })?.tombstoned == true)
         #expect(events.first(where: { $0.traktHistoryID == 7_001 })?.tombstoned == false)
         #expect(events.first(where: { $0.tmdbID == 13 })?.tombstoned == false)
+        #expect(events.first(where: { $0.tmdbID == 14 })?.tombstoned == false)
+        #expect(events.first(where: { $0.tmdbID == 15 })?.tombstoned == false)
+        #expect(events.first(where: { $0.traktHistoryID == 7_001 })?.traktHistoryAccountKey == "default")
+    }
+
+    @Test
+    func backedOffWatchlistEditCannotRunAfterNewerIntent() async throws {
+        let persistence = makePersistence()
+        let context = persistence.makeContext()
+        let now = Date()
+        let payload = try SyncPayloadCodec.encoder.encode(SyncOperationPayload(
+            originDeviceID: "device-a", mediaKind: .movie, tmdbID: 11
+        ))
+        let older = SyncOperationRecord(kind: .addWatchlist, payload: payload,
+            dedupeKey: "watchlist:movie:11", accountKey: "default", createdAt: now.addingTimeInterval(-10))
+        older.nextAttemptAt = now.addingTimeInterval(30)
+        context.insert(older)
+        context.insert(SyncOperationRecord(kind: .removeWatchlist, payload: payload,
+            dedupeKey: "watchlist:movie:11", accountKey: "default", createdAt: now))
+        try context.save()
+
+        let remote = FakeTraktSyncRemote(token: makeToken(), lastActivities: makeLastActivities(watchlistAt: now, historyAt: now),
+            watchlist: [], history: [])
+        let engine = SyncEngine(persistence: persistence, trakt: remote,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { "default" })
+
+        #expect(await engine.run(reason: .localMutation))
+        let after = await remote.snapshot()
+        #expect(after.addWatchlistCalls == 0)
+        #expect(after.removeWatchlistCalls == 1)
+        #expect(try fetchAll(SyncOperationRecord.self, from: persistence).allSatisfy { $0.status == .succeeded })
+        #expect(await engine.nextRetryDate(for: "default") == nil)
+    }
+
+    @Test
+    func committedPullNotifiesLibraryEvenWhenUploadFails() async throws {
+        let persistence = makePersistence()
+        let now = Date()
+        let context = persistence.makeContext()
+        context.insert(SyncStateRecord(accountKey: "default", initialBaselineComplete: true))
+        try context.save()
+        try await makeLibraryRepository(persistence: persistence).setWatchlist(true, for: MediaID(kind: .movie, id: 42))
+
+        let remote = FakeTraktSyncRemote(token: makeToken(), lastActivities: makeLastActivities(watchlistAt: now, historyAt: now),
+            watchlist: [], history: [makeMovieHistoryItem(historyID: 7001, watchedAt: now)],
+            onAddWatchlist: { throw URLError(.timedOut) })
+        let engine = SyncEngine(persistence: persistence, trakt: remote,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { "default" })
+        var libraryChanges = 0
+        #expect(await engine.run(reason: .userInitiated, libraryChanged: { libraryChanges += 1 }) == false)
+        #expect(libraryChanges == 1)
+        #expect(try fetchAll(WatchedEventRecord.self, from: persistence).first?.traktHistoryID == 7001)
+        #expect(await engine.nextRetryDate(for: "default") != nil)
+    }
+
+    @Test(arguments: [false, true])
+    func libraryReplacementCommitsOnlyAfterBothDownloadsSucceed(historyFails: Bool) async throws {
+        let persistence = makePersistence()
+        let context = persistence.makeContext()
+        let now = Date()
+        let generation = LibraryGenerationPolicy.currentGeneration(in: context)
+        context.insert(WatchedEventRecord(kind: .movie, tmdbID: 42, watchedAt: now, generationID: generation))
+        try context.save()
+        try await makeLibraryRepository(persistence: persistence).setWatchlist(true, for: MediaID(kind: .movie, id: 42))
+
+        let remote = FakeTraktSyncRemote(token: makeToken(), lastActivities: makeLastActivities(watchlistAt: now, historyAt: now),
+            watchlist: [makeMovieWatchlistItem()], history: [makeMovieHistoryItem(historyID: 7001, watchedAt: now)],
+            historyDownloadFails: historyFails)
+        let engine = SyncEngine(persistence: persistence, trakt: remote,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { "default" })
+
+        if historyFails {
+            await #expect(throws: URLError.self) { try await engine.replaceLibraryFromTrakt(account: "other") }
+            #expect(LibraryGenerationPolicy.currentGeneration(in: persistence.makeContext()) == generation)
+            #expect(try fetchAll(WatchlistRecord.self, from: persistence).map(\.tmdbID) == [42])
+            #expect(try fetchAll(WatchedEventRecord.self, from: persistence).map(\.tmdbID) == [42])
+            #expect(try fetchAll(SyncOperationRecord.self, from: persistence).count == 1)
+        } else {
+            _ = try await engine.replaceLibraryFromTrakt(account: "other")
+            let replacedGeneration = LibraryGenerationPolicy.currentGeneration(in: persistence.makeContext())
+            #expect(replacedGeneration != generation)
+            #expect(try fetchAll(WatchlistRecord.self, from: persistence).map(\.generationID) == [replacedGeneration])
+            let events = try fetchAll(WatchedEventRecord.self, from: persistence)
+            #expect(events.map(\.traktHistoryAccountKey) == ["other"])
+            #expect(events.map(\.generationID) == [replacedGeneration])
+            #expect(try fetchAll(SyncOperationRecord.self, from: persistence).isEmpty)
+        }
     }
 
     @Test
@@ -2280,6 +2372,7 @@ private actor FakeTraktSyncRemote: TraktSyncing {
     private let onAddHistory: (@Sendable () async throws -> Void)?
     private let addWatchlistDelayNanos: UInt64
     private let onAddWatchlist: (@Sendable () async throws -> Void)?
+    private let historyDownloadFails: Bool
 
     private var getLastActivitiesCalls = 0
     private var getWatchlistCalls = 0
@@ -2297,7 +2390,8 @@ private actor FakeTraktSyncRemote: TraktSyncing {
          onAddWatchlist: (@Sendable () async throws -> Void)? = nil,
          historyAfterUpload: [TraktHistoryItemDTO]? = nil,
          loseHistoryResponse: Bool = false,
-         onAddHistory: (@Sendable () async throws -> Void)? = nil) {
+         onAddHistory: (@Sendable () async throws -> Void)? = nil,
+         historyDownloadFails: Bool = false) {
         self.token = token
         self.lastActivities = lastActivities
         self.watchlist = watchlist
@@ -2307,7 +2401,12 @@ private actor FakeTraktSyncRemote: TraktSyncing {
         self.historyAfterUpload = historyAfterUpload
         self.loseHistoryResponse = loseHistoryResponse
         self.onAddHistory = onAddHistory
+        self.historyDownloadFails = historyDownloadFails
     }
+
+    func authorizeSync(accountKey: String?) async throws -> TraktSyncSession? { nil }
+
+    func validateSyncAuthorization() async throws { try Task.checkCancellation() }
 
     func currentToken() async -> TokenResponse? {
         token
@@ -2329,6 +2428,7 @@ private actor FakeTraktSyncRemote: TraktSyncing {
 
     func getHistory(startAt: Date?) async throws -> [TraktHistoryItemDTO] {
         getHistoryCalls += 1
+        if historyDownloadFails { throw URLError(.timedOut) }
         let snapshot = history
         return await MainActor.run {
             snapshot.filter { item in

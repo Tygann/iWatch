@@ -71,17 +71,31 @@ actor SyncEngine {
     // MARK: Sync Lifecycle
 
     func ensureInitialBaseline(progress: (@MainActor @Sendable (SyncProgress) async -> Void)? = nil) async throws {
-        let token = await trakt.currentToken()
-        guard token != nil else { return }
+        guard !isRunning else { throw CancellationError() }
+        isRunning = true
+        defer { isRunning = false }
+        guard await trakt.currentToken() != nil else { return }
+        let account = accountKeyProvider()
+        let authorization = try await trakt.authorizeSync(accountKey: account)
+        try await TraktSyncSession.$current.withValue(authorization) {
+            _ = try await ensureInitialBaseline(account: account, progress: progress)
+        }
+    }
 
+    private func ensureInitialBaseline(
+        account: String?,
+        progress: (@MainActor @Sendable (SyncProgress) async -> Void)?
+    ) async throws -> Bool {
+        try await validateRun(account: account)
         let context = persistence.makeContext()
         try discardStaleGenerationRecords(context: context)
         let state = syncState(context: context)
-        guard !state.initialBaselineComplete else { return }
+        guard !state.initialBaselineComplete else { return false }
 
-        try await pullAndMerge(
+        _ = try await pullAndMerge(
             into: context,
             state: state,
+            expectedAccount: account,
             initialBaseline: true,
             reconcileRemoteHistory: false,
             progress: progress
@@ -89,10 +103,12 @@ actor SyncEngine {
         state.initialBaselineComplete = true
         try context.save()
         reconciliationSchedule.recordFullSync(account: state.accountKey)
+        return true
     }
 
     @discardableResult
     func run(reason: SyncReason, historyRetry: HistoryRetry? = nil,
+             libraryChanged: (@MainActor @Sendable () -> Void)? = nil,
              progress: (@MainActor @Sendable (SyncProgress) async -> Void)? = nil) async -> Bool {
         guard !isRunning else { return false }
         isRunning = true
@@ -104,33 +120,12 @@ actor SyncEngine {
             lastRunFailure = nil
             lastRunAccountKey = accountKeyProvider()
 
-            await progress?(.checkingLocalData)
-
-            let repairContext = persistence.makeContext()
-            _ = try performIntegrityRepair(context: repairContext, now: Date())
-            try repairContext.save()
-
-            try await ensureInitialBaseline(progress: progress)
-
-            let pullContext = persistence.makeContext()
-            let state = syncState(context: pullContext)
-            let reconcileHistory = reconciliationSchedule.shouldReconcile(account: state.accountKey, reason: reason, previousPull: state.lastSuccessfulPullAt)
-            try await pullAndMerge(
-                into: pullContext,
-                state: state,
-                initialBaseline: false,
-                reconcileRemoteHistory: reconcileHistory,
-                progress: progress
-            )
-            try pullContext.save()
-            if reconcileHistory { reconciliationSchedule.recordFullSync(account: state.accountKey) }
-
-            let pendingCount = allOperations(context: persistence.makeContext())
-                .filter { $0.status == .pending || $0.status == .processing }
-                .count
-            await progress?(.uploadingChanges(pendingCount))
-            try await pushPendingOperations(historyRetry: historyRetry)
-            await progress?(.complete)
+            let account = lastRunAccountKey
+            let authorization = try await trakt.authorizeSync(accountKey: account)
+            try await TraktSyncSession.$current.withValue(authorization) {
+                try await runAuthorized(account: account, reason: reason, historyRetry: historyRetry,
+                                        libraryChanged: libraryChanged, progress: progress)
+            }
             return true
         } catch {
             if let reconciliation = error as? HistoryReconciliationError {
@@ -148,15 +143,79 @@ actor SyncEngine {
             lastRunErrorDescription = descriptiveError(error)
             await progress?(.failed(lastRunErrorDescription ?? "Sync failed."))
             #if DEBUG
-            print("[SyncEngine] \(reason.rawValue) failed:", error)
+            print("[SyncEngine] \(reason.rawValue) failed:", lastRunErrorDescription ?? "Sync failed.")
             #endif
             return false
         }
     }
 
+    private func runAuthorized(
+        account: String?, reason: SyncReason, historyRetry: HistoryRetry?,
+        libraryChanged: (@MainActor @Sendable () -> Void)?,
+        progress: (@MainActor @Sendable (SyncProgress) async -> Void)?
+    ) async throws {
+        await progress?(.checkingLocalData)
+        try await validateRun(account: account)
+
+        let repairContext = persistence.makeContext()
+        let repair = try performIntegrityRepair(context: repairContext, now: Date())
+        try repairContext.save()
+        if repair.watchlistMerged + repair.watchedEventsMerged + repair.showDispositionsMerged
+            + repair.mediaMerged + repair.episodesMerged > 0 {
+            await libraryChanged?()
+        }
+
+        if await trakt.currentToken() != nil,
+           try await ensureInitialBaseline(account: account, progress: progress) {
+            await libraryChanged?()
+        }
+
+        try await validateRun(account: account)
+        let pullContext = persistence.makeContext()
+        let state = syncState(context: pullContext)
+        let reconcileHistory = reconciliationSchedule.shouldReconcile(account: state.accountKey, reason: reason, previousPull: state.lastSuccessfulPullAt)
+        let pulledLibrary = try await pullAndMerge(
+            into: pullContext,
+            state: state,
+            expectedAccount: account,
+            initialBaseline: false,
+            reconcileRemoteHistory: reconcileHistory,
+            progress: progress
+        )
+        try pullContext.save()
+        if reconcileHistory { reconciliationSchedule.recordFullSync(account: state.accountKey) }
+        if pulledLibrary { await libraryChanged?() }
+
+        let pendingCount = allOperations(context: persistence.makeContext())
+            .filter { $0.accountKey == account && ($0.status == .pending || $0.status == .processing) }
+            .count
+        await progress?(.uploadingChanges(pendingCount))
+        try await pushPendingOperations(account: account, historyRetry: historyRetry, libraryChanged: libraryChanged)
+        await progress?(.complete)
+    }
+
+    private func validateRun(account: String?) async throws {
+        try await trakt.validateSyncAuthorization()
+        guard await resetGate.allowsLibraryWork(), accountKeyProvider() == account,
+              TraktSyncSession.current.map({ $0.accountKey == account }) ?? true else {
+            throw CancellationError()
+        }
+    }
+
+    func nextRetryDate(for account: String) async -> Date? {
+        let device = await deviceIdentityStore.currentDeviceID()
+        return allOperations(context: persistence.makeContext()).compactMap { operation -> Date? in
+            guard operation.accountKey == account, operation.status == .pending,
+                  let payload = try? SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: operation.payload),
+                  payload.originDeviceID == device else { return nil }
+            return operation.nextAttemptAt
+        }.min()
+    }
+
     func snapshot() -> Snapshot {
         let context = persistence.makeContext()
-        let operations = allOperations(context: context)
+        let account = accountKeyProvider()
+        let operations = allOperations(context: context).filter { $0.accountKey == account }
         let state = syncState(context: context)
 
         return Snapshot(
@@ -337,8 +396,7 @@ actor SyncEngine {
         return summary
     }
 
-    func resetLocalTraktSyncCache() throws {
-        let context = persistence.makeContext()
+    private func clearTraktLibrary(in context: ModelContext) {
         _ = LibraryGenerationPolicy.rotateGeneration(in: context)
 
         for operation in rawOperations(context: context) {
@@ -356,11 +414,64 @@ actor SyncEngine {
         for state in rawSyncStates(context: context) {
             context.delete(state)
         }
+    }
 
+    private func clearRunDiagnostics() {
         lastRunErrorDescription = nil
         lastRunFailure = nil
         lastRunAccountKey = nil
-        try context.save()
+    }
+
+    func replaceLibraryFromTrakt(account: String) async throws -> Date {
+        guard !isRunning else { throw CancellationError() }
+        isRunning = true
+        defer { isRunning = false }
+        let originalLink = accountKeyProvider()
+        let originalGeneration = LibraryGenerationPolicy.currentGeneration(in: persistence.makeContext())
+        let authorization = try await trakt.authorizeSync(accountKey: account)
+        return try await TraktSyncSession.$current.withValue(authorization) {
+            let activities = try? await trakt.getLastActivities()
+            let watchlist = try await trakt.getWatchlist()
+            let history = try await trakt.getHistory(startAt: nil)
+            try await trakt.validateSyncAuthorization()
+            let context = persistence.makeContext()
+            guard accountKeyProvider() == originalLink,
+                  LibraryGenerationPolicy.currentGeneration(in: context) == originalGeneration else {
+                throw CancellationError()
+            }
+            guard watchlist.allSatisfy({ item in
+                switch item.type {
+                case .movie: item.movie?.ids.tmdb != nil
+                case .show: item.show?.ids.tmdb != nil
+                default: true
+                }
+            }), history.allSatisfy({ item in
+                guard item.watchedAt != nil else { return false }
+                switch item.type {
+                case .movie: return item.movie?.ids.tmdb != nil
+                case .episode: return item.episode?.ids.tmdb != nil && item.show?.ids.tmdb != nil
+                default: return false
+                }
+            }) else {
+                throw AppError.unknown("Trakt returned history or watchlist items that iWatch could not import.")
+            }
+
+            clearTraktLibrary(in: context)
+            let now = Date()
+            try mergeHistory(history, context: context, now: now, account: account, reconcileRemoteDeletions: false)
+            try mergeWatchlist(watchlist, context: context, now: now, allowRemoteRemoval: false,
+                               remoteUpdatedAt: activities?.watchlistActivityAt)
+            let state = SyncStateRecord(accountKey: account, generationID: LibraryGenerationPolicy.currentGeneration(in: context))
+            state.initialBaselineComplete = true
+            state.lastSuccessfulPullAt = now
+            state.lastSeenRemoteActivityAt = activities?.relevantActivityAt
+            context.insert(state)
+            let saveStartedAt = Date()
+            try context.save()
+            reconciliationSchedule.recordFullSync(account: account)
+            clearRunDiagnostics()
+            return saveStartedAt
+        }
     }
 
     private func preserveHistoryRequestIntent(_ operation: SyncOperationRecord) throws {
@@ -469,10 +580,11 @@ actor SyncEngine {
 
     private func pullAndMerge(into context: ModelContext,
                               state: SyncStateRecord,
+                              expectedAccount: String?,
                               initialBaseline: Bool,
                               reconcileRemoteHistory: Bool,
-                              progress: (@MainActor @Sendable (SyncProgress) async -> Void)? = nil) async throws {
-        let expectedAccount = accountKeyProvider()
+                              progress: (@MainActor @Sendable (SyncProgress) async -> Void)? = nil) async throws -> Bool {
+        try await validateRun(account: expectedAccount)
         let expectedGeneration = LibraryGenerationPolicy.currentGeneration(in: context)
         let previousRelevantActivityAt = state.lastSeenRemoteActivityAt
         let remoteActivities = try? await trakt.getLastActivities()
@@ -497,8 +609,8 @@ actor SyncEngine {
         if shouldPullWatchlist || shouldPullHistory {
             await progress?(.saving(watchlistItems: remoteWatchlist.count, historyItems: remoteHistory.count))
         }
-        guard await resetGate.allowsLibraryWork(), accountKeyProvider() == expectedAccount,
-              LibraryGenerationPolicy.currentGeneration(in: persistence.makeContext()) == expectedGeneration else { throw CancellationError() }
+        try await validateRun(account: expectedAccount)
+        guard LibraryGenerationPolicy.currentGeneration(in: persistence.makeContext()) == expectedGeneration else { throw CancellationError() }
         let now = Date()
 
         if shouldPullHistory {
@@ -506,6 +618,7 @@ actor SyncEngine {
                 remoteHistory,
                 context: context,
                 now: now,
+                account: state.accountKey,
                 reconcileRemoteDeletions: reconcileRemoteHistory
             )
         }
@@ -524,6 +637,7 @@ actor SyncEngine {
             state.lastSeenRemoteActivityAt,
             remoteActivities?.relevantActivityAt
         ])
+        return shouldPullWatchlist || shouldPullHistory
     }
 
     private func shouldPullWatchlist(_ remoteActivities: TraktLastActivitiesDTO?,
@@ -542,21 +656,24 @@ actor SyncEngine {
         return historyActivityAt > previousRelevantActivityAt
     }
 
-    private func pushPendingOperations(historyRetry: HistoryRetry?) async throws {
-        guard let accountKey = accountKeyProvider() else { return }
+    private func pushPendingOperations(account: String?, historyRetry: HistoryRetry?,
+                                       libraryChanged: (@MainActor @Sendable () -> Void)?) async throws {
+        guard let accountKey = account else { return }
+        try await validateRun(account: accountKey)
         let deviceID = await deviceIdentityStore.currentDeviceID()
         let now = Date()
         var firstHistoryFailure: (any Error)?
         while let operationID = try await claimNextOperation(deviceID: deviceID, accountKey: accountKey) {
-            guard accountKeyProvider() == accountKey else { throw CancellationError() }
             let processContext = persistence.makeContext()
             guard let operation = operationRecord(id: operationID, context: processContext),
+                  operation.accountKey == accountKey,
                   operation.claimedByDeviceID == deviceID,
                   operation.status == .processing else {
                 continue
             }
 
             do {
+                try await validateOperation(operation)
                 let mayRetryMissingPlay = historyRetry?.account == accountKey && historyRetry?.ids.contains(operationID) == true
                 try await process(operation: operation, context: processContext, mayRetryMissingPlay: mayRetryMissingPlay)
                 operation.status = .succeeded
@@ -566,9 +683,11 @@ actor SyncEngine {
                 operation.claimedByDeviceID = nil
                 operation.claimedAt = nil
                 try processContext.save()
+                await libraryChanged?()
             } catch {
                 guard await resetGate.allowsLibraryWork() else { throw CancellationError() }
-                if error is CancellationError {
+                if error.isCancelled || Task.isCancelled || accountKeyProvider() != accountKey ||
+                    (error as? TraktAuthError)?.requiresReconnect == true {
                     operation.status = .pending
                     operation.claimedByDeviceID = nil
                     operation.claimedAt = nil
@@ -606,6 +725,7 @@ actor SyncEngine {
 
         if let firstHistoryFailure { throw firstHistoryFailure }
 
+        try await validateRun(account: accountKey)
         let stateContext = persistence.makeContext()
         let state = syncState(context: stateContext)
         state.lastSuccessfulPushAt = Date()
@@ -662,7 +782,7 @@ actor SyncEngine {
         guard LibraryGenerationPolicy.belongsToCurrentGeneration(operation.generationID, current: generation) else { return false }
         guard let key = operation.dedupeKey else { return true }
         return !allOperations(context: context).contains {
-            $0.id != operation.id && $0.dedupeKey == key && $0.status != .succeeded
+            $0.id != operation.id && $0.accountKey == operation.accountKey && $0.dedupeKey == key && $0.status != .succeeded
         }
     }
 
@@ -675,7 +795,7 @@ actor SyncEngine {
         case .addWatchlist:
             if let mediaID = payload.mediaKind.flatMap({ kind in payload.tmdbID.map { MediaID(kind: kind, id: $0, traktID: payload.traktID) } }) {
                 try await trakt.addToWatchlist([mediaID])
-                guard await resetGate.allowsLibraryWork(), accountKeyProvider() == operation.accountKey else { throw CancellationError() }
+                try await validateRun(account: operation.accountKey)
                 let acknowledgement = persistence.makeContext()
                 if let row = watchlistRecord(for: mediaID, context: acknowledgement), row.localUpdatedAt <= sentAt, canAcknowledge(operation, in: acknowledgement) {
                     row.dirty = false
@@ -687,7 +807,7 @@ actor SyncEngine {
         case .removeWatchlist:
             if let mediaID = payload.mediaKind.flatMap({ kind in payload.tmdbID.map { MediaID(kind: kind, id: $0, traktID: payload.traktID) } }) {
                 try await trakt.removeFromWatchlist([mediaID])
-                guard await resetGate.allowsLibraryWork(), accountKeyProvider() == operation.accountKey else { throw CancellationError() }
+                try await validateRun(account: operation.accountKey)
                 let acknowledgement = persistence.makeContext()
                 if let row = watchlistRecord(for: mediaID, context: acknowledgement), row.localUpdatedAt <= sentAt, canAcknowledge(operation, in: acknowledgement) {
                     row.dirty = false
@@ -706,9 +826,9 @@ actor SyncEngine {
         try context.save()
     }
 
-    private func validateHistoryContext(_ operation: SyncOperationRecord) async throws {
-        guard await resetGate.allowsLibraryWork(), accountKeyProvider() == operation.accountKey,
-              LibraryGenerationPolicy.belongsToCurrentGeneration(operation.generationID,
+    private func validateOperation(_ operation: SyncOperationRecord) async throws {
+        try await validateRun(account: operation.accountKey)
+        guard LibraryGenerationPolicy.belongsToCurrentGeneration(operation.generationID,
                 current: LibraryGenerationPolicy.currentGeneration(in: persistence.makeContext())) else { throw CancellationError() }
     }
 
@@ -717,7 +837,7 @@ actor SyncEngine {
         // Trakt normalizes watched_at to the start of its UTC minute.
         let minute = HistoryMatchPolicy.remoteMinute(date)
         let history = try await trakt.getHistory(startAt: minute.addingTimeInterval(-1), endAt: minute.addingTimeInterval(60))
-        try await validateHistoryContext(operation)
+        try await validateOperation(operation)
         return history.filter { HistoryMatchPolicy.matches(payload, remote: $0) }
     }
 
@@ -726,7 +846,7 @@ actor SyncEngine {
         guard let kind = payload.mediaKind, let id = payload.tmdbID else { throw HistoryReconciliationError.ambiguous }
         let uncertain = payload.historyRequestStartedAt != nil || (operation.attemptCount > 0 && payload.historyRequestRejected != true)
         let matchingHistory = uncertain ? try await matchingRemoteHistory(payload, operation: operation) : nil
-        let initial = eventRecord(kind: kind, tmdbID: id, watchedAt: payload.watchedAt, context: persistence.makeContext())
+        let initial = eventRecord(kind: kind, tmdbID: id, watchedAt: payload.watchedAt, account: operation.accountKey, context: persistence.makeContext())
         let canRetry = matchingHistory?.isEmpty == true && payload.historyUploadAccepted != true
             && initial?.tombstoned == false && initial?.traktHistoryID == nil
         if !uncertain || (mayRetryMissingPlay && canRetry) {
@@ -747,7 +867,7 @@ actor SyncEngine {
                 try context.save()
                 payload.historyKnownIDs = try await matchingRemoteHistory(payload, operation: operation).map(\.id)
             }
-            try await validateHistoryContext(operation)
+            try await validateOperation(operation)
             payload.historyRequestStartedAt = Date()
             payload.historyRequestRejected = false
             operation.payload = try SyncPayloadCodec.encoder.encode(payload)
@@ -782,14 +902,16 @@ actor SyncEngine {
             throw matches.isEmpty ? HistoryReconciliationError.unconfirmed : .ambiguous
         }
         let acknowledgement = persistence.makeContext()
-        if let event = eventRecord(kind: kind, tmdbID: id, watchedAt: payload.watchedAt, context: acknowledgement) {
+        if let event = eventRecord(kind: kind, tmdbID: id, watchedAt: payload.watchedAt, account: operation.accountKey, context: acknowledgement) {
             guard event.traktHistoryID == nil || event.traktHistoryID == remote.id else { throw HistoryReconciliationError.ambiguous }
             // Imported replicas can have a newer bookkeeping timestamp without a newer local edit.
             let canClearDirty = !event.tombstoned
                 && event.updatedAt <= (payload.mutationAt ?? operation.createdAt)
                 && canAcknowledge(operation, in: acknowledgement)
             event.traktHistoryID = remote.id
-            for duplicate in allEvents(context: acknowledgement) where duplicate !== event && duplicate.traktHistoryID == remote.id {
+            event.traktHistoryAccountKey = operation.accountKey
+            for duplicate in allEvents(context: acknowledgement) where duplicate !== event && duplicate.traktHistoryID == remote.id &&
+                (duplicate.traktHistoryAccountKey == nil || duplicate.traktHistoryAccountKey == operation.accountKey) {
                 let localRemovalAt = event.tombstoned && event.dirty && !duplicate.dirty ? event.updatedAt : nil
                 mergeWatchedEvent(event, with: duplicate)
                 // A pull can import the same play before this confirmation. Its import time
@@ -816,9 +938,17 @@ actor SyncEngine {
     private func processHistoryRemoval(operation: SyncOperationRecord, payload: SyncOperationPayload) async throws {
         let read = persistence.makeContext()
         let event = payload.mediaKind.flatMap { kind in
-            payload.tmdbID.flatMap { eventRecord(kind: kind, tmdbID: $0, watchedAt: payload.watchedAt, context: read) }
+            payload.tmdbID.flatMap { eventRecord(kind: kind, tmdbID: $0, watchedAt: payload.watchedAt, account: operation.accountKey, context: read) }
         }
-        var historyID = payload.historyID ?? event?.traktHistoryID
+        let ownedHistoryID = event?.traktHistoryAccountKey == operation.accountKey ? event?.traktHistoryID : nil
+        var historyID = payload.historyAccountKey == operation.accountKey ? payload.historyID : ownedHistoryID
+        if let legacyID = payload.historyID, historyID != legacyID {
+            guard event?.traktHistoryAccountKey == nil,
+                  try await matchingRemoteHistory(payload, operation: operation).contains(where: { $0.id == legacyID }) else {
+                throw HistoryReconciliationError.ambiguous
+            }
+            historyID = legacyID
+        }
         if historyID == nil {
             let relatedAdds = allOperations(context: read).filter {
                 guard $0.kind == .addHistory, $0.accountKey == operation.accountKey,
@@ -838,14 +968,14 @@ actor SyncEngine {
             }
         }
         if let historyID {
-            try await validateHistoryContext(operation)
+            try await validateOperation(operation)
             try await trakt.removeFromHistory(historyIDs: [historyID])
         }
-        try await validateHistoryContext(operation)
+        try await validateOperation(operation)
         let acknowledgement = persistence.makeContext()
         let removed = payload.mediaKind.flatMap { kind in
-            payload.tmdbID.flatMap { eventRecord(kind: kind, tmdbID: $0, watchedAt: payload.watchedAt, context: acknowledgement) }
-        } ?? historyID.flatMap { eventRecord(historyID: $0, context: acknowledgement) }
+            payload.tmdbID.flatMap { eventRecord(kind: kind, tmdbID: $0, watchedAt: payload.watchedAt, account: operation.accountKey, context: acknowledgement) }
+        } ?? historyID.flatMap { eventRecord(historyID: $0, account: operation.accountKey, context: acknowledgement) }
         if let removed, removed.tombstoned, removed.updatedAt <= (payload.mutationAt ?? operation.createdAt) {
             acknowledgement.delete(removed)
             try acknowledgement.save()
@@ -948,6 +1078,7 @@ actor SyncEngine {
     private func mergeHistory(_ remoteItems: [TraktHistoryItemDTO],
                               context: ModelContext,
                               now: Date,
+                              account: String,
                               reconcileRemoteDeletions: Bool) throws {
         let generationID = LibraryGenerationPolicy.currentGeneration(in: context)
         var eventsByNaturalKey: [String: WatchedEventRecord] = [:]
@@ -961,7 +1092,8 @@ actor SyncEngine {
                 tmdbID: event.tmdbID,
                 watchedAt: event.watchedAt
             ), default: event] = event
-            if let historyID = event.traktHistoryID {
+            if let historyID = event.traktHistoryID,
+               event.traktHistoryAccountKey == nil || event.traktHistoryAccountKey == account {
                 eventsByHistoryID[historyID, default: event] = event
             }
         }
@@ -987,6 +1119,7 @@ actor SyncEngine {
                     traktID: movie.ids.trakt,
                     watchedAt: watchedAt,
                     traktHistoryID: item.id,
+                    traktHistoryAccountKey: account,
                     dirty: false,
                     tombstoned: false,
                     createdAt: now,
@@ -1004,6 +1137,8 @@ actor SyncEngine {
                 event.eventKey = WatchedEventRecord.makeEventKey(kind: .movie, tmdbID: tmdbID, traktID: movie.ids.trakt, watchedAt: watchedAt)
                 event.traktID = movie.ids.trakt ?? event.traktID
                 event.traktHistoryID = item.id
+                event.traktHistoryAccountKey = account
+                eventsByHistoryID[item.id] = event
                 event.dirty = false
                 event.tombstoned = false
                 event.updatedAt = now
@@ -1030,6 +1165,7 @@ actor SyncEngine {
                     episodeNumber: episode.number,
                     watchedAt: watchedAt,
                     traktHistoryID: item.id,
+                    traktHistoryAccountKey: account,
                     dirty: false,
                     tombstoned: false,
                     createdAt: now,
@@ -1051,6 +1187,8 @@ actor SyncEngine {
                 event.seasonNumber = episode.season ?? event.seasonNumber
                 event.episodeNumber = episode.number ?? event.episodeNumber
                 event.traktHistoryID = item.id
+                event.traktHistoryAccountKey = account
+                eventsByHistoryID[item.id] = event
                 event.dirty = false
                 event.tombstoned = false
                 event.updatedAt = now
@@ -1079,7 +1217,8 @@ actor SyncEngine {
         if reconcileRemoteDeletions {
             let remoteHistoryIDs = Set(remoteItems.map(\.id))
             let missingEvents = allEvents(context: context).filter {
-                $0.traktHistoryID.map { !remoteHistoryIDs.contains($0) } == true && !$0.dirty
+                $0.traktHistoryAccountKey == account &&
+                    $0.traktHistoryID.map { !remoteHistoryIDs.contains($0) } == true && !$0.dirty
             }
             guard !remoteItems.isEmpty || missingEvents.isEmpty else {
                 lastRunErrorDescription = "Skipped remote history removals because Trakt returned an empty history payload."
@@ -1462,7 +1601,10 @@ actor SyncEngine {
         canonical.showTraktID = canonical.showTraktID ?? duplicate.showTraktID
         canonical.seasonNumber = canonical.seasonNumber ?? duplicate.seasonNumber
         canonical.episodeNumber = canonical.episodeNumber ?? duplicate.episodeNumber
-        canonical.traktHistoryID = canonical.traktHistoryID ?? duplicate.traktHistoryID
+        if canonical.traktHistoryID == nil || canonical.traktHistoryID == duplicate.traktHistoryID {
+            canonical.traktHistoryID = canonical.traktHistoryID ?? duplicate.traktHistoryID
+            canonical.traktHistoryAccountKey = canonical.traktHistoryAccountKey ?? duplicate.traktHistoryAccountKey
+        }
         canonical.dirty = canonical.dirty || duplicate.dirty
         canonical.tombstoned = canonical.tombstoned || duplicate.tombstoned
         canonical.createdAt = min(canonical.createdAt, duplicate.createdAt)
@@ -1544,7 +1686,7 @@ actor SyncEngine {
 
     private func eventDeduplicationKey(_ event: WatchedEventRecord) -> String {
         if let historyID = event.traktHistoryID {
-            return "history:\(historyID)"
+            return "history:\(event.traktHistoryAccountKey ?? ""):\(historyID)"
         }
         return WatchedEventRecord.makeEventKey(
             kind: event.mediaID.kind,
@@ -1675,16 +1817,18 @@ actor SyncEngine {
         allWatchlist(context: context).first { $0.mediaKey == mediaID.stableKey }
     }
 
-    private func eventRecord(kind: MediaKind, tmdbID: Int, watchedAt: Date?, context: ModelContext) -> WatchedEventRecord? {
+    private func eventRecord(kind: MediaKind, tmdbID: Int, watchedAt: Date?, account: String, context: ModelContext) -> WatchedEventRecord? {
         guard let watchedAt else { return nil }
         let expected = WatchedEventRecord.makeEventKey(kind: kind, tmdbID: tmdbID, traktID: nil, watchedAt: watchedAt)
-        return allEvents(context: context).first {
+        let matches = allEvents(context: context).filter {
             $0.eventKey == expected || ($0.mediaID.kind == kind && $0.tmdbID == tmdbID && $0.watchedAt == watchedAt)
         }
+        return matches.first { $0.traktHistoryAccountKey == account }
+            ?? matches.first { $0.traktHistoryAccountKey == nil }
     }
 
-    private func eventRecord(historyID: Int, context: ModelContext) -> WatchedEventRecord? {
-        allEvents(context: context).first { $0.traktHistoryID == historyID }
+    private func eventRecord(historyID: Int, account: String, context: ModelContext) -> WatchedEventRecord? {
+        allEvents(context: context).first { $0.traktHistoryID == historyID && $0.traktHistoryAccountKey == account }
     }
 
     private func upsertEpisodeFromHistory(showTMDbID: Int,
@@ -1731,24 +1875,47 @@ private actor SyncClaimCoordinator {
             let claimContext = persistence.makeContext()
             let claimTimestamp = Date()
             let generation = LibraryGenerationPolicy.currentGeneration(in: claimContext)
-            let operations = ((try? claimContext.fetch(FetchDescriptor<SyncOperationRecord>())) ?? [])
-                .filter { operation in
-                    guard operation.accountKey == accountKey,
-                          LibraryGenerationPolicy.belongsToCurrentGeneration(operation.generationID, current: generation),
-                          let payload = try? SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: operation.payload),
-                          payload.originDeviceID == deviceID else { return false }
-                    if let nextAttemptAt = operation.nextAttemptAt, nextAttemptAt > claimTimestamp { return false }
-                    switch operation.status {
-                    case .pending:
-                        return true
-                    case .processing:
-                        guard let claimedAt = operation.claimedAt else { return true }
-                        return claimTimestamp.timeIntervalSince(claimedAt) > claimExpiration
-                    default:
-                        return false
-                    }
+            let ownedOperations = try claimContext.fetch(FetchDescriptor<SyncOperationRecord>()).filter { operation in
+                guard operation.accountKey == accountKey,
+                      LibraryGenerationPolicy.belongsToCurrentGeneration(operation.generationID, current: generation),
+                      let payload = try? SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: operation.payload)
+                else { return false }
+                return payload.originDeviceID == deviceID
+            }
+            let watchlistGroups = Dictionary(grouping: ownedOperations.filter {
+                $0.kind == .addWatchlist || $0.kind == .removeWatchlist
+            }, by: \.dedupeKey)
+            // Keep this device's latest intent even when an older request is backed off.
+            for (key, group) in watchlistGroups where key != nil && group.count > 1 {
+                let newest = group.max { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) }
+                for older in group where older !== newest && older.status != .succeeded {
+                    if older.status == .processing,
+                       let claimedAt = older.claimedAt,
+                       claimTimestamp.timeIntervalSince(claimedAt) <= claimExpiration { continue }
+                    older.status = .succeeded
+                    older.claimedByDeviceID = nil
+                    older.claimedAt = nil
+                    older.nextAttemptAt = nil
                 }
-                .sorted(by: { $0.createdAt < $1.createdAt })
+            }
+            if claimContext.hasChanges { try claimContext.save() }
+
+            let operations = ownedOperations.filter { operation in
+                if let nextAttemptAt = operation.nextAttemptAt, nextAttemptAt > claimTimestamp { return false }
+                if let key = operation.dedupeKey, let group = watchlistGroups[key], group.contains(where: {
+                    $0 !== operation && $0.status == .processing &&
+                        $0.claimedAt.map { claimTimestamp.timeIntervalSince($0) <= claimExpiration } == true
+                }) { return false }
+                switch operation.status {
+                case .pending:
+                    return true
+                case .processing:
+                    guard let claimedAt = operation.claimedAt else { return true }
+                    return claimTimestamp.timeIntervalSince(claimedAt) > claimExpiration
+                default:
+                    return false
+                }
+            }.sorted { $0.createdAt < $1.createdAt }
 
             guard let candidate = operations.first else {
                 return nil

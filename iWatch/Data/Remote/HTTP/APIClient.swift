@@ -161,12 +161,15 @@ nonisolated func redactedRequestURL(_ url: URL?) -> String {
     return components.string ?? "<unknown>"
 }
 
-// Share only identical reads. Authorization headers participate in URLRequest equality.
+// Authenticated responses belong to the request that sent those credentials.
 private actor HTTPRequestCoalescer {
     private var reads: [URLRequest: Task<(Data, URLResponse), Error>] = [:]
 
     func data(for request: URLRequest, session: URLSession) async throws -> (Data, URLResponse) {
-        guard (request.httpMethod ?? "GET") == "GET" else { return try await session.data(for: request) }
+        guard (request.httpMethod ?? "GET") == "GET",
+              request.value(forHTTPHeaderField: "Authorization") == nil else {
+            return try await session.data(for: request)
+        }
         if let read = reads[request] { return try await read.value }
         let read = Task { try await session.data(for: request) }
         reads[request] = read

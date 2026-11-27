@@ -222,6 +222,38 @@ struct TraktAuthHardeningTests {
     // MARK: Account Identity
 
     @Test
+    func syncSessionRejectsDifferentAccountAndCannotSendAfterDisconnect() async throws {
+        let auth = InMemoryTraktAuthStore()
+        await auth.save(token: validToken())
+        let writes = LockedRequestCounter()
+        MockTraktURLProtocol.handler = { request in
+            let url = try #require(request.url)
+            if request.httpMethod == "POST" { writes.increment() }
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer valid-access")
+            let body = url.path == "/users/settings" ? #"{"user":{"ids":{"trakt":42,"uuid":"fixture"}}}"# : "{}"
+            return (HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        defer { MockTraktURLProtocol.handler = nil }
+        let service = makeTraktService(authStore: auth)
+        await #expect(throws: CancellationError.self) { try await service.authorizeSync(accountKey: "trakt:43") }
+        let verified = try await service.authorizeSync(accountKey: "trakt:42")
+        let session = try #require(verified)
+        let movie = MediaID(kind: .movie, id: 11)
+
+        let otherToken = TokenResponse(accessToken: "other-account", tokenType: "bearer", expiresIn: 86400,
+            refreshToken: "other-refresh", scope: "public", createdAt: Int(Date().timeIntervalSince1970))
+        try await TraktSyncSession.$current.withValue(session) {
+            // Even if the stored credential changes, this run can only send with its verified bearer.
+            await auth.save(token: otherToken)
+            try await service.addToWatchlist([movie])
+            await service.clearAuth()
+            await auth.save(token: otherToken)
+            await #expect(throws: CancellationError.self) { try await service.addToWatchlist([movie]) }
+        }
+        #expect(writes.value == 1)
+    }
+
+    @Test
     func authenticatedAccountUsesUUIDWhenLegacyTraktIDIsNull() async throws {
         let authStore = InMemoryTraktAuthStore()
         await authStore.save(token: validToken())

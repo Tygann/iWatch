@@ -69,6 +69,10 @@ final class AppSession {
     private let authCoordinator = TraktAuthCoordinator()
     private var storeInvalidationTask: Task<Void, Never>?
     private var scheduledSyncTask: Task<Void, Never>?
+    private var retryWakeupTask: Task<Void, Never>?
+    private var followUpSync = false
+    private var foregroundActive = false
+    private var isDisconnectingTrakt = false
     private var backgroundContinuationTask: Task<Void, Never>?
     private var cloudSyncMonitorTask: Task<Void, Never>?
     private var transientFeedbackTask: Task<Void, Never>?
@@ -227,8 +231,12 @@ final class AppSession {
     // MARK: Trakt Connection
 
     func startTraktOAuth() {
+        guard !traktIsConnecting else { return }
+        guard !isSyncing, !isDisconnectingTrakt, !isMaintainingSync else {
+            traktLastError = "Wait for the current Trakt operation to finish before connecting an account."
+            return
+        }
         do {
-            guard !isSyncing else { throw AppError.unknown("Wait for the current Trakt sync to finish before connecting an account.") }
             let state = OAuthStateGenerator.make()
             let authRequest = try trakt.authorizationRequest(redirectURI: traktRedirectURI, state: state)
             _ = try callbackScheme()
@@ -241,6 +249,7 @@ final class AppSession {
                 guard let self else { return }
                 if let error {
                     Task { @MainActor in
+                        guard self.pendingOAuthState == authRequest.state else { return }
                         self.traktIsConnecting = false
                         self.pendingOAuthState = nil
                         self.pendingOAuthVerifier = nil
@@ -253,6 +262,7 @@ final class AppSession {
 
                 guard let callbackURL else {
                     Task { @MainActor in
+                        guard self.pendingOAuthState == authRequest.state else { return }
                         self.traktIsConnecting = false
                         self.pendingOAuthState = nil
                         self.pendingOAuthVerifier = nil
@@ -262,7 +272,7 @@ final class AppSession {
                 }
 
                 Task { @MainActor [weak self] in
-                    guard let self else { return }
+                    guard let self, self.pendingOAuthState == authRequest.state else { return }
                     await self.completeTraktOAuth(callbackURL: callbackURL)
                 }
             }
@@ -281,21 +291,36 @@ final class AppSession {
 
     private func performSync(reason: SyncReason, allowMaintenance: Bool = false, historyRetry: SyncEngine.HistoryRetry? = nil) async {
         guard !isErasingAllData else { return }
-        guard pendingTraktAccountKey == nil else { return }
+        guard pendingTraktAccountKey == nil, !traktIsConnecting, !isDisconnectingTrakt else { return }
         guard let expectedAccount = TraktLinkStore.activeAccountKey else { return }
-        guard await refreshAuthState(), !isSyncing, !isErasingAllData,
-              !isMaintainingSync || allowMaintenance,
-              TraktLinkStore.activeAccountKey == expectedAccount else { return }
+        if isSyncing {
+            followUpSync = true
+            return
+        }
+        retryWakeupTask?.cancel()
         isSyncing = true
-        let syncStartedAt = Date()
-        syncSaveStartedAt = nil
-        if !isMaintainingSync { syncMaintenanceMessage = nil }
         defer {
             isSyncing = false
             endBackgroundTaskIfNeeded()
+            if TraktLinkStore.activeAccountKey == expectedAccount {
+                if followUpSync {
+                    followUpSync = false
+                    scheduleDebouncedSync(reason: .localMutation)
+                } else {
+                    scheduleRetryWakeup(for: expectedAccount)
+                }
+            }
         }
-
-        let succeeded = await syncEngine.run(reason: reason, historyRetry: historyRetry) { [weak self] progress in
+        guard await refreshAuthState(), !Task.isCancelled, !isErasingAllData,
+              !isMaintainingSync || allowMaintenance,
+              pendingTraktAccountKey == nil, !traktIsConnecting, !isDisconnectingTrakt,
+              TraktLinkStore.activeAccountKey == expectedAccount else { return }
+        let syncStartedAt = Date()
+        syncSaveStartedAt = nil
+        if !isMaintainingSync { syncMaintenanceMessage = nil }
+        let succeeded = await syncEngine.run(reason: reason, historyRetry: historyRetry, libraryChanged: { [weak self] in
+            self?.scheduleLibraryInvalidation()
+        }) { [weak self] progress in
             guard TraktLinkStore.activeAccountKey == expectedAccount else { return }
             self?.syncProgress = progress
             if case .saving = progress {
@@ -317,10 +342,13 @@ final class AppSession {
         monitorCloudExport(startingAfter: syncSaveStartedAt ?? syncStartedAt)
         syncSaveStartedAt = nil
         BackgroundRefresh.scheduleAppRefresh()
-        markLibraryUpdated()
     }
 
     func logoutTrakt() {
+        guard !isDisconnectingTrakt, !isMaintainingSync else { return }
+        isDisconnectingTrakt = true
+        followUpSync = false
+        retryWakeupTask?.cancel()
         scheduledSyncTask?.cancel()
         backgroundContinuationTask?.cancel()
         endBackgroundTaskIfNeeded()
@@ -335,6 +363,7 @@ final class AppSession {
             guard let self else { return }
             await self.trakt.clearAuth()
             await MainActor.run {
+                self.isDisconnectingTrakt = false
                 self.traktConnected = false
                 self.lastSyncAt = nil
                 self.traktConnectionInterrupted = false
@@ -465,6 +494,7 @@ final class AppSession {
     }
 
     func appDidBecomeActive() {
+        foregroundActive = true
         backgroundContinuationTask?.cancel()
         endBackgroundTaskIfNeeded()
 
@@ -483,6 +513,8 @@ final class AppSession {
     }
 
     func appDidEnterBackground() {
+        foregroundActive = false
+        retryWakeupTask?.cancel()
         backgroundContinuationTask?.cancel()
 
         backgroundContinuationTask = Task { [weak self] in
@@ -553,26 +585,8 @@ final class AppSession {
     // MARK: Sync Maintenance
 
     func importTraktLibrary() async {
-        guard !isSyncing, !isMaintainingSync, !isErasingAllData else { return }
-        isMaintainingSync = true
-        syncMaintenanceTitle = "Importing Library…"
-        syncMaintenanceMessage = nil
-        defer { isMaintainingSync = false; syncMaintenanceTitle = nil }
-        guard let accountKey = pendingTraktAccountKey else { return }
-        await syncEngine.beginDataReset()
-        var shouldSync = false
-        do {
-            try await syncEngine.resetLocalTraktSyncCache()
-            TraktLinkStore.activeAccountKey = accountKey
-            pendingTraktAccountKey = nil
-            shouldSync = true
-        } catch {
-            traktLastError = error.localizedDescription
-        }
-        await syncEngine.endDataReset()
-        if shouldSync {
-            await performSync(reason: .userInitiated, allowMaintenance: true)
-        }
+        guard let account = pendingTraktAccountKey else { return }
+        await replaceLibraryFromTrakt(account: account, linking: true)
     }
 
     func uploadLocalLibrary() async {
@@ -647,38 +661,48 @@ final class AppSession {
     }
 
     func resetLocalTraktSyncCache() async {
-        guard !isSyncing, !isMaintainingSync, !isErasingAllData else { return }
+        guard pendingTraktAccountKey == nil, let account = TraktLinkStore.activeAccountKey else { return }
+        await replaceLibraryFromTrakt(account: account, linking: false)
+    }
+
+    private func replaceLibraryFromTrakt(account: String, linking: Bool) async {
+        guard !isSyncing, !isMaintainingSync, !isErasingAllData,
+              !traktIsConnecting, !isDisconnectingTrakt else { return }
         isMaintainingSync = true
-        syncMaintenanceTitle = "Rebuilding Library…"
+        syncMaintenanceTitle = linking ? "Importing Library…" : "Rebuilding Library…"
         syncMaintenanceMessage = nil
         defer { isMaintainingSync = false; syncMaintenanceTitle = nil }
-        await syncEngine.beginDataReset()
-        var shouldSync = false
-        do {
-            try await syncEngine.resetLocalTraktSyncCache()
-            lastSyncAt = nil
-            syncMaintenanceMessage = "Local Trakt sync data was reset. Rebuilding from Trakt now."
-            markLibraryUpdated()
-            await refreshSyncDiagnostics()
 
-            shouldSync = await refreshAuthState()
+        await syncEngine.beginDataReset()
+        do {
+            let saveStartedAt = try await syncEngine.replaceLibraryFromTrakt(account: account)
+            if linking {
+                TraktLinkStore.activeAccountKey = account
+                pendingTraktAccountKey = nil
+            }
+            lastSyncAt = Date()
+            traktLastError = nil
+            syncProgress = .complete
+            syncMaintenanceMessage = "The library was rebuilt from Trakt."
+            markLibraryUpdated()
+            monitorCloudExport(startingAfter: saveStartedAt)
+            BackgroundRefresh.scheduleAppRefresh()
         } catch {
-            traktLastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            await refreshSyncDiagnostics()
+            traktLastError = UserFacingError.message(for: error, context: .action)
         }
         await syncEngine.endDataReset()
-        if shouldSync {
-            await performSync(reason: .userInitiated, allowMaintenance: true)
-        }
+        await refreshSyncDiagnostics()
     }
 
     @discardableResult
     // MARK: Authentication State
 
     func refreshAuthState() async -> Bool {
+        guard !traktIsConnecting, !isDisconnectingTrakt else { return false }
         if isReadOnlyPreview { return traktConnected }
         do {
             let status = try await trakt.sessionStatus()
+            guard !traktIsConnecting, !isDisconnectingTrakt else { return false }
             traktConnectionInterrupted = false
             switch status {
             case .connected:
@@ -687,7 +711,10 @@ final class AppSession {
                     BackgroundRefresh.cancelScheduledRefresh()
                     if pendingTraktAccountKey == nil {
                         do {
-                            pendingTraktAccountKey = try await trakt.authenticatedAccount().syncKey
+                            let account = try await trakt.authenticatedAccount().syncKey
+                            guard !traktIsConnecting, !isDisconnectingTrakt,
+                                  TraktLinkStore.activeAccountKey == nil, pendingTraktAccountKey == nil else { return false }
+                            pendingTraktAccountKey = account
                             traktLastError = nil
                             syncMaintenanceMessage = "Choose how to link this Trakt account before syncing."
                         } catch {
@@ -712,7 +739,9 @@ final class AppSession {
                 return false
             }
         } catch {
-            traktConnected = await trakt.currentToken() != nil
+            let hasToken = await trakt.currentToken() != nil
+            guard !traktIsConnecting, !isDisconnectingTrakt else { return false }
+            traktConnected = hasToken
             traktConnectionInterrupted = error is URLError
             BackgroundRefresh.cancelScheduledRefresh()
             traktLastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
@@ -735,9 +764,23 @@ final class AppSession {
             }
 
             guard !Task.isCancelled else { return }
-            guard await self.refreshAuthState() else { return }
-
+            // The debounce owns the timer. A later edit must not cancel a run already draining.
+            self.scheduledSyncTask = nil
             await self.runSync(reason: reason)
+        }
+    }
+
+    private func scheduleRetryWakeup(for account: String) {
+        retryWakeupTask?.cancel()
+        guard foregroundActive else { return }
+        retryWakeupTask = Task { [weak self] in
+            guard let self, let retryAt = await self.syncEngine.nextRetryDate(for: account) else { return }
+            // An overdue row can survive an offline pull. Avoid an immediate retry loop.
+            let remaining = retryAt.timeIntervalSinceNow
+            do { try await Task.sleep(for: .seconds(remaining > 0 ? remaining : 30)) } catch { return }
+            guard !Task.isCancelled, self.foregroundActive, TraktLinkStore.activeAccountKey == account else { return }
+            self.retryWakeupTask = nil
+            await self.runSync(reason: .localMutation)
         }
     }
 
@@ -785,28 +828,33 @@ final class AppSession {
     }
 
     private func completeTraktOAuth(callbackURL: URL) async {
+        guard let state = pendingOAuthState, let verifier = pendingOAuthVerifier else { return }
         var exchangedToken = false
         defer {
-            traktIsConnecting = false
-            pendingOAuthState = nil
-            pendingOAuthVerifier = nil
+            if pendingOAuthState == state {
+                traktIsConnecting = false
+                pendingOAuthState = nil
+                pendingOAuthVerifier = nil
+            }
         }
 
         do {
-            guard let pendingOAuthState, let pendingOAuthVerifier else {
-                throw TraktAuthError.stateMismatch
-            }
-
-            let code = try trakt.authorizationCode(from: callbackURL, expectedState: pendingOAuthState)
-            _ = try await trakt.exchangeCodeForToken(code: code, redirectURI: traktRedirectURI, codeVerifier: pendingOAuthVerifier)
+            let code = try trakt.authorizationCode(from: callbackURL, expectedState: state)
+            // A replacement token must go through account setup even if the app exits mid-OAuth.
+            TraktLinkStore.clear()
+            _ = try await trakt.exchangeCodeForToken(code: code, redirectURI: traktRedirectURI, codeVerifier: verifier)
             exchangedToken = true
-            pendingTraktAccountKey = try await trakt.authenticatedAccount().syncKey
+            let account = try await trakt.authenticatedAccount()
+            guard pendingOAuthState == state else { return }
+            pendingTraktAccountKey = account.syncKey
             traktConnected = true
             traktLastError = nil
             syncMaintenanceMessage = "Choose how to link this Trakt account before syncing."
         } catch {
+            guard pendingOAuthState == state else { return }
             if exchangedToken {
                 await trakt.clearAuth()
+                guard pendingOAuthState == state else { return }
             }
             traktConnected = false
             pendingTraktAccountKey = nil

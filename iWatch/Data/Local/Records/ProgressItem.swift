@@ -18,6 +18,7 @@ final class WatchedEventRecord {
     var episodeNumber: Int?
     var watchedAt: Date = Date.distantPast
     var traktHistoryID: Int?
+    var traktHistoryAccountKey: String?
     var dirty: Bool = false
     var tombstoned: Bool = false
     var createdAt: Date = Date.distantPast
@@ -32,6 +33,7 @@ final class WatchedEventRecord {
          episodeNumber: Int? = nil,
          watchedAt: Date,
          traktHistoryID: Int? = nil,
+         traktHistoryAccountKey: String? = nil,
          dirty: Bool = false,
          tombstoned: Bool = false,
          createdAt: Date = .now,
@@ -48,6 +50,7 @@ final class WatchedEventRecord {
         self.episodeNumber = episodeNumber
         self.watchedAt = watchedAt
         self.traktHistoryID = traktHistoryID
+        self.traktHistoryAccountKey = traktHistoryAccountKey
         self.dirty = dirty
         self.tombstoned = tombstoned
         self.createdAt = createdAt

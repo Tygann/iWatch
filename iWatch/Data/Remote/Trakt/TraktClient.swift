@@ -27,11 +27,36 @@ final class TraktService: TraktSyncing, EpisodeAirtimeProviding {
     }
 
     func authenticatedAccount() async throws -> TraktAccount {
-        try await refreshTokenIfNeeded()
-        let request = try await request(path: "users/settings")
-        return try await sendAuthorized(request, decode: TraktSettingsResponse.self).user
+        try await verifiedSession().account
     }
 
+    func authorizeSync(accountKey: String?) async throws -> TraktSyncSession? {
+        guard let accountKey else { throw CancellationError() }
+        let verified = try await verifiedSession()
+        guard verified.account.syncKey == accountKey else { throw CancellationError() }
+        return verified.session
+    }
+
+    func validateSyncAuthorization() async throws {
+        try Task.checkCancellation()
+        if let session = TraktSyncSession.current,
+           !(await refreshCoordinator.isCurrent(session.generation)) {
+            throw CancellationError()
+        }
+    }
+
+    private func verifiedSession() async throws -> (account: TraktAccount, session: TraktSyncSession) {
+        let generation = await refreshCoordinator.currentGeneration()
+        try await refreshTokenIfNeeded()
+        guard let token = await authStore.currentToken(),
+              await refreshCoordinator.isCurrent(generation) else { throw CancellationError() }
+        var request = try await request(path: "users/settings", authorized: false)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer " + token.accessToken, forHTTPHeaderField: "Authorization")
+        let account = try await sendAuthorized(request, decode: TraktSettingsResponse.self).user
+        guard await refreshCoordinator.isCurrent(generation) else { throw CancellationError() }
+        return (account, TraktSyncSession(accountKey: account.syncKey, generation: generation, accessToken: token.accessToken))
+    }
 
     func sessionStatus() async throws -> TraktSessionStatus {
         guard await authStore.currentToken() != nil else {
@@ -154,8 +179,18 @@ final class TraktService: TraktSyncing, EpisodeAirtimeProviding {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue(clientId, forHTTPHeaderField: "trakt-api-key")
         req.setValue("2", forHTTPHeaderField: "trakt-api-version")
-        if authorized, let token = await authStore.currentToken()?.accessToken {
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if authorized {
+            let token: String?
+            if let session = TraktSyncSession.current {
+                try await validateSyncAuthorization()
+                token = session.accessToken
+            } else {
+                token = await authStore.currentToken()?.accessToken
+            }
+            if let token {
+                req.cachePolicy = .reloadIgnoringLocalCacheData
+                req.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+            }
         }
         return req
     }
@@ -179,6 +214,10 @@ final class TraktService: TraktSyncing, EpisodeAirtimeProviding {
     }
 
     func refreshTokenIfNeeded() async throws {
+        if TraktSyncSession.current != nil {
+            try await validateSyncAuthorization()
+            return
+        }
         try await refreshCoordinator.run { generation in
             try await self.performTokenRefresh(generation: generation)
         }
@@ -373,7 +412,10 @@ final class TraktService: TraktSyncing, EpisodeAirtimeProviding {
 
     private func sendAuthorized<T: Decodable>(_ request: URLRequest, decode: T.Type) async throws -> T {
         do {
-            return try await api.send(request, decode: decode, decoder: .trakt)
+            try await validateSyncAuthorization()
+            let result = try await api.send(request, decode: decode, decoder: .trakt)
+            try await validateSyncAuthorization()
+            return result
         } catch let error as AppError {
             if case let .httpStatus(code, _) = error, code == 401 {
                 let cleared = await refreshCoordinator.clear(authStore, matching: request.value(forHTTPHeaderField: "Authorization"))
@@ -426,6 +468,8 @@ private actor TokenRefreshCoordinator {
     private var generation = UUID()
     private var task: Task<Void, Error>?
     private var lastWrite: Task<Void, Never>?
+
+    func currentGeneration() -> UUID { generation }
 
     func isCurrent(_ value: UUID) -> Bool { value == generation }
 

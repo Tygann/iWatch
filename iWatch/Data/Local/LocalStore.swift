@@ -32,6 +32,7 @@ nonisolated struct SyncOperationPayload: Codable, Sendable {
     var episodeNumber: Int?
     var watchedAt: Date?
     var historyID: Int?
+    var historyAccountKey: String? = nil
 }
 
 nonisolated enum SyncPayloadCodec {
