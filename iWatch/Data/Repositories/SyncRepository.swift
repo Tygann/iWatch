@@ -8,6 +8,7 @@ enum SyncReason: String, Sendable {
     case appLaunch
     case foreground
     case userInitiated
+    case pendingChanges
     case background
 }
 
@@ -232,19 +233,12 @@ actor SyncEngine {
 
     /// Recheck uncertain requests without clearing the persisted intent or baseline IDs.
     func prepareHistoryConfirmationChecks() async throws {
-        guard !isRunning, let account = accountKeyProvider(), await resetGate.allowsLibraryWork() else { return }
-        let device = await deviceIdentityStore.currentDeviceID()
-        let context = persistence.makeContext()
-        for operation in allOperations(context: context) where operation.accountKey == account
-            && operation.kind == .addHistory && operation.status != .succeeded && operation.status != .processing {
-            guard let payload = try? SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: operation.payload),
-                  payload.originDeviceID == device,
-                  payload.historyRequestStartedAt != nil || (operation.attemptCount > 0 && payload.historyRequestRejected != true) else { continue }
-            operation.status = .pending
-            operation.nextAttemptAt = nil
-            // Preserve attemptCount: legacy uncertain requests also use it to prevent resending.
-        }
-        try context.save()
+        guard let account = accountKeyProvider() else { return }
+        try await prepareManualSync(for: account, retryFailedChanges: false)
+    }
+
+    func prepareManualSync(for account: String, retryFailedChanges: Bool) async throws {
+        _ = try await prepareQueuedChanges(for: account, recheckHistory: true, retryFailures: retryFailedChanges)
     }
 
     func hasPendingOperations() -> Bool {
@@ -302,27 +296,35 @@ actor SyncEngine {
 
     func retryDeadletterOperations() async throws -> Int {
         guard let account = accountKeyProvider() else { return 0 }
+        return try await prepareQueuedChanges(for: account, recheckHistory: false, retryFailures: true)
+    }
+
+    private func prepareQueuedChanges(for account: String, recheckHistory: Bool, retryFailures: Bool) async throws -> Int {
+        guard !isRunning, accountKeyProvider() == account, await resetGate.allowsLibraryWork() else { return 0 }
         let device = await deviceIdentityStore.currentDeviceID()
+        guard !isRunning, accountKeyProvider() == account else { return 0 }
         let context = persistence.makeContext()
-        let deadletters = allOperations(context: context).filter {
-            $0.status == .deadletter && $0.accountKey == account
-                && (try? SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: $0.payload).originDeviceID) == device
-        }
-
-        for operation in deadletters {
-            try preserveHistoryRequestIntent(operation)
+        var retried = 0
+        for operation in allOperations(context: context) where operation.accountKey == account
+            && (operation.status == .pending || operation.status == .deadletter) {
+            guard let payload = try? SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: operation.payload),
+                  payload.originDeviceID == device else { continue }
+            if retryFailures && operation.status == .deadletter {
+                try preserveHistoryRequestIntent(operation)
+                operation.attemptCount = 0
+                operation.lastAttemptAt = nil
+                operation.claimedByDeviceID = nil
+                operation.claimedAt = nil
+                retried += 1
+            } else {
+                guard recheckHistory, operation.kind == .addHistory,
+                      payload.historyRequestStartedAt != nil || (operation.attemptCount > 0 && payload.historyRequestRejected != true) else { continue }
+            }
             operation.status = .pending
-            operation.attemptCount = 0
-            operation.lastAttemptAt = nil
-            operation.claimedByDeviceID = nil
-            operation.claimedAt = nil
+            operation.nextAttemptAt = nil
         }
-
-        if !deadletters.isEmpty {
-            try context.save()
-        }
-
-        return deadletters.count
+        try context.save()
+        return retried
     }
 
     @discardableResult
@@ -1779,7 +1781,7 @@ nonisolated final class HistoryReconciliationSchedule: @unchecked Sendable {
 
     func shouldReconcile(account: String, reason: SyncReason, previousPull: Date?, now: Date = .now) -> Bool {
         if reason == .userInitiated { return true }
-        if reason == .localMutation { return false }
+        if reason == .localMutation || reason == .pendingChanges { return false }
         lock.lock()
         defer { lock.unlock() }
         let key = "iWatch.fullHistorySync." + account

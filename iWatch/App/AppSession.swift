@@ -592,44 +592,24 @@ final class AppSession {
         }
     }
 
-    func checkWatchedUploadConfirmations(historyRetry: SyncEngine.HistoryRetry? = nil) async -> SyncEngine.HistoryRetry? {
+    func syncTraktNow(historyRetry: SyncEngine.HistoryRetry? = nil) async -> SyncEngine.HistoryRetry? {
         guard !syncActionsUnavailable, let account = TraktLinkStore.activeAccountKey,
               historyRetry == nil || historyRetry?.account == account else { return nil }
         isMaintainingSync = true
-        syncMaintenanceTitle = historyRetry == nil ? "Checking Trakt…" : "Retrying Upload…"
+        syncMaintenanceTitle = historyRetry == nil ? "Syncing…" : "Retrying Upload…"
         defer { isMaintainingSync = false; syncMaintenanceTitle = nil }
         do {
-            try await syncEngine.prepareHistoryConfirmationChecks()
-            await performSync(reason: .userInitiated, allowMaintenance: true, historyRetry: historyRetry)
+            try await syncEngine.prepareManualSync(for: account, retryFailedChanges: historyRetry == nil)
+            guard TraktLinkStore.activeAccountKey == account else { return nil }
+            let hasQueuedWork = syncDiagnostics.hasPendingWork || syncDiagnostics.deadletterOperationCount > 0
+            let reason: SyncReason = hasQueuedWork || historyRetry != nil ? .pendingChanges : .userInitiated
+            await performSync(reason: reason, allowMaintenance: true, historyRetry: historyRetry)
             guard historyRetry == nil, traktConnected else { return nil }
             return await syncEngine.historyRetryOffer(for: account)
         } catch {
             traktLastError = error.localizedDescription
             await refreshSyncDiagnostics()
             return nil
-        }
-    }
-
-    func retryFailedSyncOperations() async {
-        guard !isSyncing, !isMaintainingSync, !isErasingAllData else { return }
-        isMaintainingSync = true
-        syncMaintenanceTitle = "Preparing Retry…"
-        syncMaintenanceMessage = nil
-        defer { isMaintainingSync = false; syncMaintenanceTitle = nil }
-        do {
-            let retried = try await syncEngine.retryDeadletterOperations()
-            await refreshSyncDiagnostics()
-
-            if retried == 0 {
-                syncMaintenanceMessage = "There were no failed sync operations to retry."
-                return
-            }
-
-            syncMaintenanceMessage = "Queued \(retried) failed sync operation\(retried == 1 ? "" : "s") for retry."
-            await performSync(reason: .userInitiated, allowMaintenance: true)
-        } catch {
-            traktLastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            await refreshSyncDiagnostics()
         }
     }
 

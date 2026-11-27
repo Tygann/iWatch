@@ -1799,6 +1799,52 @@ struct FoundationRewriteTests {
     }
 
     @Test
+    func manualSyncRechecksUncertainPlaysAndRetriesOnlyLocalFailuresForTheActiveAccount() async throws {
+        let persistence = makePersistence()
+        let repository = makeLibraryRepository(persistence: persistence)
+        let watchedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        try await repository.addWatchEvent(for: MediaID(kind: .movie, id: 11), watchedAt: watchedAt)
+        let context = persistence.makeContext()
+        let addition = try #require(context.fetch(FetchDescriptor<SyncOperationRecord>()).first)
+        var play = try SyncPayloadCodec.decoder.decode(SyncOperationPayload.self, from: addition.payload)
+        play.historyRequestStartedAt = .now
+        play.historyKnownIDs = []
+        addition.payload = try SyncPayloadCodec.encoder.encode(play)
+        addition.nextAttemptAt = .distantFuture
+
+        for (account, device, id) in [("default", "device-a", 21), ("default", "device-b", 22), ("other", "device-a", 23)] {
+            let payload = SyncOperationPayload(originDeviceID: device, mediaKind: .movie, tmdbID: id)
+            let failure = SyncOperationRecord(kind: .addWatchlist, payload: try SyncPayloadCodec.encoder.encode(payload),
+                dedupeKey: "watchlist:movie:\(id)", accountKey: account, status: .deadletter)
+            failure.nextAttemptAt = .distantFuture
+            context.insert(failure)
+        }
+        try context.save()
+        let remote = FakeTraktSyncRemote(token: makeToken(),
+            lastActivities: makeLastActivities(watchlistAt: .now, historyAt: .now), watchlist: [],
+            history: [])
+        let engine = SyncEngine(persistence: persistence, trakt: remote,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { "default" })
+
+        try await engine.ensureInitialBaseline()
+        await remote.setHistory([makeMovieHistoryItem(historyID: 999, watchedAt: watchedAt)])
+        let historyCallsBeforeRetry = await remote.snapshot().getHistoryCalls
+
+        try await engine.prepareManualSync(for: "other", retryFailedChanges: true)
+        #expect(try fetchAll(SyncOperationRecord.self, from: persistence).filter { $0.status == .deadletter }.count == 3)
+        try await engine.prepareManualSync(for: "default", retryFailedChanges: true)
+        #expect(await engine.run(reason: .pendingChanges))
+
+        let snapshot = await remote.snapshot()
+        #expect(snapshot.getHistoryCalls == historyCallsBeforeRetry + 1)
+        #expect(snapshot.addHistoryCalls == 0)
+        #expect(snapshot.addWatchlistCalls == 1)
+        let operations = try fetchAll(SyncOperationRecord.self, from: persistence)
+        #expect(operations.filter { $0.status == .succeeded }.count == 2)
+        #expect(operations.filter { $0.status == .deadletter }.count == 2)
+    }
+
+    @Test
     func repairIntegrityDeduplicatesLogicalRecords() async throws {
         let persistence = makePersistence()
         let context = persistence.makeContext()

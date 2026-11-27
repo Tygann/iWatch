@@ -9,8 +9,8 @@ struct TraktSettingsSection: View {
         Section {
             TraktConnectionRow()
             if !session.traktConnected && health.needsAttention {
-                TraktStatusRow()
-                TraktSyncActionButton()
+                Button("Connect Trakt") { session.startTraktOAuth() }
+                    .disabled(session.syncActionsUnavailable)
             }
             if session.pendingTraktAccountKey != nil {
                 NavigationLink {
@@ -20,9 +20,6 @@ struct TraktSettingsSection: View {
                 }
                 .accessibilityIdentifier("trakt-setup")
             } else if session.traktConnected {
-                if health.needsAttention || health.isWorking || health.title == "Changes Pending" {
-                    TraktStatusRow()
-                }
                 TraktSyncActionButton()
                 if !session.syncDiagnostics.changes.isEmpty || health.needsAttention {
                     NavigationLink {
@@ -31,18 +28,28 @@ struct TraktSettingsSection: View {
                         LabeledContent("Pending Changes", value: session.syncDiagnostics.changes.count.formatted())
                     }
                 }
-                NavigationLink("Help with Sync") { TraktTroubleshootingView() }
             }
         } header: {
             Text("Trakt")
         } footer: {
-            Text(session.pendingTraktAccountKey != nil
-                ? "Finish setup to start syncing this Trakt account."
-                : session.traktConnected
-                    ? "Syncs your Watchlist and watched history automatically."
-                    : "Optionally sync your Watchlist and watched history with Trakt.")
+            Text(footer)
         }
         .task { await session.refreshSyncDiagnostics() }
+    }
+
+    private var footer: String {
+        if session.pendingTraktAccountKey != nil { return "Finish setup to start syncing." }
+        if health.needsAttention {
+            if health.title == "Connection Interrupted" { return health.title }
+            if !session.traktConnected { return health.detail }
+            if !session.syncDiagnostics.changes.isEmpty {
+                return "Some changes still need attention. See Pending Changes for details."
+            }
+            return health.detail
+        }
+        return session.traktConnected
+            ? "Your Watchlist and watched history sync automatically."
+            : "Sync your Watchlist and watched history with Trakt."
     }
 }
 
@@ -144,6 +151,9 @@ private struct TraktAccountSettingsView: View {
                 }
             }
             Section {
+                NavigationLink("Help with Sync") { TraktTroubleshootingView() }
+            }
+            Section {
                 Button("Disconnect Trakt", role: .destructive) { showDisconnect = true }
                     .disabled(session.syncActionsUnavailable)
             }
@@ -161,79 +171,34 @@ private struct TraktAccountSettingsView: View {
     }
 }
 
-struct TraktStatusRow: View {
-    @Environment(AppSession.self) private var session
-
-    var body: some View {
-        let health = session.traktSyncPresentation
-        if health.isWorking {
-            ProgressView {
-                statusCopy(health)
-            }
-        } else {
-            statusCopy(health)
-        }
-    }
-
-    private func statusCopy(_ health: TraktSyncPresentation) -> some View {
-        VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
-            Text(health.rowTitle)
-            Text(health.detail)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-}
-
 struct TraktSyncActionButton: View {
     @Environment(AppSession.self) private var session
-
     @State private var retryOffer: SyncEngine.HistoryRetry?
     @State private var showsRetryConfirmation = false
-    var historyCheckOnly = false
 
     var body: some View {
-        let health = session.traktSyncPresentation
         Group {
-            if !health.isWorking && health.action != .setup && (!historyCheckOnly || health.action == .check) {
-                Button {
+            if session.traktSyncPresentation.isWorking {
+                ProgressView("Syncing…")
+                    .accessibilityIdentifier("trakt-sync-progress")
+            } else {
+                Button("Sync Now") {
                     Task {
-                        switch health.action {
-                        case .check:
-                            retryOffer = await session.checkWatchedUploadConfirmations()
-                            showsRetryConfirmation = retryOffer != nil
-                        case .retry: await session.retryFailedSyncOperations()
-                        case .sync: await session.runSync(reason: .userInitiated)
-                        case .connect: session.startTraktOAuth()
-                        case .setup: break
-                        }
+                        retryOffer = await session.syncTraktNow()
+                        showsRetryConfirmation = retryOffer != nil
                     }
-                } label: {
-                    Text(title)
                 }
-                .disabled(session.syncActionsUnavailable || session.pendingTraktAccountKey != nil)
+                .disabled(session.syncActionsUnavailable)
             }
         }
         .alert("Retry Missing Plays?", isPresented: $showsRetryConfirmation, presenting: retryOffer) { offer in
             Button("Retry Upload") {
-                Task { _ = await session.checkWatchedUploadConfirmations(historyRetry: offer) }
+                Task { _ = await session.syncTraktNow(historyRetry: offer) }
             }
             Button("Cancel", role: .cancel) {}
         } message: { offer in
             let count = offer.ids.count
-            Text("iWatch couldn’t find ^[\(count) watched play](inflect: true) in Trakt history. It will check again before retrying with the original watched times. A play could be duplicated if Trakt hasn’t made it visible yet.")
-        }
-    }
-
-    private var title: String {
-        switch session.traktSyncPresentation.action {
-        case .check: "Check Trakt History"
-        case .retry: "Retry Failed Changes"
-        case .sync: "Sync Now"
-        case .connect: "Connect Trakt"
-        case .setup: "Finish Setup"
+            Text("iWatch couldn’t find ^[\(count) watched play](inflect: true) in Trakt history. It will check again before retrying. A play could be duplicated if it hasn’t appeared on Trakt yet.")
         }
     }
 }

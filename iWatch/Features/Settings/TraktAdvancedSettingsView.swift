@@ -2,13 +2,11 @@ import SwiftUI
 
 struct TraktTroubleshootingView: View {
     @Environment(AppSession.self) private var session
-    var title = "Help with Sync"
 
     var body: some View {
         Form {
             Section("Trakt") {
                 Link("Trakt Service Status", destination: URL(string: "https://status.trakt.tv")!)
-                Link("Open Trakt", destination: URL(string: "https://trakt.tv")!)
             }
             Section {
                 NavigationLink("Check Library Data") { TraktLibraryCheckView() }
@@ -33,7 +31,7 @@ struct TraktTroubleshootingView: View {
                 Text("Rebuilding replaces your iWatch library and discards unsynced changes.")
             }
         }
-        .navigationTitle(title)
+        .navigationTitle("Help with Sync")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

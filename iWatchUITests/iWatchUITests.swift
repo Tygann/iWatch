@@ -295,32 +295,32 @@ final class iWatchUITests: XCTestCase {
         capture(app, "Library sync overview - " + contentSize)
         revealTraktSection(in: app)
         XCTAssertFalse(app.buttons["Advanced"].exists)
-        reveal(app.staticTexts["Waiting for Confirmation"], in: app)
-        let checkHistory = app.buttons["Check Trakt History"]
-        reveal(checkHistory, in: app)
+        let syncNow = app.buttons["Sync Now"]
+        reveal(syncNow, in: app)
         capture(app, "Contextual Trakt issue - " + contentSize)
         let pending = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Pending Changes'")).firstMatch
         reveal(pending, in: app)
         if !contentSize.contains("Accessibility") {
-            XCTAssertEqual(checkHistory.frame.height, pending.frame.height, accuracy: 1)
-            XCTAssertGreaterThanOrEqual(checkHistory.frame.height, 44)
+            XCTAssertEqual(syncNow.frame.height, pending.frame.height, accuracy: 1)
+            XCTAssertGreaterThanOrEqual(syncNow.frame.height, 44)
         }
         pending.tap()
         XCTAssertTrue(app.navigationBars["Pending Changes"].waitForExistence(timeout: 5))
-        let confirmation = app.staticTexts["Waiting for Confirmation (1)"]
+        let failed = app.buttons["Needs Attention (6)"]
+        reveal(failed, in: app)
+        let confirmation = app.buttons["Waiting for Confirmation (4)"]
         reveal(confirmation, in: app)
-        reveal(checkHistory, in: app)
+        capture(app, "Pending changes overview - " + contentSize)
+        confirmation.tap()
         let episode = app.staticTexts["Example Show · S1 E1"]
         reveal(episode, in: app)
-        if !contentSize.contains("Accessibility") {
-            XCTAssertLessThan(confirmation.frame.maxY, checkHistory.frame.midY)
-            XCTAssertLessThan(checkHistory.frame.midY, episode.frame.minY)
-        }
+        XCTAssertFalse(app.buttons["Sync Now"].exists)
         capture(app, "Pending changes - " + contentSize)
-        let help = app.buttons["Help with These Changes"]
+        confirmation.tap()
+        let help = app.buttons["Get Help"]
         reveal(help, in: app)
         help.tap()
-        XCTAssertTrue(app.navigationBars["Help with Changes"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Help with Sync"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["Diagnostics"].exists)
         let status = app.descendants(matching: .any).matching(
             NSPredicate(format: "label == 'Trakt Service Status'")
@@ -342,7 +342,7 @@ final class iWatchUITests: XCTestCase {
         capture(app, "Protected rebuild - " + contentSize)
         app.buttons["Cancel"].tap()
         app.navigationBars["Rebuild from Trakt"].buttons.firstMatch.tap()
-        app.navigationBars["Help with Changes"].buttons.firstMatch.tap()
+        app.navigationBars["Help with Sync"].buttons.firstMatch.tap()
         app.navigationBars["Pending Changes"].buttons.firstMatch.tap()
         let manage = app.buttons["Manage Data"]
         reveal(manage, in: app)
@@ -489,6 +489,8 @@ final class iWatchUITests: XCTestCase {
                 XCTAssertTrue(app.buttons["Sync Now"].waitForExistence(timeout: 5))
                 XCTAssertFalse(app.staticTexts["Signed In to Trakt"].exists)
                 XCTAssertFalse(app.staticTexts["Last Successful Sync"].exists)
+            } else if state == "syncing" {
+                reveal(app.descendants(matching: .any)["trakt-sync-progress"], in: app)
             } else if state != "setup" {
                 reveal(app.staticTexts[expected], in: app)
             }
@@ -502,6 +504,8 @@ final class iWatchUITests: XCTestCase {
             }
             capture(app, "Trakt - " + state)
             if state == "normal" {
+                app.buttons["trakt-connection"].tap()
+                XCTAssertTrue(app.navigationBars["Trakt Account"].waitForExistence(timeout: 5))
                 let help = app.buttons["Help with Sync"]
                 reveal(help, in: app)
                 help.tap()

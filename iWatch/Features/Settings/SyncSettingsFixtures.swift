@@ -28,13 +28,13 @@ extension AppSession {
             lastSeenRemoteActivityAt: lastSyncAt, lastErrorDescription: nil)
         if state == "confirmation" {
             syncDiagnostics = SyncDiagnostics(initialBaselineComplete: true, importedMovieCount: 49,
-                importedShowCount: 32, importedHistoryCount: 5127, pendingOperationCount: 3,
-                processingOperationCount: 0, deadletterOperationCount: 0, duplicateCandidateCount: 0,
+                importedShowCount: 32, importedHistoryCount: 5127, pendingOperationCount: 4,
+                processingOperationCount: 0, deadletterOperationCount: 6, duplicateCandidateCount: 0,
                 lastSuccessfulPullAt: lastSyncAt, lastSuccessfulPushAt: lastSyncAt,
                 lastSeenRemoteActivityAt: lastSyncAt, lastErrorDescription: "Test watched upload is unconfirmed.",
-                changes: [1, 2, 3].map { episode in
-                    SyncPendingChange(id: UUID(), title: "Example Show · S1 E\(episode)", action: "Marked watched",
-                        createdAt: .now, state: episode == 1 ? .confirming : .waiting, isOnThisDevice: true)
+                changes: (1...10).map { episode in
+                    SyncPendingChange(id: UUID(), title: "Example Show · S1 E\(episode)", action: episode <= 4 ? "Marked watched" : "Removed watched play",
+                        createdAt: .now, state: episode <= 4 ? .confirming : .failed, isOnThisDevice: true)
                 }, failure: .confirmation)
         } else if state == "offline" {
             syncDiagnostics.failure = .offline
