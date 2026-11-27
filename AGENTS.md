@@ -12,7 +12,7 @@
 - Prefer standard SwiftUI controls, navigation, feedback, and accessibility behavior over custom equivalents unless a custom interaction clearly improves the experience.
 - Prioritize clarity, progressive disclosure, Dynamic Type, VoiceOver, adequate touch targets, and system appearance support.
 - Keep settings focused on meaningful user choices. Place diagnostics, developer configuration, and destructive maintenance actions in clearly labeled secondary flows.
-- Verify meaningful UI changes on Simulator at standard and accessibility text sizes before committing.
+- Verify meaningful UI changes on Simulator at standard and accessibility text sizes where the affected flow supports them. Complete required simulator verification before landing.
 
 ## Safety
 
@@ -22,10 +22,13 @@
 
 ## Verification and commits
 
-- For Swift changes: run the focused affected tests, a simulator build, and `git diff --check`.
+- Run `git diff --check` and applicable architecture, Trakt configuration, and CloudKit schema checks. For app or test code, run a simulator build and the full `iWatchTests` target. For UI changes, run the affected `iWatchUITests` cases from the same build.
 - Review the final diff for sync regressions, actor isolation, accidental secrets, and UI-state correctness.
 - Start each cloud task from current GitHub `main`. If a checkout is stale or has unrelated edits, preserve it and apply only the intended patch to a fresh checkout, worktree, or verified GitHub base.
-- Automatically commit and push completed, self-contained changes when verification supports shipping them. Use a direct push to `main` for small changes when the branch is current and repository rules allow it. Use a draft PR when macOS CI needs to pass before landing. Honor explicit instructions to keep changes local.
+- Automatically commit and push completed, self-contained changes when verification supports shipping them. Use a direct push to `main` for small changes when the remote base is current, the completed checks cover the change, and repository rules allow it. Honor explicit instructions to keep changes local.
+- Require green macOS CI on a PR before landing persistence or schema migrations, CloudKit or Trakt sync, authentication, and CI or release workflow changes. Use a draft PR whenever required simulator checks cannot run before publishing the change. Monitor CI through completion, investigate failures, and report any unverified checks.
+- Run the full UI suite before releasing and use the weekly run to catch cross-flow regressions. Keep simulator checks on fixtures or test configuration. Keep signing credentials and production keys in the release environment.
+- See `Docs/DEVELOPMENT_WORKFLOW.md` for cloud verification, test selection, and release handoff.
 
 ## TestFlight and App Store release notes
 

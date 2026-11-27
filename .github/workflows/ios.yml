@@ -4,15 +4,24 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '30 8 * * 1'
+
+permissions:
+  contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'automatic' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  verify:
-    runs-on: xcode-27
-    timeout-minutes: 25
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      simulator: ${{ steps.changes.outputs.simulator }}
+      ui-selection: ${{ steps.changes.outputs.ui-selection }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -21,7 +30,7 @@ jobs:
         run: |
           test ! -f iWatch/Secrets.plist
           ! git grep -nE '(TRAKT_CLIENT_SECRET|TMDB_API_KEY).*[=:][[:space:]]*[A-Za-z0-9_-]{24,}' -- ':!iWatch/Secrets.example.plist'
-      - name: Check whitespace and detect notification changes
+      - name: Check whitespace and select simulator tests
         id: changes
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -30,44 +39,61 @@ jobs:
         run: |
           if [ "$EVENT_NAME" = "pull_request" ]; then
             base=$(git merge-base "$PR_BASE_SHA" HEAD)
-          elif [ -n "$PUSH_BASE_SHA" ] && [ "$PUSH_BASE_SHA" != "0000000000000000000000000000000000000000" ]; then
+          elif [ "$EVENT_NAME" = "push" ] && [ -n "$PUSH_BASE_SHA" ] && [ "$PUSH_BASE_SHA" != "0000000000000000000000000000000000000000" ]; then
             base="$PUSH_BASE_SHA"
-          else
+          elif [ "$EVENT_NAME" = "push" ]; then
             base=$(git hash-object -t tree /dev/null)
+          else
+            base=HEAD
           fi
           git diff --check "$base" HEAD
-          notification_changes=$(git diff --name-only "$base" HEAD -- \
-            .github/workflows/ios.yml iWatch.xcodeproj \
-            iWatch/App iWatch/iWatchApp.swift iWatch/Features/Settings \
-            iWatch/Platform/Notifications iWatchUITests)
-          if [ -n "$notification_changes" ]; then
-            echo "notifications=true" >> "$GITHUB_OUTPUT"
+          options=()
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$EVENT_NAME" = "schedule" ]; then
+            options+=(--full-ui)
           fi
+          python3 scripts/select-ios-tests.py "$base" HEAD --outputs "$GITHUB_OUTPUT" "${options[@]}"
       - name: Check UI architecture boundaries
         run: python3 scripts/check-view-boundaries.py
       - name: Check Trakt configuration validation
         run: python3 scripts/test-trakt-configuration.py
       - name: Check CloudKit schema preflight
         run: python3 scripts/check-cloudkit-schema.py --self-test
+
+  verify:
+    needs: preflight
+    if: needs.preflight.outputs.simulator == 'true'
+    runs-on: xcode-27
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      SIMULATOR_DESTINATION: platform=iOS Simulator,name=iPhone 17,OS=27.2
+    steps:
+      - uses: actions/checkout@v4
       - name: Build for testing
+        id: build
         run: >-
           xcodebuild build-for-testing -project iWatch.xcodeproj -scheme iWatch
-          -destination 'platform=iOS Simulator,name=iPhone 17'
+          -destination "$SIMULATOR_DESTINATION"
           -derivedDataPath work/DerivedData CODE_SIGNING_ALLOWED=NO
       - name: Unit tests
         run: >-
           xcodebuild test-without-building -project iWatch.xcodeproj -scheme iWatch
-          -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath work/DerivedData
+          -destination "$SIMULATOR_DESTINATION" -derivedDataPath work/DerivedData
           -only-testing:iWatchTests -parallel-testing-enabled NO
           -resultBundlePath work/iWatchTests.xcresult
-      - name: Notification settings UI tests
-        if: steps.changes.outputs.notifications == 'true'
+      - name: UI tests
+        if: "!cancelled() && steps.build.outcome == 'success' && needs.preflight.outputs.ui-selection != ''"
+        env:
+          UI_SELECTION: ${{ needs.preflight.outputs.ui-selection }}
         run: |
+          read -r -a tests <<< "$UI_SELECTION"
+          arguments=()
+          for test in "${tests[@]}"; do
+            arguments+=("-only-testing:$test")
+          done
           xcodebuild test-without-building -project iWatch.xcodeproj -scheme iWatch \
-            -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath work/DerivedData \
-            -only-testing:iWatchUITests/iWatchUITests/testNotificationSettingsAtStandardTextSize \
-            -only-testing:iWatchUITests/iWatchUITests/testNotificationSettingsAtAccessibilityTextSize \
-            -parallel-testing-enabled NO -resultBundlePath work/iWatchNotificationUITests.xcresult
+            -destination "$SIMULATOR_DESTINATION" -derivedDataPath work/DerivedData \
+            "${arguments[@]}" -parallel-testing-enabled NO -resultBundlePath work/iWatchUITests.xcresult
       - name: Save test failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
@@ -75,5 +101,6 @@ jobs:
           name: iwatch-test-results
           path: |
             work/iWatchTests.xcresult
-            work/iWatchNotificationUITests.xcresult
+            work/iWatchUITests.xcresult
+          if-no-files-found: ignore
           retention-days: 7
