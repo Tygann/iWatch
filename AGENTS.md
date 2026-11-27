@@ -28,7 +28,7 @@
 
 ## Verification and commits
 
-- Run `git diff --check` and applicable architecture, Trakt configuration, and CloudKit schema checks. For app or test code, run a simulator build and the full `iWatchTests` target. For UI changes, run the affected `iWatchUITests` cases from the same build.
+- Run `git diff --check` and applicable architecture, Trakt configuration, and CloudKit schema checks. Use the [CI test selection rules](Docs/DEVELOPMENT_WORKFLOW.md#github-actions-verification) for simulator verification. Run the affected UI flows and full `iWatchTests` suite for behavior changes. For allowlisted cosmetic changes, run the affected simulator smoke tests at standard and accessibility text sizes. For selector-only changes, verify the routing on Linux and run the simulator smoke pair.
 - Review the final diff for sync regressions, actor isolation, accidental secrets, and UI-state correctness.
 - Automatically commit and push completed, self-contained changes when verification supports shipping them. Use a direct push to `main` for small changes when the remote base is current, the completed checks cover the change, and repository rules allow it. Honor explicit instructions to keep changes local.
 - Require green macOS CI on a PR before landing persistence or schema migrations, CloudKit or Trakt sync, authentication, and CI or release workflow changes. Use a draft PR whenever required simulator checks cannot run before publishing the change. Monitor CI through completion, investigate failures, and report any unverified checks.
