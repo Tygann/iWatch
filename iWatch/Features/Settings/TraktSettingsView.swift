@@ -6,8 +6,8 @@ struct TraktSettingsSection: View {
     private var health: TraktSyncPresentation { session.traktSyncPresentation }
 
     var body: some View {
-        Section {
-            TraktConnectionRow()
+        Section("Trakt") {
+            TraktConnectionStatus()
             if session.pendingTraktAccountKey != nil {
                 TraktSetupOptions()
             } else if session.traktConnected {
@@ -18,27 +18,11 @@ struct TraktSettingsSection: View {
                     Link("Trakt Service Status", destination: URL(string: "https://status.trakt.tv")!)
                 }
             }
-        } header: {
-            Text("Trakt")
-        } footer: {
-            Text(footer)
+            if !session.traktIsConnecting {
+                TraktConnectionAction()
+            }
         }
         .task { await session.refreshSyncDiagnostics() }
-    }
-
-    private var footer: String {
-        if session.pendingTraktAccountKey != nil { return "Finish setup to start syncing." }
-        if health.needsAttention {
-            if health.title == "Connection Interrupted" { return health.title }
-            if !session.traktConnected { return health.detail }
-            if !session.syncDiagnostics.changes.isEmpty {
-                return ""
-            }
-            return health.detail
-        }
-        return session.traktConnected
-            ? "Your Watchlist and watched history sync automatically."
-            : "Sync your Watchlist and watched history with Trakt."
     }
 }
 
@@ -48,6 +32,9 @@ private struct TraktSetupOptions: View {
 
     var body: some View {
         DisclosureGroup {
+            Text(session.traktSyncPresentation.detail)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
             Button(role: .destructive) { showImport = true } label: {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Replace iWatch Library from Trakt").foregroundStyle(.red)
@@ -92,42 +79,52 @@ private struct TraktSetupOptions: View {
     }
 }
 
-private struct TraktConnectionRow: View {
+private struct TraktConnectionStatus: View {
+    @Environment(AppSession.self) private var session
+
+    var body: some View {
+        let health = session.traktSyncPresentation
+
+        if session.traktIsConnecting {
+            ProgressView("Connecting to Trakt…")
+        } else if !health.isWorking || session.pendingTraktAccountKey != nil {
+            let status = summary(for: health)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(status.title)
+                Text(status.detail)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 4)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("trakt-connection")
+        }
+    }
+
+    private func summary(for health: TraktSyncPresentation) -> (title: String, detail: String) {
+        if session.pendingTraktAccountKey != nil {
+            return ("Connected", "Finish setup to start syncing.")
+        }
+        if health.needsAttention || health.title == "Changes Pending" || !session.traktConnected {
+            return (health.title, health.detail)
+        }
+        return ("Connected", "Your Watchlist and watched history sync automatically.")
+    }
+}
+
+private struct TraktConnectionAction: View {
     @Environment(AppSession.self) private var session
     @State private var showDisconnect = false
 
     var body: some View {
         Group {
             if session.traktConnected {
-                Menu {
-                    Button("Disconnect Trakt", role: .destructive) { showDisconnect = true }
-                        .disabled(session.syncActionsUnavailable)
-                } label: {
-                    LabeledContent("Account") {
-                        HStack(spacing: AppSpacing.xSmall) {
-                            Text("Connected")
-                            Image(systemName: "chevron.down")
-                                .imageScale(.small)
-                                .accessibilityHidden(true)
-                        }
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Color.accentColor.opacity(0.12), in: Capsule())
-                        .foregroundStyle(Color.accentColor)
-                    }
-                }
-                .foregroundStyle(.primary)
-                .accessibilityLabel("Account, Connected")
-                .accessibilityHint("Shows Trakt account options")
-                .accessibilityIdentifier("trakt-connection")
-            } else if session.traktIsConnecting {
-                ProgressView("Connecting to Trakt…")
+                Button("Disconnect Trakt", role: .destructive) { showDisconnect = true }
             } else {
                 Button("Connect Trakt") { session.startTraktOAuth() }
-                    .disabled(session.syncActionsUnavailable)
             }
         }
+        .disabled(session.syncActionsUnavailable)
         .confirmationDialog("Disconnect Trakt?", isPresented: $showDisconnect, titleVisibility: .visible) {
             Button("Disconnect Trakt", role: .destructive) { session.logoutTrakt() }
         } message: {
@@ -144,12 +141,16 @@ struct TraktSyncActionButton: View {
     var body: some View {
         Group {
             if session.traktSyncPresentation.isWorking {
-                HStack {
-                    Text("Syncing…")
-                    Spacer()
-                    ProgressView()
-                        .controlSize(.small)
-                        .accessibilityHidden(true)
+                let health = session.traktSyncPresentation
+                ProgressView {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(health.title)
+                        if !health.detail.isEmpty {
+                            Text(health.detail)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("trakt-sync-progress")

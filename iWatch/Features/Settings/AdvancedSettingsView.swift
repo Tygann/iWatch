@@ -4,13 +4,19 @@ struct LibraryMaintenanceSection: View {
     @Environment(AppSession.self) private var session
     @Environment(AppRouter.self) private var router
 
+    @State private var showsTools = false
     @State private var showEraseConfirmation = false
     @State private var showRebuildConfirmation = false
     @State private var maintenanceResult: String?
 
     var body: some View {
-        Section {
-            DisclosureGroup("Library Maintenance") {
+        Section("Maintenance") {
+            Button(showsTools ? "Hide Maintenance Tools" : "Show Maintenance Tools") {
+                withAnimation { showsTools.toggle() }
+            }
+            .accessibilityAddTraits(showsTools ? .isSelected : [])
+
+            if showsTools {
                 Button {
                     Task {
                         await session.clearCache()
@@ -18,7 +24,7 @@ struct LibraryMaintenanceSection: View {
                     }
                 } label: {
                     HStack {
-                        Label("Clear Temporary Files", systemImage: "trash")
+                        Text("Clear Temporary Files")
                         Spacer()
                         if session.isClearingCache {
                             ProgressView()

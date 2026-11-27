@@ -374,13 +374,13 @@ final class iWatchUITests: XCTestCase {
     private func verifySyncDiagnostics(contentSize: String) throws {
         let app = launchSyncSettings(contentSize: contentSize, state: "confirmation")
         XCTAssertFalse(app.buttons["settings-trakt-sync"].exists)
-        XCTAssertFalse(app.buttons["Library Maintenance"].exists)
+        XCTAssertFalse(app.buttons["Show Maintenance Tools"].exists)
         capture(app, "Simplified settings - " + contentSize)
         app.buttons["settings-sync"].tap()
         XCTAssertTrue(app.navigationBars["Library Sync"].waitForExistence(timeout: 5))
         let cloud = app.descendants(matching: .any)["icloud-sync-status"].firstMatch
         XCTAssertTrue(cloud.waitForExistence(timeout: 5))
-        XCTAssertTrue(cloud.label.contains("Last Activity"))
+        XCTAssertTrue(cloud.label.contains("Syncs Automatically"))
         capture(app, "Library sync overview - " + contentSize)
         revealTraktSection(in: app)
         XCTAssertFalse(app.buttons["Advanced"].exists)
@@ -425,7 +425,7 @@ final class iWatchUITests: XCTestCase {
 
         let erase = app.buttons["Erase All App Data"]
         XCTAssertFalse(erase.exists)
-        let manage = app.buttons["Library Maintenance"]
+        let manage = app.buttons["Show Maintenance Tools"]
         reveal(manage, in: app)
         manage.tap()
         XCTAssertTrue(app.navigationBars["Library Sync"].exists)
@@ -488,6 +488,7 @@ final class iWatchUITests: XCTestCase {
     private func revealTraktSection(in app: XCUIApplication) {
         let connection = app.descendants(matching: .any)["trakt-connection"]
         let connect = app.buttons["Connect Trakt"]
+        let progress = app.descendants(matching: .any)["trakt-sync-progress"]
         if !app.navigationBars["Library Sync"].exists {
             let sync = app.buttons["settings-sync"]
             reveal(sync, in: app)
@@ -496,7 +497,7 @@ final class iWatchUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Library Sync"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["settings-trakt"].exists)
         for _ in 0..<15 {
-            if (connection.exists && connection.isHittable) || (connect.exists && connect.isHittable) { return }
+            if [connection, connect, progress].contains(where: { $0.exists && $0.isHittable }) { return }
             app.swipeUp()
         }
         XCTFail("Expected inline Trakt connection or Connect control in Sync")
@@ -516,7 +517,6 @@ final class iWatchUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Replace and Import"].waitForExistence(timeout: 5))
         app.buttons["Cancel"].tap()
         setup.tap()
-        app.buttons["trakt-connection"].tap()
         let disconnect = app.buttons["Disconnect Trakt"]
         reveal(disconnect, in: app)
         XCTAssertTrue(disconnect.waitForExistence(timeout: 5))
@@ -563,12 +563,12 @@ final class iWatchUITests: XCTestCase {
     @MainActor
     func testSyncNormalOfflineAndSetupStates() throws {
         for state in ["normal", "offline", "syncing", "setup"] {
-            let app = launchSyncSettings(contentSize: "UICTContentSizeCategoryL", state: state)
+            let app = launchSyncSettings(contentSize: "UICTContentSizeCategoryL", state: state, theme: "2")
             revealTraktSection(in: app)
             XCTAssertTrue(app.navigationBars["Library Sync"].waitForExistence(timeout: 5))
             let cloud = app.descendants(matching: .any)["icloud-sync-status"].firstMatch
-            let cloudTitle = ["normal": "Last Activity", "offline": "iCloud Needs Attention",
-                              "syncing": "Uploading Changes…", "setup": "Last Activity"][state]!
+            let cloudTitle = ["normal": "Syncs Automatically", "offline": "iCloud Needs Attention",
+                              "syncing": "Uploading Changes…", "setup": "Syncs Automatically"][state]!
             XCTAssertTrue(cloud.label.contains(cloudTitle))
             let expected = ["normal": "Trakt", "offline": "Connection Interrupted",
                             "syncing": "Syncing…", "setup": "Finish Setup"][state]!
@@ -581,7 +581,9 @@ final class iWatchUITests: XCTestCase {
             } else if state == "syncing" {
                 reveal(app.descendants(matching: .any)["trakt-sync-progress"], in: app)
             } else if state != "setup" {
-                reveal(app.staticTexts[expected], in: app)
+                let status = app.descendants(matching: .any)["trakt-connection"]
+                reveal(status, in: app)
+                XCTAssertTrue(status.label.contains(expected))
             }
             if state == "setup" {
                 let setup = app.buttons["Finish Setup"]
@@ -598,11 +600,11 @@ final class iWatchUITests: XCTestCase {
 
     @MainActor
     private func launchSyncSettings(
-        contentSize: String, state: String, additionalArguments: [String] = []
+        contentSize: String, state: String, theme: String? = nil, additionalArguments: [String] = []
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += ["UITEST_MODE", "UITEST_SYNC_STATE", state,
-            "-appTheme", contentSize.contains("Accessibility") ? "2" : "1",
+            "-appTheme", theme ?? (contentSize.contains("Accessibility") ? "2" : "1"),
             "-UIPreferredContentSizeCategoryName", contentSize] + additionalArguments
         if contentSize.contains("Accessibility") { app.launchArguments.append("UITEST_ACCESSIBILITY_TEXT") }
         app.launch()
