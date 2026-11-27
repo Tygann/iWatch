@@ -283,6 +283,23 @@ final class AppContainer {
         #endif
 
         seedPreviewCatalog(into: persistence)
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("UITEST_SHOW_COLLECTION") {
+            let context = persistence.makeContext()
+            let now = Date()
+            for index in 1...90 {
+                let id = 10_000 + index
+                let record = MediaRecord(kind: .show, tmdbID: id, title: "Collection Show \(index)",
+                    overview: "Offline fixture", posterPath: "/fixture.jpg")
+                record.seasonsData = Data("[]".utf8)
+                context.insert(record)
+                context.insert(WatchlistRecord(mediaID: MediaID(kind: .show, id: id), isInWatchlist: true,
+                    localUpdatedAt: now.addingTimeInterval(Double(-index))))
+            }
+            try! context.save()
+        }
+        #endif
+
 
         return AppContainer(
             config: config,

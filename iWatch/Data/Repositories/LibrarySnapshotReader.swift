@@ -272,7 +272,7 @@ actor LibrarySnapshotReader {
             grouping: try context.fetch(FetchDescriptor<WatchedEventRecord>(
                 predicate: #Predicate {
                     ($0.generationID == generationID || (includesLegacyRows && $0.generationID == "")) &&
-                        !$0.tombstoned && (includesAllShows || $0.showTMDbID == requestedID)
+                        !$0.tombstoned && $0.showTMDbID != nil && (includesAllShows || $0.showTMDbID == requestedID)
                 }
             ))
         ) { $0.showTMDbID ?? -1 }

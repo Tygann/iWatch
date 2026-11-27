@@ -231,6 +231,55 @@ final class iWatchUITests: XCTestCase {
     }
 
     @MainActor
+    func testShowCollectionUpdatesStandard() throws { try verifyShowCollectionUpdates(accessibility: false) }
+
+    @MainActor
+    func testShowCollectionUpdatesAccessibility() throws { try verifyShowCollectionUpdates(accessibility: true) }
+
+    @MainActor
+    private func verifyShowCollectionUpdates(accessibility: Bool) throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["UITEST_MODE", "UITEST_SHOW_COLLECTION", "UITEST_START_ON_SHOWS"]
+        if accessibility { app.launchArguments.append("UITEST_ACCESSIBILITY_TEXT") }
+        app.launch()
+        let section = app.buttons["Not Started"]
+        XCTAssertTrue(section.waitForExistence(timeout: 10))
+        if !section.isHittable { app.swipeUp() }
+        section.tap()
+        XCTAssertTrue(app.navigationBars["Not Started"].waitForExistence(timeout: 5))
+        let scroll = app.scrollViews.firstMatch
+        for _ in 0..<4 { scroll.swipeUp() }
+        let tiles = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Collection Show "))
+        let visible = tiles.allElementsBoundByIndex.filter { $0.isHittable && $0.frame.midY > app.frame.minY + 180 && $0.frame.midY < app.frame.maxY - 155 }
+        XCTAssertGreaterThanOrEqual(visible.count, 2)
+        let target = try XCTUnwrap(visible.first)
+        let neighbor = try XCTUnwrap(visible.last)
+        let targetLabel = target.label
+        let anchor = neighbor.label
+        let previousY = neighbor.frame.midY
+        XCTAssertNotEqual(targetLabel, anchor)
+        target.tap()
+        let status = app.buttons["Viewing status: Watchlist"]
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        status.tap()
+        app.buttons["Remove from Watchlist"].tap()
+        XCTAssertTrue(app.buttons["Add to Watchlist"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons["Not Started"].tap()
+        let after = app.buttons[anchor]
+        XCTAssertTrue(after.waitForExistence(timeout: 4))
+        let removed = app.buttons[targetLabel]
+        XCTAssertTrue(removed.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(after.isHittable)
+        XCTAssertLessThan(abs(after.frame.midY - previousY), 230)
+        app.tabBars.buttons["Movies"].tap()
+        XCTAssertTrue(app.navigationBars["Movies"].waitForExistence(timeout: 5))
+        app.tabBars.buttons["Shows"].tap()
+        XCTAssertTrue(app.navigationBars["Not Started"].waitForExistence(timeout: 5))
+        XCTAssertTrue(after.isHittable)
+        XCTAssertFalse(removed.exists)
+    }
+
+    @MainActor
     func testLaunchTabsAndMovieDetail() throws {
         let app = XCUIApplication()
         app.launchArguments.append("UITEST_MODE")

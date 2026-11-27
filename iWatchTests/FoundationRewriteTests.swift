@@ -1937,6 +1937,41 @@ struct FoundationRewriteTests {
     }
 
     @Test
+    func watchlistRepairPreservesNewerRemovalAndAccountScopedOutbox() async throws {
+        let persistence = makePersistence()
+        let context = persistence.makeContext()
+        let movie = MediaID(kind: .movie, id: 42)
+        let now = Date()
+        let earlier = now.addingTimeInterval(-60)
+        context.insert(WatchlistRecord(mediaID: movie, isInWatchlist: true, localUpdatedAt: earlier, dirty: true))
+        context.insert(WatchlistRecord(mediaID: movie, isInWatchlist: false, localUpdatedAt: now))
+        let payload = try SyncPayloadCodec.encoder.encode(SyncOperationPayload(
+            originDeviceID: "device-a", mutationAt: earlier, mediaKind: .movie, tmdbID: movie.id))
+        context.insert(SyncOperationRecord(kind: .addWatchlist, payload: payload,
+            dedupeKey: "watchlist:movie:42", accountKey: "default", createdAt: earlier))
+        try context.save()
+
+        let reader = LibrarySnapshotReader(persistence: persistence)
+        #expect(try await reader.movieItems().isEmpty)
+        let remote = FakeTraktSyncRemote(token: nil, lastActivities: makeLastActivities(watchlistAt: now, historyAt: now),
+            watchlist: [], history: [])
+        let engine = SyncEngine(persistence: persistence, trakt: remote,
+            deviceIdentityStore: FixedDeviceIdentityStore(id: "device-a"), accountKeyProvider: { "default" })
+
+        let repair = try await engine.repairIntegrity()
+        #expect(repair.watchlistMerged == 1)
+        #expect(try await reader.movieItems().isEmpty)
+        let row = try #require(fetchAll(WatchlistRecord.self, from: persistence).first)
+        #expect(!row.isInWatchlist)
+        #expect(!row.dirty)
+        #expect(row.localUpdatedAt == now)
+        let pending = try #require(fetchAll(SyncOperationRecord.self, from: persistence).first)
+        #expect(pending.accountKey == "default")
+        #expect(pending.status == .pending)
+        #expect(pending.payload == payload)
+    }
+
+    @Test
     func repairIntegrityDeduplicatesLogicalRecords() async throws {
         let persistence = makePersistence()
         let context = persistence.makeContext()

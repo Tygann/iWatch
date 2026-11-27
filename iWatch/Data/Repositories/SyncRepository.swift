@@ -1333,16 +1333,15 @@ actor SyncEngine {
 
     private func repairWatchlistDuplicates(context: ModelContext) -> Int {
         let groups = Dictionary(grouping: allWatchlist(context: context)) {
-            $0.mediaKey.isEmpty ? "\($0.kindRaw):\($0.tmdbID)" : $0.mediaKey
+            "\($0.kindRaw):\($0.tmdbID)"
         }
         var merged = 0
 
         for group in groups.values where group.count > 1 {
-            let ordered = group.sorted { watchlistPreferredOver($0, $1) }
-            guard let canonical = ordered.first else { continue }
-            canonical.mediaKey = canonical.mediaKey.isEmpty ? "\(canonical.mediaID.kind.rawValue):\(canonical.tmdbID)" : canonical.mediaKey
+            guard let canonical = group.max(by: { WatchlistRecord.prefersMembership($1, over: $0) }) else { continue }
+            canonical.mediaKey = canonical.mediaID.stableKey
 
-            for duplicate in ordered.dropFirst() {
+            for duplicate in group where duplicate !== canonical {
                 mergeWatchlist(canonical, with: duplicate)
                 context.delete(duplicate)
                 merged += 1
@@ -1568,15 +1567,6 @@ actor SyncEngine {
         canonical.updatedAt = max(canonical.updatedAt, duplicate.updatedAt)
     }
 
-    private func watchlistPreferredOver(_ lhs: WatchlistRecord, _ rhs: WatchlistRecord) -> Bool {
-        if lhs.dirty != rhs.dirty { return lhs.dirty && !rhs.dirty }
-        let lhsDate = newest([lhs.localUpdatedAt, lhs.remoteUpdatedAt]) ?? .distantPast
-        let rhsDate = newest([rhs.localUpdatedAt, rhs.remoteUpdatedAt]) ?? .distantPast
-        if lhsDate != rhsDate { return lhsDate > rhsDate }
-        if lhs.isInWatchlist != rhs.isInWatchlist { return lhs.isInWatchlist && !rhs.isInWatchlist }
-        return lhs.traktID != nil && rhs.traktID == nil
-    }
-
     private func mergeWatchlist(_ canonical: WatchlistRecord, with duplicate: WatchlistRecord) {
         canonical.mediaKey = canonical.mediaKey.isEmpty ? duplicate.mediaKey : canonical.mediaKey
         canonical.kindRaw = canonical.kindRaw.isEmpty ? duplicate.kindRaw : canonical.kindRaw
@@ -1585,7 +1575,10 @@ actor SyncEngine {
         canonical.listedAt = newest([canonical.listedAt, duplicate.listedAt])
         canonical.remoteUpdatedAt = newest([canonical.remoteUpdatedAt, duplicate.remoteUpdatedAt])
         canonical.localUpdatedAt = max(canonical.localUpdatedAt, duplicate.localUpdatedAt)
-        canonical.dirty = canonical.dirty || duplicate.dirty
+        // The losing row's upload intent remains in its account-scoped outbox.
+        if canonical.isInWatchlist == duplicate.isInWatchlist {
+            canonical.dirty = canonical.dirty || duplicate.dirty
+        }
     }
 
     private func watchedEventPreferredOver(_ lhs: WatchedEventRecord, _ rhs: WatchedEventRecord) -> Bool {

@@ -252,8 +252,8 @@ private struct ShowsViewBody: View {
                         }
                         continueWatchingEpisodeSection
                         comingUpSection
-                        librarySection(title: "Not Started", items: model.snapshot.watchlist)
-                        librarySection(title: "Caught Up", items: model.snapshot.caughtUp)
+                        librarySection(title: "Not Started", items: \.watchlist)
+                        librarySection(title: "Caught Up", items: \.caughtUp)
                         completedSection
                     }
                 }
@@ -362,7 +362,8 @@ private struct ShowsViewBody: View {
             MediaCollectionRow(title: "Coming Up") {
                 ShowCollectionView(
                     title: "Coming Up",
-                    items: model.snapshot.comingUp,
+                    model: model,
+                    items: \.comingUp,
                     secondaryText: model.nextAirLabel
                 )
             } content: {
@@ -402,12 +403,13 @@ private struct ShowsViewBody: View {
     }
 
     @ViewBuilder
-    private func librarySection(title: String, items: [LibraryShowItem]) -> some View {
-        if !items.isEmpty {
+    private func librarySection(title: String, items: KeyPath<ShowLibrarySnapshot, [LibraryShowItem]>) -> some View {
+        let currentItems = model.snapshot[keyPath: items]
+        if !currentItems.isEmpty {
             MediaCollectionRow(title: title) {
-                ShowCollectionView(title: title, items: items)
+                ShowCollectionView(title: title, model: model, items: items)
             } content: {
-                ForEach(items) { item in
+                ForEach(currentItems) { item in
                     MediaTile(
                         ref: item.mediaID,
                         title: item.title,
@@ -427,7 +429,8 @@ private struct ShowsViewBody: View {
             MediaCollectionRow(title: "Completed") {
                 ShowCollectionView(
                     title: "Completed",
-                    items: model.snapshot.completed
+                    model: model,
+                    items: \.completed
                 )
             } content: {
                 ForEach(model.snapshot.completed) { item in
@@ -506,18 +509,22 @@ private struct ShowsViewBody: View {
 // MARK: - Collection Screen
 
 private struct ShowCollectionView: View {
+    @Environment(AppSession.self) private var session
     let title: String
-    let items: [LibraryShowItem]
+    let model: ShowsScreenModel
+    let items: KeyPath<ShowLibrarySnapshot, [LibraryShowItem]>
     let secondaryText: (LibraryShowItem) -> String?
 
     private let cols = [GridItem(.adaptive(minimum: 110), spacing: 12)]
 
     init(
         title: String,
-        items: [LibraryShowItem],
+        model: ShowsScreenModel,
+        items: KeyPath<ShowLibrarySnapshot, [LibraryShowItem]>,
         secondaryText: @escaping (LibraryShowItem) -> String? = { _ in nil }
     ) {
         self.title = title
+        self.model = model
         self.items = items
         self.secondaryText = secondaryText
     }
@@ -525,7 +532,7 @@ private struct ShowCollectionView: View {
     var body: some View {
         ScrollView {
             LazyVGrid(columns: cols, spacing: 12) {
-                ForEach(items) { item in
+                ForEach(model.snapshot[keyPath: items]) { item in
 //                    VStack(spacing: 6) {
                         MediaTile(
                             ref: item.mediaID,
@@ -559,6 +566,9 @@ private struct ShowCollectionView: View {
             }
             .padding(.horizontal, 12)
             .padding(.top, 12)
+        }
+        .task(id: session.libraryRevision) {
+            await model.load(revision: session.libraryRevision)
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
