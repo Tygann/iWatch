@@ -28,11 +28,27 @@ struct SettingsCapsule: View {
     }
 }
 
+struct SettingsRowIcon: View {
+    let systemImage: String
+    let tint: Color
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .symbolRenderingMode(.monochrome)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 30, height: 30)
+            .background(tint.gradient, in: RoundedRectangle(cornerRadius: 9))
+            .accessibilityHidden(true)
+    }
+}
+
 struct SettingsNavigationLabel: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let title: String
     let systemImage: String
+    let tint: Color
     var detail: String?
 
     var body: some View {
@@ -51,10 +67,7 @@ struct SettingsNavigationLabel: View {
                     stackedCopy
                 }
             } icon: {
-                Image(systemName: systemImage)
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 28)
-                    .accessibilityHidden(true)
+                SettingsRowIcon(systemImage: systemImage, tint: tint)
             }
         }
     }
