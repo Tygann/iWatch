@@ -34,6 +34,15 @@ The full UI suite runs weekly. To run it on demand, open **Actions → iOS verif
 
 ## Release handoff
 
+For a user-visible change, add a paste-ready bullet under `TestFlight notes` in the PR description. For a direct push, use that heading in the commit body. Repeat the bullet in the chat summary. Internal-only changes such as CI tuning and test maintenance can omit the section.
+
+```text
+TestFlight notes
+- Settings now uses colored icons to make options easier to spot.
+```
+
+When preparing notes for an uploaded build, review the changes since the last recorded build, consolidate related bullets, and add two to four focused requests under `Please test`. Record the final notes in `Docs/releases/ReleaseHistory.md` with the build number and source commit.
+
 Run the full UI workflow for the revision you plan to release and check the result before distribution. Use `Docs/CLOUDKIT_RELEASE_CHECKLIST.md` for live CloudKit checks. Xcode Cloud handles archives, signing, and TestFlight or App Store distribution under its App Store Connect workflow settings. Keep distribution cadence and production credentials there. Simulator jobs use test configuration and require no production credentials.
 
 Use `Docs/DEVELOPMENT_LOG.md` for durable implementation notes and `Docs/NEXT_STEPS.md` for explicitly deferred work.

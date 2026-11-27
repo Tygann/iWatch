@@ -37,6 +37,7 @@
 
 ## TestFlight and App Store release notes
 
+- For user-visible changes, include a concise, tester-facing bullet under `TestFlight notes` in the PR description or, for direct pushes, in the commit body. Repeat it in the final chat summary. Omit this section for internal-only changes. Treat these bullets as draft inputs for the next uploaded build.
 - Treat `Docs/releases/ReleaseHistory.md` as the canonical record of uploaded builds and the source of truth for the newest published-build boundary.
 - When asked for notes for an uploaded build, first identify the newest logged release and review only meaningful product changes after its recorded source commit. Ignore release-history-only commits and do not repeat work already described by the previous build.
 - For the first logged build, summarize the current tester-visible product and record the uploaded source commit as the initial boundary.
