@@ -98,7 +98,7 @@ struct SettingsView: View {
                         .tag(theme)
                 }
             } label: {
-                SettingsNavigationLabel(title: "Appearance", systemImage: "circle.righthalf.filled", tint: .indigo)
+                SettingsNavigationLabel(title: "Appearance", systemImage: "circle.righthalf.filled", tint: .black)
             }
             .pickerStyle(.menu)
             .tint(.secondary)
@@ -111,7 +111,7 @@ struct SettingsView: View {
                 Text("Shows").tag(AppRouter.Tab.shows.rawValue)
                 Text("Search").tag(AppRouter.Tab.search.rawValue)
             } label: {
-                SettingsNavigationLabel(title: "Start Page", systemImage: "platter.filled.bottom.iphone", tint: .blue)
+                SettingsNavigationLabel(title: "Start Page", systemImage: "square.grid.2x2.fill", tint: .blue)
             }
             .pickerStyle(.menu)
             .tint(.secondary)
@@ -137,7 +137,7 @@ struct SettingsView: View {
             }
             .buttonStyle(.plain)
             Button { requestReview() } label: {
-                SettingsNavigationLabel(title: "Rate iWatch", systemImage: "star", tint: .purple)
+                SettingsNavigationLabel(title: "Rate iWatch", systemImage: "star.fill", tint: .purple)
                     .foregroundStyle(Color.primary)
             }
             .buttonStyle(.plain)
