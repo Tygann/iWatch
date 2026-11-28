@@ -10,11 +10,12 @@ import subprocess
 
 UI_TARGET = "iWatchUITests"
 UI_SOURCE = Path("iWatchUITests/iWatchUITests.swift")
+TIMING_WRAPPER = "scripts/time-ios-stage.sh"
 SELECTOR_FILES = {
     ".github/workflows/ios.yml",
     "scripts/select-ios-tests.py",
     "scripts/test-ios-test-selection.py",
-    "scripts/time-ios-stage.sh",
+    TIMING_WRAPPER,
 }
 SETTINGS_COMPONENTS = "iWatch/DesignSystem/SettingsComponents.swift"
 SETTINGS_SMOKE = (
@@ -115,6 +116,9 @@ def select(paths, full_ui=False, cosmetic_icon=False):
     for path in paths:
         if documentation(path):
             continue
+        if path == TIMING_WRAPPER:
+            # Exercise the wrapper on both test commands when it changes.
+            unit = True
         if path in SELECTOR_FILES or (path == SETTINGS_COMPONENTS and cosmetic_icon):
             ui.update(SETTINGS_SMOKE)
             continue
@@ -139,7 +143,7 @@ def select(paths, full_ui=False, cosmetic_icon=False):
     if prefixes:
         reason = "The diff touches mapped app behavior. Any selected smoke checks are included."
     elif unit and ui:
-        reason = "The diff includes unit-test files and smoke-eligible changes."
+        reason = "The diff needs unit tests and smoke checks to verify the changed test or CI code."
     elif unit:
         reason = "Only unit-test files changed."
     elif ui:

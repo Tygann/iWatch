@@ -71,6 +71,10 @@ class RoutingTests(unittest.TestCase):
         self.update("AGENTS.md")
         self.assertEqual(self.route(), ("true", "false", SMOKE))
 
+    def test_timing_wrapper_exercises_both_test_commands(self):
+        self.update("scripts/time-ios-stage.sh")
+        self.assertEqual(self.route(), ("true", "true", SMOKE))
+
     def test_cosmetic_icon(self):
         self.update(COMPONENTS, self.icon.replace("width: 30, height: 30", "width: 32, height: 32"))
         self.assertEqual(self.route(), ("true", "false", SMOKE))
