@@ -3,6 +3,7 @@
 
 from pathlib import Path
 import os
+import re
 import subprocess
 from tempfile import TemporaryDirectory
 import unittest
@@ -76,7 +77,16 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(self.route(), ("true", "true", SMOKE))
 
     def test_cosmetic_icon(self):
-        self.update(COMPONENTS, self.icon.replace("width: 30, height: 30", "width: 32, height: 32"))
+        icon_start = self.icon.index("struct SettingsRowIcon: View")
+        before, icon = self.icon[:icon_start], self.icon[icon_start:]
+        resized = re.sub(
+            r"\.frame\(width: ([0-9]+), height: [0-9]+\)",
+            lambda match: f".frame(width: {int(match[1]) + 2}, height: {int(match[1]) + 2})",
+            icon,
+            count=1,
+        )
+        self.assertNotEqual(icon, resized)
+        self.update(COMPONENTS, before + resized)
         self.assertEqual(self.route(), ("true", "false", SMOKE))
 
     def test_ambiguous_component_edit_runs_settings_flows_and_units(self):

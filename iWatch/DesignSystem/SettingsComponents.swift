@@ -35,10 +35,10 @@ struct SettingsRowIcon: View {
     var body: some View {
         Image(systemName: systemImage)
             .symbolRenderingMode(.monochrome)
-            .font(.system(size: 15, weight: .semibold))
+            .font(.system(size: 14, weight: .medium))
             .foregroundStyle(.white)
-            .frame(width: 30, height: 30)
-            .background(tint.gradient, in: RoundedRectangle(cornerRadius: 9))
+            .frame(width: 28, height: 28)
+            .background(tint.gradient, in: RoundedRectangle(cornerRadius: 8))
             .accessibilityHidden(true)
     }
 }
