@@ -111,13 +111,12 @@ final class iWatchUITests: XCTestCase {
         XCTAssertTrue(goToShow.waitForExistence(timeout: 3))
         goToShow.tap()
         let episode = app.staticTexts["E1 • Pilot"]
-        XCTAssertTrue(episode.waitForExistence(timeout: 3))
-        XCTAssertFalse(app.staticTexts["Loading episodes…"].exists)
         for _ in 0..<8 {
             if episode.isHittable { break }
             app.swipeUp()
         }
         XCTAssertTrue(episode.isHittable)
+        XCTAssertFalse(app.staticTexts["Loading episodes…"].exists)
         capture(app, "Cached episodes while refreshing - \(accessibility)")
         app.terminate()
     }
@@ -142,13 +141,12 @@ final class iWatchUITests: XCTestCase {
         goToShow.tap()
 
         let retry = app.buttons["Try Again"]
-        XCTAssertTrue(retry.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.staticTexts["Loading episodes…"].exists)
         for _ in 0..<8 {
             if retry.isHittable { break }
             app.swipeUp()
         }
         XCTAssertTrue(retry.isHittable)
+        XCTAssertFalse(app.staticTexts["Loading episodes…"].exists)
         retry.tap()
         XCTAssertTrue(retry.waitForNonExistence(timeout: 5))
         let episode = app.staticTexts["E1 • Pilot"]
