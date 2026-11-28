@@ -121,8 +121,8 @@ struct SettingsView: View {
             } label: {
                 SettingsNavigationLabel(
                     title: "Notifications",
-                    systemImage: "bell",
-                    tint: .pink,
+                    systemImage: "bell.badge.fill",
+                    tint: .red,
                     detail: notificationStatus
                 )
             }
