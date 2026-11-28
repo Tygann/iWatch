@@ -1042,7 +1042,7 @@ private struct MediaDetailBody: View {
                        seasons.contains(where: { $0.seasonNumber == seasonNumber }) {
                         Divider()
 
-                        VStack(alignment: .leading, spacing: 8) {
+                        LazyVStack(alignment: .leading, spacing: 8) {
                             if let episodes = model.episodesBySeason[seasonNumber], !episodes.isEmpty {
                                 ForEach(episodes) { episode in
                                     episodeRow(episode)
@@ -1103,11 +1103,12 @@ private struct MediaDetailBody: View {
                 if let airDate = episode.airDate, airDate > Date() {
                     releaseCountdown(for: airDate)
                 } else {
-                    EpisodeWatchButton(isWatched: model.isEpisodeWatched(episode)) {
+                    let isWatched = model.isEpisodeWatched(episode)
+                    EpisodeWatchButton(isWatched: isWatched) {
                         Haptics.notification(.success)
                         Task { await model.requestToggleEpisodeWatched(episode) }
                     }
-                    .accessibilityLabel("\(model.isEpisodeWatched(episode) ? "Mark unwatched" : "Mark watched"), Season \(episode.seasonNumber) Episode \(episode.episodeNumber)")
+                    .accessibilityLabel("\(isWatched ? "Mark unwatched" : "Mark watched"), Season \(episode.seasonNumber) Episode \(episode.episodeNumber)")
                 }
             }
 
