@@ -111,7 +111,7 @@ struct SettingsView: View {
                 Text("Shows").tag(AppRouter.Tab.shows.rawValue)
                 Text("Search").tag(AppRouter.Tab.search.rawValue)
             } label: {
-                SettingsNavigationLabel(title: "Start Page", systemImage: "square.grid.2x2.fill", tint: .blue)
+                SettingsNavigationLabel(title: "Start Page", systemImage: "platter.filled.bottom.iphone", tint: .blue)
             }
             .pickerStyle(.menu)
             .tint(.secondary)
